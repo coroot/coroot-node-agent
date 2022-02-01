@@ -1,0 +1,31 @@
+$script = <<-SCRIPT
+sudo apt update && sudo apt -y install gcc cgroup-tools
+sudo snap install go --classic
+
+# prevent unexpected `systemd-udevd` processes from appearing
+systemctl stop systemd-udevd.service systemd-udevd-control.socket systemd-udevd-kernel.socket
+
+sudo swapoff -a
+sudo sysctl vm.overcommit_memory=1
+SCRIPT
+
+Vagrant.configure("2") do |config|
+	config.vm.provider "virtualbox" do |v|
+  		v.memory = 1024
+  		v.cpus = 2
+	end
+
+	config.vm.provision "shell", inline: $script
+	config.vm.box_check_update = false
+	config.vm.synced_folder "..", "/tmp/src"
+
+	config.vm.define "ubuntu1810" do |ubuntu1810|
+		ubuntu1810.vm.box = "generic/ubuntu1810"
+    end
+	config.vm.define "ubuntu2004" do |ubuntu2004|
+		ubuntu2004.vm.box = "generic/ubuntu2004"
+    end
+	config.vm.define "ubuntu2010" do |ubuntu2010|
+		ubuntu2010.vm.box = "generic/ubuntu2010"
+    end
+end

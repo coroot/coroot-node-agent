@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: coroot
+
+---
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: coroot-node-agent
+  name: coroot-node-agent
+  namespace: coroot
+spec:
+  selector:
+    matchLabels:
+      app: coroot-node-agent
+  template:
+    metadata:
+      labels:
+        app: coroot-node-agent
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '80'
+    spec:
+      tolerations:
+        - operator: Exists
+      hostPID: true
+      containers:
+        - name: coroot-node-agent
+          image: ghcr.io/coroot/coroot-node-agent
+          args: ["--cgroupfs-root", "/host/sys/fs/cgroup"]
+          ports:
+            - containerPort: 80
+              name: http
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /host/sys/fs/cgroup
+              name: cgroupfs
+              readOnly: true
+            - mountPath: /sys/kernel/debug
+              name: debugfs
+              readOnly: false
+      volumes:
+        - hostPath:
+            path: /sys/fs/cgroup
+          name: cgroupfs
+        - hostPath:
+            path: /sys/kernel/debug
+          name: debugfs

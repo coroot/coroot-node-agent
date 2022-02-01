@@ -1,0 +1,39 @@
+3106 2926 0:328 / / rw,relatime master:837 - overlay overlay rw,lowerdir=/var/lib/docker/overlay2/l/M6WZCEZRHUXPOUB5L2NRWN2WUO:/var/lib/docker/overlay2/l/PSK625Y3NIGFHS26AUKE2KRMA2:/var/lib/docker/overlay2/l/PT66PDXGNEH225Q3FYX7Z2UV6L:/var/lib/docker/overlay2/l/35H7IJBYGOO6ILXKMRSGDXVNNF:/var/lib/docker/overlay2/l/5DCUF747JZCYYVPTGZL6CHP5U5:/var/lib/docker/overlay2/l/7SPZ3W6RP7OPEGYKKVSRKZ3JXT:/var/lib/docker/overlay2/l/SGMSFRI3ICWH3OCUY32IHUGB5T:/var/lib/docker/overlay2/l/ZKB4EVRT44YL4EW6RVR7GKUK7G:/var/lib/docker/overlay2/l/PADSNYEAQGS6W76AJOYSZ2NYQJ:/var/lib/docker/overlay2/l/DGQRTF5TBDCTX7BSDFQEHLRWC2:/var/lib/docker/overlay2/l/C2WHETJNEN5LLJRVWZJCFQI4QY:/var/lib/docker/overlay2/l/PXCA2NWD6RAZXQHGQ7ENSNDQ6A:/var/lib/docker/overlay2/l/GUWDUKNW2WIFXIO7PYJRGUVNGD:/var/lib/docker/overlay2/l/PPAC3QHMX6BMD7MLLB4ZNGC72X,upperdir=/var/lib/docker/overlay2/cff76cd160f34ad2c4d28401c38c97f816c7f29871b8f43f93c5a880caedc2ea/diff,workdir=/var/lib/docker/overlay2/cff76cd160f34ad2c4d28401c38c97f816c7f29871b8f43f93c5a880caedc2ea/work,xino=off
+3107 3106 0:329 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+3108 3106 0:330 / /dev rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+3109 3108 0:331 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,gid=5,mode=620,ptmxmode=666
+3110 3106 0:315 / /sys ro,nosuid,nodev,noexec,relatime - sysfs sysfs ro
+3111 3110 0:332 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime - tmpfs tmpfs rw,mode=755
+3112 3111 0:30 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/systemd ro,nosuid,nodev,noexec,relatime master:11 - cgroup cgroup rw,xattr,name=systemd
+3113 3111 0:34 / /sys/fs/cgroup/rdma ro,nosuid,nodev,noexec,relatime master:16 - cgroup cgroup rw,rdma
+3114 3111 0:35 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/devices ro,nosuid,nodev,noexec,relatime master:17 - cgroup cgroup rw,devices
+3115 3111 0:36 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/net_cls,net_prio ro,nosuid,nodev,noexec,relatime master:18 - cgroup cgroup rw,net_cls,net_prio
+3116 3111 0:37 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/cpu,cpuacct ro,nosuid,nodev,noexec,relatime master:19 - cgroup cgroup rw,cpu,cpuacct
+3117 3111 0:38 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/hugetlb ro,nosuid,nodev,noexec,relatime master:20 - cgroup cgroup rw,hugetlb
+3118 3111 0:39 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/pids ro,nosuid,nodev,noexec,relatime master:21 - cgroup cgroup rw,pids
+3119 3111 0:40 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/cpuset ro,nosuid,nodev,noexec,relatime master:22 - cgroup cgroup rw,cpuset
+3120 3111 0:41 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/memory ro,nosuid,nodev,noexec,relatime master:23 - cgroup cgroup rw,memory
+3121 3111 0:42 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/freezer ro,nosuid,nodev,noexec,relatime master:24 - cgroup cgroup rw,freezer
+3122 3111 0:43 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/blkio ro,nosuid,nodev,noexec,relatime master:25 - cgroup cgroup rw,blkio
+3123 3111 0:44 /kubepods/burstable/pod51d1885e-187c-4563-a51e-2cccf685610c/794b58c8a6dff2d8313df105c011868f33584884d6dd3384a5ebc570fd6b8b9b /sys/fs/cgroup/perf_event ro,nosuid,nodev,noexec,relatime master:26 - cgroup cgroup rw,perf_event
+3124 3108 0:311 / /dev/mqueue rw,nosuid,nodev,noexec,relatime - mqueue mqueue rw
+3125 3108 259:2 /var/lib/kubelet/pods/51d1885e-187c-4563-a51e-2cccf685610c/containers/kafka/628906d4 /dev/termination-log rw,relatime - ext4 /dev/nvme0n1p2 rw
+3126 3106 259:2 /mnt/nvme0/vol3 /bitnami/kafka rw,relatime - ext4 /dev/nvme0n1p2 rw
+3127 3106 259:2 /var/lib/kubelet/pods/51d1885e-187c-4563-a51e-2cccf685610c/volumes/kubernetes.io~configmap/scripts/..2020_11_24_08_56_47.305546261/setup.sh /scripts/setup.sh ro,relatime - ext4 /dev/nvme0n1p2 rw
+3128 3106 259:2 /var/lib/docker/containers/590f851f378ca534e46933199a7e7a914f4d23c125612753765acd709dfaceb6/resolv.conf /etc/resolv.conf rw,relatime - ext4 /dev/nvme0n1p2 rw
+3129 3106 259:2 /var/lib/docker/containers/590f851f378ca534e46933199a7e7a914f4d23c125612753765acd709dfaceb6/hostname /etc/hostname rw,relatime - ext4 /dev/nvme0n1p2 rw
+3130 3106 259:2 /var/lib/kubelet/pods/51d1885e-187c-4563-a51e-2cccf685610c/etc-hosts /etc/hosts rw,relatime - ext4 /dev/nvme0n1p2 rw
+3131 3108 0:310 / /dev/shm rw,nosuid,nodev,noexec,relatime - tmpfs shm rw,size=65536k
+3132 3106 0:308 / /run/secrets/kubernetes.io/serviceaccount ro,relatime - tmpfs tmpfs rw
+2927 3107 0:329 /bus /proc/bus ro,relatime - proc proc rw
+2928 3107 0:329 /fs /proc/fs ro,relatime - proc proc rw
+2929 3107 0:329 /irq /proc/irq ro,relatime - proc proc rw
+2930 3107 0:329 /sys /proc/sys ro,relatime - proc proc rw
+2931 3107 0:329 /sysrq-trigger /proc/sysrq-trigger ro,relatime - proc proc rw
+2932 3107 0:333 / /proc/acpi ro,relatime - tmpfs tmpfs ro
+2933 3107 0:330 /null /proc/kcore rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+2934 3107 0:330 /null /proc/keys rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+2935 3107 0:330 /null /proc/timer_list rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+2936 3107 0:330 /null /proc/sched_debug rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+2937 3107 0:334 / /proc/scsi ro,relatime - tmpfs tmpfs ro
+2977 3110 0:335 / /sys/firmware ro,relatime - tmpfs tmpfs ro

@@ -1,0 +1,11 @@
+11:perf_event:/
+10:devices:/system.slice/ssh.service
+9:freezer:/
+8:cpuset:/
+7:cpu,cpuacct:/system.slice/ssh.service
+6:blkio:/system.slice/ssh.service
+5:memory:/system.slice/ssh.service
+4:hugetlb:/
+3:net_cls,net_prio:/
+2:pids:/system.slice/ssh.service
+1:name=systemd:/system.slice/ssh.service
