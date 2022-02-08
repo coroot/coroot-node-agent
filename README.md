@@ -30,6 +30,8 @@ At the moment the following sources are supported:
 * Dockerd (JSON file driver)
 * Containerd (CRI logs)
 
+To learn more about automated log clustering, check out the blog post "[Mining metrics from unstructured logs](https://coroot.com/blog/mining-logs-from-unstructured-logs)".
+
 ### Delay accounting
 
 [Delay accounting](https://www.kernel.org/doc/html/latest/accounting/delay-accounting.html) allows engineers to accurately
