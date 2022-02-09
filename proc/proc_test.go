@@ -53,5 +53,7 @@ func TestGetSockets(t *testing.T) {
 		{Inode: "8039432", SAddr: ipp("0.0.0.0:5432"), DAddr: ipp("0.0.0.0:0"), Listen: true},
 		{Inode: "8134154", SAddr: ipp("172.17.0.3:5432"), DAddr: ipp("172.17.0.4:36332"), Listen: false},
 		{Inode: "8039433", SAddr: ipp("[::]:5432"), DAddr: ipp("[::]:0"), Listen: true},
+		{Inode: "11139979", SAddr: ipp("[fe80::48cb:8b57:3c30:e6ac]:8080"), DAddr: ipp("[::]:0"), Listen: true},
+		{Inode: "11154515", SAddr: ipp("127.0.0.1:8081"), DAddr: ipp("[::]:0"), Listen: true},
 	}, res)
 }

@@ -97,9 +97,13 @@ func decodeAddr(src []byte) netaddr.IPPort {
 	if _, err := hex.Decode(port, src[col+1:]); err != nil {
 		return netaddr.IPPort{}
 	}
-	for i, j := 0, len(ip)-1; i < j; i, j = i+1, j-1 {
-		ip[i], ip[j] = ip[j], ip[i]
+
+	var v uint32
+	for i := 0; i < len(ip); i += 4 {
+		v = binary.BigEndian.Uint32(ip[i : i+4])
+		binary.LittleEndian.PutUint32(ip[i:i+4], v)
 	}
+
 	ipp, ok := netaddr.FromStdIP(net.IP(ip))
 	if !ok {
 		return netaddr.IPPort{}
