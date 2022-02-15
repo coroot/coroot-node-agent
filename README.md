@@ -15,6 +15,9 @@ Exported metrics are useful for:
 * Detecting connections errors from one service to another.
 * Measuring network latency between containers, nodes and availability zones.
 
+Related blog posts:
+ * [Building a service map using eBPF](https://coroot.com/blog/building-a-service-map-using-ebpf)
+
 ### Log patterns extraction
 
 Log management is usually quite expensive. In most cases, you do not need to analyze each event individually.
