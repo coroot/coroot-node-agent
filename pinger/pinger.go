@@ -133,14 +133,8 @@ func send(conn *net.IPConn, seq int, ip net.Addr) error {
 	return err
 }
 
-func getTxTimestamp(socketFd int) (time.Time, error) {
+func getTimestampFromOutOfBandData(oob []byte, oobn int) (time.Time, error) {
 	var t time.Time
-	pktBuf := make([]byte, 1024)
-	oob := make([]byte, 1024)
-	_, oobn, _, _, err := syscall.Recvmsg(socketFd, pktBuf, oob, syscall.MSG_ERRQUEUE)
-	if err != nil {
-		return t, err
-	}
 	cms, err := syscall.ParseSocketControlMessage(oob[:oobn])
 	if err != nil {
 		return t, err
@@ -154,7 +148,18 @@ func getTxTimestamp(socketFd int) (time.Time, error) {
 			return time.Unix(tv.Unix()), nil
 		}
 	}
-	return t, errors.New("empty response")
+	return t, errors.New("no timestamp found")
+}
+
+func getTxTimestamp(socketFd int) (time.Time, error) {
+	pktBuf := make([]byte, 1024)
+	oob := make([]byte, 1024)
+	var t time.Time
+	_, oobn, _, _, err := syscall.Recvmsg(socketFd, pktBuf, oob, syscall.MSG_ERRQUEUE)
+	if err != nil {
+		return t, err
+	}
+	return getTimestampFromOutOfBandData(oob, oobn)
 }
 
 func receive(conn *net.IPConn) (*net.IPAddr, *icmp.Echo, time.Time, error) {
@@ -174,7 +179,7 @@ func receive(conn *net.IPConn) (*net.IPAddr, *icmp.Echo, time.Time, error) {
 		return nil, nil, ts, err
 	}
 
-	if ts, err = getRxTimestamp(oob, oobn); err != nil {
+	if ts, err = getTimestampFromOutOfBandData(oob, oobn); err != nil {
 		return nil, nil, ts, fmt.Errorf("failed to get RX timestamp: %s", err)
 	}
 
@@ -203,24 +208,6 @@ func extractEchoFromPacket(pktBuf []byte, n int) (*icmp.Echo, error) {
 		return nil, fmt.Errorf("malformed ICMP message body: %T", m.Body)
 	}
 	return echo, nil
-}
-
-func getRxTimestamp(oob []byte, oobn int) (time.Time, error) {
-	var ts time.Time
-	cms, err := syscall.ParseSocketControlMessage(oob[:oobn])
-	if err != nil {
-		return ts, err
-	}
-	for _, cm := range cms {
-		if cm.Header.Level == syscall.SOL_SOCKET && cm.Header.Type == syscall.SO_TIMESTAMP {
-			var tv syscall.Timeval
-			if err := binary.Read(bytes.NewBuffer(cm.Data), binary.LittleEndian, &tv); err != nil {
-				return ts, err
-			}
-			return time.Unix(tv.Unix()), nil
-		}
-	}
-	return ts, errors.New("invalid out-of-band data")
 }
 
 func openConn() (*net.IPConn, error) {
