@@ -9,6 +9,7 @@ import (
 	"github.com/vishvananda/netns"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/sys/unix"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 	"net"
@@ -19,11 +20,8 @@ import (
 )
 
 const (
-	pingReplyPollTimeout         = 10 * time.Millisecond
-	protocolICMP                 = 1 // Internet Control Message
-	SOF_TIMESTAMPING_TX_SOFTWARE = 1 << 1
-	SOF_TIMESTAMPING_TX_SCHED    = 1 << 8
-	SOF_TIMESTAMPING_RX_SOFTWARE = 1 << 3
+	pingReplyPollTimeout = 10 * time.Millisecond
+	protocolICMP         = 1 // Internet Control Message
 )
 
 var (
@@ -72,7 +70,7 @@ func Ping(ns netns.NsHandle, originNs netns.NsHandle, targets []netaddr.IP, time
 			if strings.HasPrefix(err.Error(), "resource temporarily unavailable") {
 				continue
 			}
-			return nil, fmt.Errorf("failed to get RX timestamp: %s", err)
+			return nil, fmt.Errorf("failed to get TX timestamp: %s", err)
 		}
 		ids[ip] = pkt
 	}
@@ -134,21 +132,20 @@ func send(conn *net.IPConn, seq int, ip net.Addr) error {
 }
 
 func getTimestampFromOutOfBandData(oob []byte, oobn int) (time.Time, error) {
-	var t time.Time
 	cms, err := syscall.ParseSocketControlMessage(oob[:oobn])
 	if err != nil {
-		return t, err
+		return time.Time{}, err
 	}
 	for _, cm := range cms {
-		if cm.Header.Level == syscall.SOL_SOCKET && cm.Header.Type == syscall.SO_TIMESTAMP {
-			var tv syscall.Timeval
-			if err := binary.Read(bytes.NewBuffer(cm.Data), binary.LittleEndian, &tv); err != nil {
-				return t, err
+		if cm.Header.Level == syscall.SOL_SOCKET || cm.Header.Type == syscall.SO_TIMESTAMPING {
+			var t unix.ScmTimestamping
+			if err := binary.Read(bytes.NewBuffer(cm.Data), binary.LittleEndian, &t); err != nil {
+				return time.Time{}, err
 			}
-			return time.Unix(tv.Unix()), nil
+			return time.Unix(t.Ts[0].Unix()), nil
 		}
 	}
-	return t, errors.New("no timestamp found")
+	return time.Time{}, fmt.Errorf("no timestamp found")
 }
 
 func getTxTimestamp(socketFd int) (time.Time, error) {
@@ -222,19 +219,16 @@ func openConn() (*net.IPConn, error) {
 	}
 	defer f.Close()
 	fd := int(f.Fd())
-
-	flags := SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_TX_SCHED | SOF_TIMESTAMPING_RX_SOFTWARE
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TIMESTAMPING, flags); err != nil {
-		return nil, err
-	}
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TIMESTAMP, 1); err != nil {
+	flags := unix.SOF_TIMESTAMPING_SOFTWARE | unix.SOF_TIMESTAMPING_RX_SOFTWARE | unix.SOF_TIMESTAMPING_TX_SCHED |
+		unix.SOF_TIMESTAMPING_OPT_CMSG | unix.SOF_TIMESTAMPING_OPT_TSONLY
+	if err := syscall.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_TIMESTAMPING, flags); err != nil {
 		return nil, err
 	}
 	timeout := syscall.Timeval{Sec: 0, Usec: 1000}
-	if err := syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO, &timeout); err != nil {
+	if err := syscall.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &timeout); err != nil {
 		return nil, err
 	}
-	if err := syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_SNDTIMEO, &timeout); err != nil {
+	if err := syscall.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO, &timeout); err != nil {
 		return nil, err
 	}
 	return ipconn, nil
