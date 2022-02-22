@@ -230,7 +230,6 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	listens := c.getListens(netNs)
-	klog.Infof("got listens for %s ns=%s: %v", c.cgroup.Id, netNs.UniqueId(), listens)
 	for addr, open := range listens {
 		ch <- gauge(metrics.NetListenInfo, float64(open), addr.String(), "")
 	}

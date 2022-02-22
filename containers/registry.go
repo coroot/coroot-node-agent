@@ -119,7 +119,6 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			if !more {
 				return
 			}
-			klog.Infoln(e)
 			switch e.Type {
 			case ebpftracer.EventTypeProcessStart:
 				c, seen := r.containersByPid[e.Pid]
@@ -192,10 +191,8 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 
 func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 	if c, seen := r.containersByPid[pid]; c != nil {
-		klog.Infof("got container by pid %d -> %s", pid, c.cgroup.Id)
 		return c
 	} else if seen { // ignored
-		klog.Infof("ignored container for pid %d", pid)
 		return nil
 	}
 	cg, err := proc.ReadCgroup(pid)
