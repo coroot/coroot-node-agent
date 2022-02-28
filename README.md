@@ -1,6 +1,7 @@
 # Coroot-node-agent
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/coroot/coroot-node-agent)](https://goreportcard.com/report/github.com/coroot/coroot-node-agent)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 The agent gathers metrics related to a node and the containers running on it, and it exposes them in the Prometheus format.
 
