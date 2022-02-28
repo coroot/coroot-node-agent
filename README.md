@@ -1,5 +1,7 @@
 # Coroot-node-agent
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/coroot/coroot-node-agent)](https://goreportcard.com/report/github.com/coroot/coroot-node-agent)
+
 The agent gathers metrics related to a node and the containers running on it, and it exposes them in the Prometheus format.
 
 It uses eBPF to track container related events such as TCP connects, so the minimum supported Linux kernel version is 4.16.
