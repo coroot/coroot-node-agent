@@ -7,6 +7,8 @@ The agent gathers metrics related to a node and the containers running on it, an
 
 It uses eBPF to track container related events such as TCP connects, so the minimum supported Linux kernel version is 4.16.
 
+<img src="https://coroot.com/static/img/blog/ebpf.svg" width="800" />
+
 ## Features
 
 ### TCP connection tracing
