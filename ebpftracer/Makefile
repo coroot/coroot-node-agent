@@ -4,7 +4,7 @@ build:
 	docker cp $(shell docker create --rm ebpftracer):/tmp/ebpf.go ./ebpf.go
 	@echo
 
-test: test_vm1 test_vm2 test_vm3
+test: test_vm1 test_vm2 test_vm3 test_vm4
 
 define test_in_vm
 	@echo ===TESTING IN $(1)===
@@ -20,6 +20,9 @@ test_vm2: build
 
 test_vm3: build
 	$(call test_in_vm,ubuntu2010)
+
+test_vm4: build
+	$(call test_in_vm,ubuntu2110)
 
 vms_start:
 	vagrant up

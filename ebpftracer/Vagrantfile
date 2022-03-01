@@ -28,4 +28,7 @@ Vagrant.configure("2") do |config|
 	config.vm.define "ubuntu2010" do |ubuntu2010|
 		ubuntu2010.vm.box = "generic/ubuntu2010"
     end
+    config.vm.define "ubuntu2110" do |ubuntu2110|
+        ubuntu2110.vm.box = "generic/ubuntu2110"
+    end
 end

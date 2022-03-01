@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/containerd/cgroups"
+	cgroupsV2 "github.com/containerd/cgroups/v2"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,14 +72,24 @@ func TestProcessEvents(t *testing.T) {
 	assert.Equal(t, Event{Type: EventTypeProcessExit, Pid: uint32(p2.Process.Pid)}, *getEvent())
 
 	var limit int64 = 200 * 1024 * 1024
-	control, err := cgroups.New(cgroups.V1, cgroups.StaticPath("/program"), &specs.LinuxResources{
-		Memory: &specs.LinuxMemory{Limit: &limit},
-	})
-	require.NoError(t, err)
-	defer control.Delete()
 	// p3 should be killed by the OOM killer, because 300 MB > 200 MB cgroup limit
-	p3 := exec.Command("cgexec", "-g", "memory:program", program, "300", "1s")
-	require.Error(t, p3.Run())
+	p3 := exec.Command(program, "300", "3s")
+	require.NoError(t, p3.Start())
+	switch cgroups.Mode() {
+	case cgroups.Legacy, cgroups.Hybrid:
+		control, err := cgroups.New(cgroups.V1, cgroups.StaticPath("/program"), &specs.LinuxResources{
+			Memory: &specs.LinuxMemory{Limit: &limit},
+		})
+		require.NoError(t, err)
+		defer control.Delete()
+		require.NoError(t, control.Add(cgroups.Process{Pid: p3.Process.Pid}))
+	case cgroups.Unified:
+		control, err := cgroupsV2.NewManager("/sys/fs/cgroup", "/program", &cgroupsV2.Resources{Memory: &cgroupsV2.Memory{Max: &limit}})
+		require.NoError(t, err)
+		defer control.Delete()
+		require.NoError(t, control.AddProc(uint64(p3.Process.Pid)))
+	}
+	require.Error(t, p3.Wait())
 	assert.Equal(t, Event{Type: EventTypeProcessStart, Pid: uint32(p3.Process.Pid)}, *getEvent())
 	assert.Equal(t, Event{Type: EventTypeProcessExit, Reason: EventReasonOOMKill, Pid: uint32(p3.Process.Pid)}, *getEvent())
 
