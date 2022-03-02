@@ -23,6 +23,7 @@ Exported metrics are useful for:
 Related blog posts:
  * [Building a service map using eBPF](https://coroot.com/blog/building-a-service-map-using-ebpf)
  * [How ping measures network round-trip time accurately using SO_TIMESTAMPING](https://coroot.com/blog/how-to-ping)
+ * [The current state of eBPF portability](https://coroot.com/blog/ebpf-portability)
 ### Log patterns extraction
 
 Log management is usually quite expensive. In most cases, you do not need to analyze each event individually.
