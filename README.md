@@ -50,6 +50,13 @@ The agent gathers per-process counters through [Netlink](https://man7.org/linux/
 * [container_resources_cpu_delay_seconds_total](https://coroot.com/docs/metrics/node-agent#container_resources_cpu_delay_seconds_total)
 * [container_resources_disk_delay_seconds_total](https://coroot.com/docs/metrics/node-agent#container_resources_disk_delay_seconds_total)
 
+
+<img src="https://coroot.com/static/img/blog/delay_accounting_aggregation.svg" width="800" />
+
+Related blog posts:
+* [Delay accounting: an underrated feature of the Linux kernel](https://coroot.com/blog/linux-delay-accounting)
+
+
 ### Out-of-memory events tracing
 
 The [container_oom_kills_total](https://coroot.com/docs/metrics/node-agent#container_oom_kills_total) metric shows that a container has been terminated by the OOM killer.
