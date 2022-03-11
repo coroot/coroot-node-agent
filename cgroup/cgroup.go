@@ -18,6 +18,7 @@ var (
 
 	dockerIdRegexp      = regexp.MustCompile(`([a-z0-9]{64})`)
 	crioIdRegexp        = regexp.MustCompile(`crio-([a-z0-9]{64})`)
+	containerdIdRegexp  = regexp.MustCompile(`cri-containerd-([a-z0-9]{64})`)
 	lxcIdRegexp         = regexp.MustCompile(`/lxc/([^/]+)`)
 	systemSliceIdRegexp = regexp.MustCompile(`(/system\.slice/([^/]+))`)
 )
@@ -29,6 +30,7 @@ const (
 	ContainerTypeStandaloneProcess
 	ContainerTypeDocker
 	ContainerTypeCrio
+	ContainerTypeContainerd
 	ContainerTypeLxc
 	ContainerTypeSystemdService
 )
@@ -41,6 +43,8 @@ func (t ContainerType) String() string {
 		return "docker"
 	case ContainerTypeCrio:
 		return "crio"
+	case ContainerTypeContainerd:
+		return "cri-containerd"
 	case ContainerTypeLxc:
 		return "lxc"
 	case ContainerTypeSystemdService:
@@ -184,10 +188,14 @@ func containerByCgroup(path string) (ContainerType, string, error) {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid docker cgroup %s", path)
 		}
 		return ContainerTypeDocker, matches[1], nil
-	case "kubepods":
+	case "kubepods", "kubepods.slice":
 		crioMatches := crioIdRegexp.FindStringSubmatch(path)
 		if crioMatches != nil {
 			return ContainerTypeCrio, crioMatches[1], nil
+		}
+		containerdMatches := containerdIdRegexp.FindStringSubmatch(path)
+		if containerdMatches != nil {
+			return ContainerTypeContainerd, containerdMatches[1], nil
 		}
 		matches := dockerIdRegexp.FindStringSubmatch(path)
 		if matches == nil {
