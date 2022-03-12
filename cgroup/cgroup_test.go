@@ -79,6 +79,11 @@ func TestContainerByCgroup(t *testing.T) {
 	as.Equal("63425c4a8b4291744a79dd9011fddc7a1f8ffda61f65d72196aa01d00cae2e2e", id)
 	as.Nil(err)
 
+	typ, id, err = containerByCgroup("/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod3e61c214bc3ed9ff81e21474dd6cba17.slice/cri-containerd-c74b0f5062f0bc726cae1e9369ad4a95deed6b298d247f0407475adb23fa3190")
+	as.Equal(typ, ContainerTypeContainerd)
+	as.Equal("c74b0f5062f0bc726cae1e9369ad4a95deed6b298d247f0407475adb23fa3190", id)
+	as.Nil(err)
+
 	typ, id, err = containerByCgroup("/system.slice/system-serial\\x2dgetty.slice")
 	as.Equal(typ, ContainerTypeSystemdService)
 	as.Equal("/system.slice/system-serial\\x2dgetty.slice", id)

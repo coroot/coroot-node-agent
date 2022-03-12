@@ -251,7 +251,7 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 	if cg.ContainerType == cgroup.ContainerTypeSystemdService {
 		return ContainerID(cg.ContainerId)
 	}
-	if cg.ContainerType != cgroup.ContainerTypeDocker {
+	if cg.ContainerType != cgroup.ContainerTypeDocker && cg.ContainerType != cgroup.ContainerTypeContainerd {
 		return ""
 	}
 	if md.labels["io.kubernetes.pod.name"] != "" {
@@ -271,7 +271,7 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 }
 
 func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
-	if cg.ContainerType != cgroup.ContainerTypeDocker {
+	if cg.ContainerType != cgroup.ContainerTypeDocker && cg.ContainerType != cgroup.ContainerTypeContainerd {
 		return &ContainerMetadata{}, nil
 	}
 	var dockerdErr error
