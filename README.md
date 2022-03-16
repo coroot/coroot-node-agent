@@ -76,6 +76,9 @@ Collected info:
 * LifeCycle: on-demand/spot (AWS and GCP only)
 * Private & Public IP addresses
 
+Related blog posts:
+* [Gathering cloud instance metadata in AWS, GCP and Azure](https://coroot.com/blog/cloud-metadata)
+
 ## Run
 
 ### Requirements
