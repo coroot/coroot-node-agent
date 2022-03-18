@@ -44,6 +44,17 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 	assert.Equal(t, "17db96a24ae1e9dd57143e62b1cb0d2d35e693c65c774c7470e87b0572e07c1a", cg.ContainerId)
 	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
 
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/400/cgroup"))
+	assert.Nil(t, err)
+	assert.Equal(t, "/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod8712f785_1a3e_41ec_a00b_e2dcc77431cb.slice/docker-73051af271105c07e1f493b34856a77e665e3b0b4fc72f76c807dfbffeb881bd.scope", cg.Id)
+	assert.Equal(t, "73051af271105c07e1f493b34856a77e665e3b0b4fc72f76c807dfbffeb881bd", cg.ContainerId)
+	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
+
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/500/cgroup"))
+	assert.Nil(t, err)
+	assert.Equal(t, "/system.slice/docker-ba7b10d15d16e10e3de7a2dcd408a3d971169ae303f46cfad4c5453c6326fee2.scope", cg.Id)
+	assert.Equal(t, "ba7b10d15d16e10e3de7a2dcd408a3d971169ae303f46cfad4c5453c6326fee2", cg.ContainerId)
+	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
 }
 
 func TestContainerByCgroup(t *testing.T) {

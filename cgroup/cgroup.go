@@ -170,7 +170,9 @@ func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
 			cg.subsystems[cgType] = parts[2]
 		}
 	}
-	cg.Id = cg.subsystems["cpu"]
+	if cg.Id = cg.subsystems["cpu"]; cg.Id == "" {
+		cg.Id = cg.subsystems[""]
+	}
 	if cg.ContainerType, cg.ContainerId, err = containerByCgroup(cg.Id); err != nil {
 		return nil, err
 	}
@@ -178,17 +180,22 @@ func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
 }
 
 func containerByCgroup(path string) (ContainerType, string, error) {
-	prefix := strings.Split(strings.TrimLeft(path, "/"), "/")[0]
-	switch prefix {
-	case "", "user.slice", "init.scope":
+	parts := strings.Split(strings.TrimLeft(path, "/"), "/")
+	if len(parts) < 2 {
 		return ContainerTypeStandaloneProcess, "", nil
-	case "docker":
+	}
+	prefix := parts[0]
+	if prefix == "user.slice" || prefix == "init.scope" {
+		return ContainerTypeStandaloneProcess, "", nil
+	}
+	if prefix == "docker" || (prefix == "system.slice" && strings.HasPrefix(parts[1], "docker")) {
 		matches := dockerIdRegexp.FindStringSubmatch(path)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid docker cgroup %s", path)
 		}
 		return ContainerTypeDocker, matches[1], nil
-	case "kubepods", "kubepods.slice":
+	}
+	if prefix == "kubepods" || prefix == "kubepods.slice" {
 		crioMatches := crioIdRegexp.FindStringSubmatch(path)
 		if crioMatches != nil {
 			return ContainerTypeCrio, crioMatches[1], nil
@@ -202,13 +209,15 @@ func containerByCgroup(path string) (ContainerType, string, error) {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid docker cgroup %s", path)
 		}
 		return ContainerTypeDocker, matches[1], nil
-	case "lxc":
+	}
+	if prefix == "lxc" {
 		matches := lxcIdRegexp.FindStringSubmatch(path)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid lxc cgroup %s", path)
 		}
 		return ContainerTypeLxc, matches[1], nil
-	case "system.slice":
+	}
+	if prefix == "system.slice" {
 		matches := systemSliceIdRegexp.FindStringSubmatch(path)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid systemd cgroup %s", path)
