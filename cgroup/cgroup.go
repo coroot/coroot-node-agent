@@ -23,6 +23,13 @@ var (
 	systemSliceIdRegexp = regexp.MustCompile(`(/system\.slice/([^/]+))`)
 )
 
+type Version uint8
+
+const (
+	V1 Version = iota
+	V2
+)
+
 type ContainerType uint8
 
 const (
@@ -68,6 +75,7 @@ type Stats struct {
 
 type Cgroup struct {
 	Id            string
+	Version       Version
 	ContainerType ContainerType
 	ContainerId   string
 
@@ -170,8 +178,11 @@ func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
 			cg.subsystems[cgType] = parts[2]
 		}
 	}
-	if cg.Id = cg.subsystems["cpu"]; cg.Id == "" {
+	if cg.Id = cg.subsystems["cpu"]; cg.Id != "" {
+		cg.Version = V1
+	} else {
 		cg.Id = cg.subsystems[""]
+		cg.Version = V2
 	}
 	if cg.ContainerType, cg.ContainerId, err = containerByCgroup(cg.Id); err != nil {
 		return nil, err
