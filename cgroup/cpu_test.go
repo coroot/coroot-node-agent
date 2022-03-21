@@ -6,34 +6,32 @@ import (
 	"testing"
 )
 
-func TestCgroup_CpuQuotaCores(t *testing.T) {
+func TestCgroup_CpuStat(t *testing.T) {
 	cgRoot = "fixtures/cgroup"
 
 	cg, _ := NewFromProcessCgroupFile(path.Join("fixtures/proc/100/cgroup"))
-	quota, err := cg.CpuQuotaCores()
+	s, err := cg.CpuStat()
 	assert.Nil(t, err)
-	assert.Equal(t, -1., quota)
+	assert.Equal(t, 0., s.LimitCores)
+	assert.Equal(t, 26778.913419246, s.UsageSeconds)
 
 	cg, _ = NewFromProcessCgroupFile(path.Join("fixtures/proc/200/cgroup"))
-	quota, err = cg.CpuQuotaCores()
+	s, err = cg.CpuStat()
 	assert.Nil(t, err)
-	assert.Equal(t, 1.5, quota)
-}
+	assert.Equal(t, 1.5, s.LimitCores)
+	assert.Equal(t, 254005.032764376, s.ThrottledTimeSeconds)
 
-func TestCgroup_CpuUsageSeconds(t *testing.T) {
-	cgRoot = "fixtures/cgroup"
-
-	cg, _ := NewFromProcessCgroupFile(path.Join("fixtures/proc/100/cgroup"))
-	usage, err := cg.CpuUsageSeconds()
+	cg, _ = NewFromProcessCgroupFile(path.Join("fixtures/proc/400/cgroup"))
+	s, err = cg.CpuStat()
 	assert.Nil(t, err)
-	assert.Equal(t, 26778.913419246, usage)
-}
+	assert.Equal(t, 0.1, s.LimitCores)
+	assert.Equal(t, 0.363166, s.ThrottledTimeSeconds)
+	assert.Equal(t, 3795.681254, s.UsageSeconds)
 
-func TestCgroup_ThrottlingStat(t *testing.T) {
-	cgRoot = "fixtures/cgroup"
-
-	cg, _ := NewFromProcessCgroupFile(path.Join("fixtures/proc/200/cgroup"))
-	tt, err := cg.ThrottledTimeSeconds()
+	cg, _ = NewFromProcessCgroupFile(path.Join("fixtures/proc/500/cgroup"))
+	s, err = cg.CpuStat()
 	assert.Nil(t, err)
-	assert.Equal(t, 254005.032764376, tt)
+	assert.Equal(t, 0., s.LimitCores)
+	assert.Equal(t, 0., s.ThrottledTimeSeconds)
+	assert.Equal(t, 5531.521992, s.UsageSeconds)
 }

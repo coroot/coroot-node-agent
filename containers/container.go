@@ -160,14 +160,12 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	ch <- counter(metrics.Restarts, float64(c.restarts))
 
-	if v, err := c.cgroup.CpuQuotaCores(); err == nil && v > 0 {
-		ch <- gauge(metrics.CPULimit, v)
-	}
-	if v, err := c.cgroup.CpuUsageSeconds(); err == nil {
-		ch <- counter(metrics.CPUUsage, v)
-	}
-	if v, err := c.cgroup.ThrottledTimeSeconds(); err == nil {
-		ch <- counter(metrics.ThrottledTime, v)
+	if cpu, err := c.cgroup.CpuStat(); err == nil {
+		if cpu.LimitCores > 0 {
+			ch <- gauge(metrics.CPULimit, cpu.LimitCores)
+		}
+		ch <- counter(metrics.CPUUsage, cpu.UsageSeconds)
+		ch <- counter(metrics.ThrottledTime, cpu.ThrottledTimeSeconds)
 	}
 
 	if taskstatsClient != nil {
