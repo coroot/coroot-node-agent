@@ -187,7 +187,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	if disks, err := node.GetDisks(); err == nil {
-		ioStat, _ := c.cgroup.BlkioStat()
+		ioStat, _ := c.cgroup.IOStat()
 		for majorMinor, mounts := range c.getMounts() {
 			dev := disks.GetParentBlockDevice(majorMinor)
 			if dev == nil {
