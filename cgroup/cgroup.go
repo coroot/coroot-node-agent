@@ -61,93 +61,13 @@ func (t ContainerType) String() string {
 	}
 }
 
-type Stats struct {
-	CpuUsageSeconds      float64
-	ThrottledTimeSeconds float64
-	CpuQuotaCores        float64
-
-	MemoryRssBytes   float64
-	MemoryCacheBytes float64
-	MemoryLimitBytes float64
-
-	Blkio map[string]BlkioStat
-}
-
 type Cgroup struct {
 	Id            string
 	Version       Version
 	ContainerType ContainerType
 	ContainerId   string
 
-	prevStats *Stats
-
 	subsystems map[string]string
-}
-
-func (cg *Cgroup) GetStats() *Stats {
-	cur, err := cg.getCurrentStats()
-	if err != nil {
-		if !common.IsNotExist(err) {
-			klog.Warningf("failed to get cgroup stats: %s", err)
-		}
-		return nil
-	}
-	var res *Stats
-	if cg.prevStats != nil {
-		res = &Stats{
-			CpuUsageSeconds:      cur.CpuUsageSeconds - cg.prevStats.CpuUsageSeconds,
-			ThrottledTimeSeconds: cur.ThrottledTimeSeconds - cg.prevStats.ThrottledTimeSeconds,
-			CpuQuotaCores:        cur.CpuQuotaCores,
-			MemoryRssBytes:       cur.MemoryRssBytes,
-			MemoryCacheBytes:     cur.MemoryCacheBytes,
-			MemoryLimitBytes:     cur.MemoryLimitBytes,
-			Blkio:                map[string]BlkioStat{},
-		}
-		for majorMinor, stat := range cur.Blkio {
-			prev, ok := cg.prevStats.Blkio[majorMinor]
-			if !ok {
-				continue
-			}
-			res.Blkio[majorMinor] = BlkioStat{
-				ReadOps:      stat.ReadOps - prev.ReadOps,
-				WriteOps:     stat.WriteOps - prev.WriteOps,
-				ReadBytes:    stat.ReadBytes - prev.ReadBytes,
-				WrittenBytes: stat.WrittenBytes - prev.WrittenBytes,
-			}
-		}
-	}
-	cg.prevStats = cur
-	return res
-}
-
-func (cg *Cgroup) getCurrentStats() (*Stats, error) {
-	stats := &Stats{}
-	var err error
-	if stats.CpuUsageSeconds, err = cg.CpuUsageSeconds(); err != nil {
-		return nil, err
-	}
-	if stats.ThrottledTimeSeconds, err = cg.ThrottledTimeSeconds(); err != nil {
-		return nil, err
-	}
-	if stats.CpuQuotaCores, err = cg.CpuQuotaCores(); err != nil {
-		return nil, err
-	}
-	m, err := cg.MemoryStat()
-	if err != nil {
-		return nil, err
-	}
-	stats.MemoryRssBytes = float64(m.RSS)
-	stats.MemoryCacheBytes = float64(m.Cache)
-	l, err := cg.MemoryLimitBytes()
-	if err != nil {
-		return nil, err
-	}
-	stats.MemoryLimitBytes = float64(l)
-	stats.Blkio, err = cg.BlkioStat()
-	if err != nil {
-		return nil, err
-	}
-	return stats, nil
 }
 
 func (cg *Cgroup) CreatedAt() time.Time {

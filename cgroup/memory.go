@@ -9,12 +9,27 @@ const maxMemory = 1 << 62
 type MemoryStat struct {
 	RSS   uint64
 	Cache uint64
+	Limit uint64
 }
 
-func (cg *Cgroup) MemoryStat() (MemoryStat, error) {
+func (cg *Cgroup) MemoryStat() (*MemoryStat, error) {
+	if cg.Version == V1 {
+		return cg.memoryStatV1()
+	}
+	return cg.memoryStatV2()
+}
+
+func (cg *Cgroup) memoryStatV1() (*MemoryStat, error) {
 	vars, err := readVariablesFromFile(path.Join(cgRoot, "memory", cg.subsystems["memory"], "memory.stat"))
 	if err != nil {
-		return MemoryStat{}, err
+		return nil, err
+	}
+	limit, err := readUintFromFile(path.Join(cgRoot, "memory", cg.subsystems["memory"], "memory.limit_in_bytes"))
+	if err != nil {
+		return nil, err
+	}
+	if limit > maxMemory {
+		limit = 0
 	}
 	// Note from https://www.kernel.org/doc/Documentation/cgroup-v1/memory.txt:
 	// Only anonymous and swap cache memory is listed as part of 'rss' stat.
@@ -24,19 +39,26 @@ func (cg *Cgroup) MemoryStat() (MemoryStat, error) {
 	//	(Note: file and shmem may be shared among other cgroups. In that case,
 	//	 mapped_file is accounted only when the memory cgroup is owner of page
 	//	 cache.)
-	return MemoryStat{
+	return &MemoryStat{
 		RSS:   vars["rss"] + vars["mapped_file"],
 		Cache: vars["cache"],
+		Limit: limit,
 	}, nil
 }
 
-func (cg *Cgroup) MemoryLimitBytes() (uint64, error) {
-	limit, err := readUintFromFile(path.Join(cgRoot, "memory", cg.subsystems["memory"], "memory.limit_in_bytes"))
+func (cg *Cgroup) memoryStatV2() (*MemoryStat, error) {
+	current, err := readUintFromFile(path.Join(cgRoot, cg.subsystems[""], "memory.current"))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	if limit > maxMemory {
-		return 0, nil
+	vars, err := readVariablesFromFile(path.Join(cgRoot, cg.subsystems[""], "memory.stat"))
+	if err != nil {
+		return nil, err
 	}
-	return limit, nil
+	limit, _ := readUintFromFile(path.Join(cgRoot, cg.subsystems[""], "memory.max"))
+	return &MemoryStat{
+		RSS:   current - vars["file"],
+		Cache: vars["file"],
+		Limit: limit,
+	}, nil
 }

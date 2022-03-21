@@ -176,12 +176,12 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		ch <- counter(metrics.DiskDelay, float64(c.delays.disk)/float64(time.Second))
 	}
 
-	if v, err := c.cgroup.MemoryLimitBytes(); err == nil && v > 0 {
-		ch <- gauge(metrics.MemoryLimit, float64(v))
-	}
 	if s, err := c.cgroup.MemoryStat(); err == nil {
 		ch <- gauge(metrics.MemoryRss, float64(s.RSS))
 		ch <- gauge(metrics.MemoryCache, float64(s.Cache))
+		if s.Limit > 0 {
+			ch <- gauge(metrics.MemoryLimit, float64(s.Limit))
+		}
 	}
 
 	if c.oomKills > 0 {
