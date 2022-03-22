@@ -16,6 +16,8 @@ import (
 var (
 	cgRoot = *flags.CgroupRoot
 
+	baseCgroupPath = ""
+
 	dockerIdRegexp      = regexp.MustCompile(`([a-z0-9]{64})`)
 	crioIdRegexp        = regexp.MustCompile(`crio-([a-z0-9]{64})`)
 	containerdIdRegexp  = regexp.MustCompile(`cri-containerd-([a-z0-9]{64})`)
@@ -95,10 +97,11 @@ func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
 			continue
 		}
 		for _, cgType := range strings.Split(parts[1], ",") {
-			cg.subsystems[cgType] = parts[2]
+			cg.subsystems[cgType] = path.Join(baseCgroupPath, parts[2])
 		}
 	}
-	if cg.Id = cg.subsystems["cpu"]; cg.Id != "" {
+	if p := cg.subsystems["cpu"]; p != "" {
+		cg.Id = p
 		cg.Version = V1
 	} else {
 		cg.Id = cg.subsystems[""]
@@ -119,7 +122,7 @@ func containerByCgroup(path string) (ContainerType, string, error) {
 	if prefix == "user.slice" || prefix == "init.scope" {
 		return ContainerTypeStandaloneProcess, "", nil
 	}
-	if prefix == "docker" || (prefix == "system.slice" && strings.HasPrefix(parts[1], "docker")) {
+	if prefix == "docker" || (prefix == "system.slice" && strings.HasPrefix(parts[1], "docker-")) {
 		matches := dockerIdRegexp.FindStringSubmatch(path)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid docker cgroup %s", path)
