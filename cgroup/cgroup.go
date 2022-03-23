@@ -73,7 +73,11 @@ type Cgroup struct {
 }
 
 func (cg *Cgroup) CreatedAt() time.Time {
-	fi, err := os.Stat(path.Join(cgRoot, "cpu", cg.subsystems["cpu"]))
+	p := path.Join(cgRoot, cg.subsystems[""]) //v2
+	if cg.Version == V1 {
+		p = path.Join(cgRoot, "cpu", cg.subsystems["cpu"])
+	}
+	fi, err := os.Stat(p)
 	if err != nil {
 		if !common.IsNotExist(err) {
 			klog.Errorln(err)
