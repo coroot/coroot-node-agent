@@ -15,7 +15,7 @@ require (
 	github.com/containerd/fifo v1.0.0 // indirect
 	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2
-	github.com/coroot/logparser v1.0.0
+	github.com/coroot/logparser v1.0.4
 	github.com/docker/docker v20.10.8+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/florianl/go-conntrack v0.3.0
