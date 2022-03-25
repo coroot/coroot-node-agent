@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-var blockDevice = regexp.MustCompile(`^(dm-\d+|(s|h|xv|v)d[a-z]|md\d+|nvme\d+n\d+)`)
+var blockDevice = regexp.MustCompile(`^(dm-\d+|(s|h|xv|v)d[a-z]|md\d+|nvme\d+n\d+|rbd\d+)`)
 
 type DevStat struct {
 	Name             string

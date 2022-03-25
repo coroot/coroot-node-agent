@@ -47,7 +47,7 @@ func TestGetNodeDisks(t *testing.T) {
 	}
 
 	assert.Equal(t,
-		[]string{"dm-0", "md1", "nvme0n1", "nvme1n1", "sda", "sdb", "vda", "xvda"},
+		[]string{"dm-0", "md1", "nvme0n1", "nvme1n1", "rbd0", "rbd1", "sda", "sdb", "vda", "xvda"},
 		names(d.BlockDevices()),
 	)
 }
