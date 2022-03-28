@@ -74,7 +74,14 @@ func guessApplicationType(cmdline []byte) string {
 		return "cockroach"
 	case bytes.HasSuffix(cmd, []byte("prometheus")):
 		return "prometheus"
+	case bytes.HasSuffix(cmd, []byte("ceph-mon")) ||
+		bytes.HasSuffix(cmd, []byte("ceph-mgr")) ||
+		bytes.HasSuffix(cmd, []byte("ceph-osd")) ||
+		bytes.HasSuffix(cmd, []byte("cephcsi")):
+		return "ceph"
+	case bytes.HasSuffix(cmd, []byte("rook")):
+		return "rook"
 	}
-	//todo: ceph services, php-fpm, python, nodejs, java
+	//todo: php-fpm, python, nodejs, java
 	return ""
 }
