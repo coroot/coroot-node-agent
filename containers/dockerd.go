@@ -19,8 +19,7 @@ var (
 
 func DockerdInit() error {
 	c, err := client.NewClientWithOpts(
-		client.WithHost("unix://"+proc.HostPath("/run/docker.sock")),
-		client.WithVersion("1.12"),
+		client.WithHost("unix://" + proc.HostPath("/run/docker.sock")),
 	)
 	if err != nil {
 		return err
