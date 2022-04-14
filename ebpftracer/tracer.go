@@ -250,6 +250,7 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, e rawEvent) {
 		}
 		if rec.LostSamples > 0 {
 			klog.Errorln(name, "lost samples:", rec.LostSamples)
+			continue
 		}
 		if err := binary.Read(bytes.NewBuffer(rec.RawSample), binary.LittleEndian, e); err != nil {
 			klog.Warningln("failed to read msg:", err)

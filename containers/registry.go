@@ -55,6 +55,9 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, er
 	if err != nil {
 		return nil, err
 	}
+	if err := cgroup.Init(); err != nil {
+		return nil, err
+	}
 	if err := DockerdInit(); err != nil {
 		klog.Warningln(err)
 	}
@@ -149,7 +152,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 
 			case ebpftracer.EventTypeListenOpen:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onListenOpen(e.Pid, e.SrcAddr)
+					c.onListenOpen(e.Pid, e.SrcAddr, false)
 				} else {
 					klog.Infoln("TCP listen open from unknown container", e)
 				}

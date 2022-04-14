@@ -49,7 +49,3 @@ func ListPids() ([]uint32, error) {
 	}
 	return res, nil
 }
-
-func SetRoot(path string) {
-	root = path
-}

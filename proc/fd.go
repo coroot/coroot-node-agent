@@ -2,9 +2,42 @@ package proc
 
 import (
 	"os"
+	"path"
 	"strconv"
 	"strings"
 )
+
+type Fd struct {
+	Fd   uint32
+	Dest string
+
+	SocketInode string
+}
+
+func ReadFds(pid uint32) ([]Fd, error) {
+	fdDir := Path(pid, "fd")
+	entries, err := os.ReadDir(fdDir)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]Fd, 0, len(entries))
+	for _, entry := range entries {
+		fd, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		dest, err := os.Readlink(path.Join(fdDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var socketInode string
+		if strings.HasPrefix(dest, "socket:[") && strings.HasSuffix(dest, "]") {
+			socketInode = dest[len("socket:[") : len(dest)-1]
+		}
+		res = append(res, Fd{Fd: uint32(fd), Dest: dest, SocketInode: socketInode})
+	}
+	return res, nil
+}
 
 type FdInfo struct {
 	MntId string

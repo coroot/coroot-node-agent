@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	SetRoot("fixtures")
+	root = "fixtures"
 }
 
 func TestListPids(t *testing.T) {
@@ -28,6 +28,15 @@ func TestGetMountInfo(t *testing.T) {
 		"3129": {MajorMinor: "259:2", MountPoint: "/etc/hostname"},
 		"3130": {MajorMinor: "259:2", MountPoint: "/etc/hosts"},
 	}, res)
+}
+
+func TestReadFds(t *testing.T) {
+	fds, err := ReadFds(123)
+	require.NoError(t, err)
+	assert.Equal(t, []Fd{
+		{Fd: 4, Dest: "/var/lib/postgresql/data/pg_wal/000000010000000000000001"},
+		{Fd: 5, Dest: "socket:[321]", SocketInode: "321"},
+	}, fds)
 }
 
 func TestGetFdInfo(t *testing.T) {

@@ -3,13 +3,10 @@ package ebpftracer
 import (
 	"github.com/coroot/coroot-node-agent/proc"
 	"k8s.io/klog/v2"
-	"os"
-	"path"
-	"strconv"
 	"strings"
 )
 
-type fd struct {
+type file struct {
 	pid uint32
 	fd  uint32
 }
@@ -19,7 +16,7 @@ type sock struct {
 	proc.Sock
 }
 
-func readFds(pids []uint32) (fds []fd, socks []sock) {
+func readFds(pids []uint32) (files []file, socks []sock) {
 	nss := map[string]map[string]sock{}
 	for _, pid := range pids {
 		ns, err := proc.GetNetNs(pid)
@@ -41,28 +38,19 @@ func readFds(pids []uint32) (fds []fd, socks []sock) {
 			}
 		}
 
-		fdDir := proc.Path(pid, "fd")
-		entries, err := os.ReadDir(fdDir)
+		fds, err := proc.ReadFds(pid)
 		if err != nil {
 			continue
 		}
-		for _, entry := range entries {
-			dest, err := os.Readlink(path.Join(fdDir, entry.Name()))
-			if err != nil {
-				continue
-			}
+		for _, fd := range fds {
 			switch {
-			case strings.HasPrefix(dest, "socket:[") && strings.HasSuffix(dest, "]"):
-				inode := dest[len("socket:[") : len(dest)-1]
-				if s, ok := sockets[inode]; ok {
+			case fd.SocketInode != "":
+				if s, ok := sockets[fd.SocketInode]; ok {
 					s.pid = pid
 					socks = append(socks, s)
 				}
-			default:
-				i, err := strconv.Atoi(entry.Name())
-				if err == nil {
-					fds = append(fds, fd{pid: pid, fd: uint32(i)})
-				}
+			case strings.HasPrefix(fd.Dest, "/"):
+				files = append(files, file{pid: pid, fd: fd.Fd})
 			}
 		}
 	}

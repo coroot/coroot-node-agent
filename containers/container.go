@@ -334,15 +334,11 @@ func (c *Container) onFileOpen(pid uint32, fd uint32) {
 	}
 }
 
-func (c *Container) onListenOpen(pid uint32, addr netaddr.IPPort) {
-	netNs, err := proc.GetNetNs(pid)
-	isHostNs := err == nil && hostNetNsId == netNs.UniqueId()
-	_ = netNs.Close()
-	if addr.IP().IsLoopback() && !isHostNs {
-		return
+func (c *Container) onListenOpen(pid uint32, addr netaddr.IPPort, safe bool) {
+	if !safe {
+		c.lock.Lock()
+		defer c.lock.Unlock()
 	}
-	c.lock.Lock()
-	defer c.lock.Unlock()
 	if _, ok := c.listens[addr]; !ok {
 		c.listens[addr] = map[uint32]time.Time{}
 	}
@@ -641,7 +637,7 @@ func (c *Container) gc(now time.Time) {
 
 	established := map[AddrPair]struct{}{}
 	establishedDst := map[netaddr.IPPort]struct{}{}
-	listens := map[netaddr.IPPort]struct{}{}
+	listens := map[netaddr.IPPort]string{}
 	for pid := range c.pids {
 		sockets, err := proc.GetSockets(pid)
 		if err != nil {
@@ -649,7 +645,7 @@ func (c *Container) gc(now time.Time) {
 		}
 		for _, s := range sockets {
 			if s.Listen {
-				listens[s.SAddr] = struct{}{}
+				listens[s.SAddr] = s.Inode
 			} else {
 				established[AddrPair{src: s.SAddr, dst: s.DAddr}] = struct{}{}
 				establishedDst[s.DAddr] = struct{}{}
@@ -658,27 +654,7 @@ func (c *Container) gc(now time.Time) {
 		break
 	}
 
-	for addr, byPid := range c.listens {
-		_, open := listens[addr]
-		if open {
-			continue
-		}
-		for pid, closedAt := range byPid {
-			if closedAt.IsZero() {
-				byPid[pid] = now
-			}
-		}
-	}
-	for pid, addrs := range c.listens {
-		for addr, closedAt := range addrs {
-			if !closedAt.IsZero() && now.Sub(closedAt) > gcInterval {
-				delete(c.listens[pid], addr)
-			}
-		}
-		if len(c.listens[pid]) == 0 {
-			delete(c.listens, pid)
-		}
-	}
+	c.revalidateListens(now, listens)
 
 	for srcDst := range c.connectionsActive {
 		if _, ok := established[srcDst]; !ok {
@@ -700,6 +676,74 @@ func (c *Container) gc(now time.Time) {
 					delete(c.retransmits, d)
 				}
 			}
+		}
+	}
+}
+
+func (c *Container) revalidateListens(now time.Time, actualListens map[netaddr.IPPort]string) {
+	for addr, byPid := range c.listens {
+		if _, open := actualListens[addr]; open {
+			continue
+		}
+		klog.Warningln("deleting the outdated listen:", addr)
+		for pid, closedAt := range byPid {
+			if closedAt.IsZero() {
+				byPid[pid] = now
+			}
+		}
+	}
+
+	missingListens := map[netaddr.IPPort]string{}
+	for addr, inode := range actualListens {
+		byPids, found := c.listens[addr]
+		if !found {
+			missingListens[addr] = inode
+			continue
+		}
+		open := false
+		for _, closedAt := range byPids {
+			if closedAt.IsZero() {
+				open = true
+				break
+			}
+		}
+		if !open {
+			missingListens[addr] = inode
+		}
+	}
+
+	if len(missingListens) > 0 {
+		inodeToPid := map[string]uint32{}
+		for pid := range c.pids {
+			fds, err := proc.ReadFds(pid)
+			if err != nil {
+				continue
+			}
+			for _, fd := range fds {
+				if fd.SocketInode != "" {
+					inodeToPid[fd.SocketInode] = pid
+				}
+			}
+		}
+		for addr, inode := range missingListens {
+			pid, found := inodeToPid[inode]
+			if !found {
+				klog.Errorln("failed to determine pid for listen:", addr)
+				continue
+			}
+			klog.Warningln("missing listen found:", addr, pid)
+			c.onListenOpen(pid, addr, true)
+		}
+	}
+
+	for addr, pids := range c.listens {
+		for pid, closedAt := range pids {
+			if !closedAt.IsZero() && now.Sub(closedAt) > gcInterval {
+				delete(c.listens[addr], pid)
+			}
+		}
+		if len(c.listens[addr]) == 0 {
+			delete(c.listens, addr)
 		}
 	}
 }
