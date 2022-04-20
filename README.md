@@ -207,6 +207,15 @@ Flags:
 
 The collected metrics are described [here](https://coroot.com/docs/metrics/node-agent).
 
+## Coroot live demo
+
+Coroot turns telemetry data gathered by node-agent into answers about app issues and how to fix them.
+
+<img src="https://coroot.com/static/img/model.png" width="600" />
+
+Live demo is available at [https://coroot.com/demo](https://coroot.com/demo).
+
+
 ## License
 
 Coroot-node-agent is licensed under the [Apache License, Version 2.0](https://github.com/coroot/coroot-node-agent/blob/main/LICENSE).
