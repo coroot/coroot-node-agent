@@ -99,6 +99,21 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 	for {
 		select {
 		case now := <-gcTicker.C:
+			for pid, c := range r.containersByPid {
+				cg, err := proc.ReadCgroup(pid)
+				if err != nil {
+					delete(r.containersByPid, pid)
+					if c != nil {
+						c.onProcessExit(pid, false)
+					}
+					continue
+				}
+				if c != nil && cg.Id != c.cgroup.Id {
+					delete(r.containersByPid, pid)
+					c.onProcessExit(pid, false)
+				}
+			}
+
 			for id, c := range r.containersById {
 				if !c.Dead(now) {
 					continue
