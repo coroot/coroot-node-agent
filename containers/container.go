@@ -728,7 +728,6 @@ func (c *Container) revalidateListens(now time.Time, actualListens map[netaddr.I
 		for addr, inode := range missingListens {
 			pid, found := inodeToPid[inode]
 			if !found {
-				klog.Errorln("failed to determine pid for listen:", addr)
 				continue
 			}
 			klog.Warningln("missing listen found:", addr, pid)
