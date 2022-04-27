@@ -128,7 +128,6 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				switch { // possible pids wraparound + missed `process-exit` event
 				case c == nil && seen: // ignored
 					delete(r.containersByPid, e.Pid)
-					continue
 				case c != nil: // revalidating by cgroup
 					cg, err := proc.ReadCgroup(e.Pid)
 					if err != nil || cg.Id != c.cgroup.Id {
