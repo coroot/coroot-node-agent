@@ -35,27 +35,16 @@ type azureInstanceMetadata struct {
 }
 
 func getAzureMetadata() *CloudMetadata {
-	req, err := http.NewRequest(http.MethodGet, azureEndpoint, nil)
-	if err != nil {
-		klog.Errorln(err)
-		return nil
-	}
-	req.Header.Add("Metadata", "True")
-	q := req.URL.Query()
+	r, _ := http.NewRequest(http.MethodGet, azureEndpoint, nil)
+	r.Header.Add("Metadata", "True")
+	q := r.URL.Query()
 	q.Add("format", "json")
 	q.Add("api-version", "2021-05-01")
-	req.URL.RawQuery = q.Encode()
+	r.URL.RawQuery = q.Encode()
 
-	client := http.DefaultClient
-	client.Timeout = metadataServiceTimeout
-
-	resp, err := client.Do(req)
+	resp, err := httpGetWithTimeout(r)
 	if err != nil {
 		klog.Errorln(err)
-		return nil
-	}
-	if resp.StatusCode != 200 {
-		klog.Errorln("metadata service response:", resp.Status)
 		return nil
 	}
 	defer resp.Body.Close()

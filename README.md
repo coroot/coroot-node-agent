@@ -65,14 +65,15 @@ The [container_oom_kills_total](https://coroot.com/docs/metrics/node-agent#conta
 
 If a node is a cloud instance, the agent identifies a cloud provider and collects additional information using the related metadata services.
 
-Supported cloud providers: [AWS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html), [GCP](https://cloud.google.com/compute/docs/metadata/overview), [Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/linux/instance-metadata-service?tabs=linux)
+Supported cloud providers: [AWS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html), [GCP](https://cloud.google.com/compute/docs/metadata/overview), [Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/linux/instance-metadata-service?tabs=linux), [Hetzner](https://docs.hetzner.cloud/#server-metadata)
 
 Collected info:
 * AccountID
 * InstanceID
 * Instance/machine type
 * Region
-* AvailabilityZone + AvailabilityZoneId (AWS only)
+* AvailabilityZone
+* AvailabilityZoneId (AWS only)
 * LifeCycle: on-demand/spot (AWS and GCP only)
 * Private & Public IP addresses
 

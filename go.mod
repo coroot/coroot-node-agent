@@ -32,6 +32,7 @@ require (
 	golang.org/x/net v0.0.0-20210913180222-943fd674d43e
 	golang.org/x/sys v0.0.0-20210915083310-ed5796bab164
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
+	gopkg.in/yaml.v2 v2.4.0
 	inet.af/netaddr v0.0.0-20210903134321-85fa6c94624e
 	k8s.io/klog/v2 v2.20.0
 )

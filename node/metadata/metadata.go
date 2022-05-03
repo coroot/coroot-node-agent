@@ -1,7 +1,9 @@
 package metadata
 
 import (
+	"fmt"
 	"k8s.io/klog/v2"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ const (
 	CloudProviderAWS     CloudProvider = "AWS"
 	CloudProviderGCP     CloudProvider = "GCP"
 	CloudProviderAzure   CloudProvider = "Azure"
+	CloudProviderHetzner CloudProvider = "Hetzner"
 	CloudProviderUnknown CloudProvider = ""
 )
 
@@ -47,6 +50,11 @@ func getCloudProvider() CloudProvider {
 			return CloudProviderAzure
 		}
 	}
+	if vendor, err := os.ReadFile("/sys/class/dmi/id/sys_vendor"); err == nil {
+		if strings.TrimSpace(string(vendor)) == "Hetzner" {
+			return CloudProviderHetzner
+		}
+	}
 	return CloudProviderUnknown
 }
 
@@ -60,6 +68,22 @@ func GetInstanceMetadata() *CloudMetadata {
 		return getGcpMetadata()
 	case CloudProviderAzure:
 		return getAzureMetadata()
+	case CloudProviderHetzner:
+		return getHetznerMetadata()
 	}
 	return nil
+}
+
+func httpGetWithTimeout(r *http.Request) (*http.Response, error) {
+	client := http.DefaultClient
+	client.Timeout = metadataServiceTimeout
+	resp, err := client.Do(r)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		klog.Errorln()
+		return nil, fmt.Errorf("metadata service response: %s", resp.Status)
+	}
+	return resp, nil
 }
