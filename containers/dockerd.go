@@ -3,6 +3,7 @@ package containers
 import (
 	"context"
 	"fmt"
+	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/logparser"
 	"github.com/docker/docker/client"
@@ -44,13 +45,11 @@ func DockerdInspect(containerID string) (*ContainerMetadata, error) {
 	res := &ContainerMetadata{
 		name:        strings.TrimPrefix(c.Name, "/"),
 		labels:      c.Config.Labels,
-		volumes:     map[string]Volume{},
+		volumes:     map[string]string{},
 		hostListens: map[string][]netaddr.IPPort{},
 	}
 	for _, m := range c.Mounts {
-		if provisioner, volume := parseVolumeSource(m.Source); provisioner != "" && volume != "" {
-			res.volumes[m.Destination] = Volume{provisioner: provisioner, volume: volume}
-		}
+		res.volumes[m.Destination] = common.ParseKubernetesVolumeSource(m.Source)
 	}
 	if c.LogPath != "" && c.HostConfig.LogConfig.Type == "json-file" {
 		res.logPath = c.LogPath

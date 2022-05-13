@@ -29,15 +29,10 @@ type ContainerID string
 type ContainerMetadata struct {
 	name        string
 	labels      map[string]string
-	volumes     map[string]Volume
+	volumes     map[string]string
 	logPath     string
 	logDecoder  logparser.Decoder
 	hostListens map[string][]netaddr.IPPort
-}
-
-type Volume struct {
-	provisioner string
-	volume      string
 }
 
 type Delays struct {
@@ -194,8 +189,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 				continue
 			}
 			for mountPoint, fsStat := range mounts {
-				v := c.metadata.volumes[mountPoint]
-				dls := []string{mountPoint, dev.Name, v.provisioner, v.volume}
+				dls := []string{mountPoint, dev.Name, c.metadata.volumes[mountPoint]}
 				ch <- gauge(metrics.DiskSize, float64(fsStat.CapacityBytes), dls...)
 				ch <- gauge(metrics.DiskUsed, float64(fsStat.UsedBytes), dls...)
 				ch <- gauge(metrics.DiskReserved, float64(fsStat.ReservedBytes), dls...)

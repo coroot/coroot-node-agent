@@ -7,6 +7,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/pkg/cri/constants"
+	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/logparser"
 	"k8s.io/klog/v2"
@@ -45,7 +46,7 @@ func ContainerdInspect(containerID string) (*ContainerMetadata, error) {
 
 	res := &ContainerMetadata{
 		labels:  c.Labels,
-		volumes: map[string]Volume{},
+		volumes: map[string]string{},
 	}
 
 	var spec oci.Spec
@@ -53,9 +54,7 @@ func ContainerdInspect(containerID string) (*ContainerMetadata, error) {
 		klog.Warningln(err)
 	} else {
 		for _, m := range spec.Mounts {
-			if provisioner, volume := parseVolumeSource(m.Source); provisioner != "" && volume != "" {
-				res.volumes[m.Destination] = Volume{provisioner: provisioner, volume: volume}
-			}
+			res.volumes[m.Destination] = common.ParseKubernetesVolumeSource(m.Source)
 		}
 	}
 
