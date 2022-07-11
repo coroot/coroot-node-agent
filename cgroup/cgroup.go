@@ -20,7 +20,7 @@ var (
 
 	dockerIdRegexp      = regexp.MustCompile(`([a-z0-9]{64})`)
 	crioIdRegexp        = regexp.MustCompile(`crio-([a-z0-9]{64})`)
-	containerdIdRegexp  = regexp.MustCompile(`cri-containerd-([a-z0-9]{64})`)
+	containerdIdRegexp  = regexp.MustCompile(`cri-containerd[-:]([a-z0-9]{64})`)
 	lxcIdRegexp         = regexp.MustCompile(`/lxc/([^/]+)`)
 	systemSliceIdRegexp = regexp.MustCompile(`(/system\.slice/([^/]+))`)
 )
@@ -133,7 +133,7 @@ func containerByCgroup(path string) (ContainerType, string, error) {
 		}
 		return ContainerTypeDocker, matches[1], nil
 	}
-	if prefix == "kubepods" || prefix == "kubepods.slice" {
+	if strings.Contains(path, "kubepods") {
 		crioMatches := crioIdRegexp.FindStringSubmatch(path)
 		if crioMatches != nil {
 			return ContainerTypeCrio, crioMatches[1], nil

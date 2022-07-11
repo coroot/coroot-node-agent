@@ -231,7 +231,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		return nil
 	}
 	id := calcId(cg, md)
-	klog.Infof("calculated container id  %d -> %s -> %s", pid, cg.Id, id)
+	klog.Infof("calculated container id %d -> %s -> %s", pid, cg.Id, id)
 	if id == "" {
 		if cg.Id == "/init.scope" && pid != 1 {
 			klog.InfoS("ignoring without persisting", "cg", cg.Id, "pid", pid)
@@ -297,7 +297,7 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 		if err == nil {
 			return md, nil
 		}
-		klog.Warningln("failed to inspect container %s: %s", cg.ContainerId, err)
+		klog.Warningf("failed to inspect container %s: %s", cg.ContainerId, err)
 		dockerdErr = err
 	}
 	var containerdErr error
@@ -306,7 +306,7 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 		if err == nil {
 			return md, nil
 		}
-		klog.Warningln("failed to inspect container %s: %s", cg.ContainerId, err)
+		klog.Warningf("failed to inspect container %s: %s", cg.ContainerId, err)
 		containerdErr = err
 	}
 	return nil, fmt.Errorf("failed to interact with dockerd (%s) or with containerd (%s)", dockerdErr, containerdErr)

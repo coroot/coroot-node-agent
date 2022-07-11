@@ -27,6 +27,9 @@ func DockerdInit() error {
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), dockerdTimeout)
 	defer cancelFn()
+	if _, err := c.Ping(ctx); err != nil {
+		return err
+	}
 	c.NegotiateAPIVersion(ctx)
 	dockerdClient = c
 	return nil
