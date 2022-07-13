@@ -575,8 +575,8 @@ func (c *Container) runLogParser(logPath string) {
 	if *flags.NoParseLogs {
 		return
 	}
-	switch {
-	case logPath != "":
+
+	if logPath != "" {
 		if c.logParsers[logPath] != nil {
 			return
 		}
@@ -590,8 +590,11 @@ func (c *Container) runLogParser(logPath string) {
 		}
 		klog.InfoS("started varlog logparser", "cg", c.cgroup.Id, "log", logPath)
 		c.logParsers[logPath] = &LogParser{parser: parser, stop: reader.Stop}
+		return
+	}
 
-	case c.cgroup.ContainerType == cgroup.ContainerTypeSystemdService:
+	switch c.cgroup.ContainerType {
+	case cgroup.ContainerTypeSystemdService:
 		ch := make(chan logparser.LogEntry)
 		if err := JournaldSubscribe(c.cgroup, ch); err != nil {
 			klog.Warningln(err)
@@ -604,7 +607,7 @@ func (c *Container) runLogParser(logPath string) {
 		klog.InfoS("started journald logparser", "cg", c.cgroup.Id)
 		c.logParsers["journald"] = &LogParser{parser: parser, stop: stop}
 
-	case c.cgroup.ContainerType == cgroup.ContainerTypeDocker:
+	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd:
 		if c.metadata.logPath == "" {
 			return
 		}
