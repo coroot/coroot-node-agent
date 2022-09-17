@@ -11,6 +11,7 @@ import (
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/logparser"
 	"k8s.io/klog/v2"
+	"strings"
 	"time"
 )
 
@@ -21,13 +22,22 @@ var (
 )
 
 func ContainerdInit() error {
-	c, err := containerd.New(proc.HostPath("/run/containerd/containerd.sock"),
-		containerd.WithDefaultNamespace(constants.K8sContainerdNamespace),
-		containerd.WithTimeout(time.Second))
-	if err != nil {
-		return err
+	sockets := []string{"/run/containerd/containerd.sock", "/run/k3s/containerd/containerd.sock"}
+	var err error
+	for _, socket := range sockets {
+		containerdClient, err = containerd.New(proc.HostPath(socket),
+			containerd.WithDefaultNamespace(constants.K8sContainerdNamespace),
+			containerd.WithTimeout(time.Second))
+		if err == nil {
+			break
+		}
 	}
-	containerdClient = c
+	if containerdClient == nil {
+		return fmt.Errorf(
+			"couldn't connect to containerd through the following UNIX sockets [%s]: %s",
+			strings.Join(sockets, ","), err,
+		)
+	}
 	return nil
 }
 
