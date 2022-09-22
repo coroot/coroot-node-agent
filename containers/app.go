@@ -46,6 +46,8 @@ func guessApplicationType(cmdline []byte) string {
 		return "kube-controller-manager"
 	case bytes.HasSuffix(cmd, []byte("kube-scheduler")):
 		return "kube-scheduler"
+	case bytes.HasSuffix(cmd, []byte("k3s")):
+		return "k3s"
 	case bytes.HasSuffix(cmd, []byte("etcd")):
 		return "etcd"
 	case bytes.HasSuffix(cmd, []byte("dockerd")):
