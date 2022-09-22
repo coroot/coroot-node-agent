@@ -30,7 +30,7 @@ func ConntrackGetActualDestination(src, dst netaddr.IPPort) (netaddr.IPPort, err
 	sport := src.Port()
 	dport := dst.Port()
 
-	con := conntrack.Con{
+	req := conntrack.Con{
 		Origin: &conntrack.IPTuple{
 			Src: &sip,
 			Dst: &dip,
@@ -45,16 +45,43 @@ func ConntrackGetActualDestination(src, dst netaddr.IPPort) (netaddr.IPPort, err
 	if dst.IP().Is6() {
 		family = conntrack.IPv6
 	}
-	sessions, err := conntrackClient.Get(conntrack.Conntrack, family, con)
+	sessions, err := conntrackClient.Get(conntrack.Conntrack, family, req)
 	if err != nil {
 		return netaddr.IPPort{}, err
 	}
 	for _, s := range sessions {
-		if s.Reply != nil && s.Reply.Src != nil && s.Reply.Proto != nil && s.Reply.Proto.SrcPort != nil {
-			ip, _ := netaddr.FromStdIP(*s.Reply.Src)
-			port := *s.Reply.Proto.SrcPort
-			return netaddr.IPPortFrom(ip, port), nil
+		if !ipTupleValid(s.Origin) || !ipTupleValid(s.Reply) {
+			continue
 		}
+		var reply *conntrack.IPTuple
+		if ipTuplesEqual(req.Origin, s.Origin) {
+			reply = s.Reply
+		} else if ipTuplesEqual(req.Origin, s.Reply) {
+			reply = s.Origin
+		}
+		if reply == nil {
+			continue
+		}
+		ip, _ := netaddr.FromStdIP(*reply.Src)
+		port := *reply.Proto.SrcPort
+		return netaddr.IPPortFrom(ip, port), nil
 	}
 	return netaddr.IPPort{}, nil
+}
+
+func ipTuplesEqual(a, b *conntrack.IPTuple) bool {
+	return a.Src.Equal(*b.Src) && a.Dst.Equal(*b.Dst) && *a.Proto.SrcPort == *b.Proto.SrcPort && *a.Proto.DstPort == *b.Proto.DstPort
+}
+
+func ipTupleValid(t *conntrack.IPTuple) bool {
+	if t == nil {
+		return false
+	}
+	if t.Src == nil || t.Dst == nil || t.Proto == nil {
+		return false
+	}
+	if t.Proto.SrcPort == nil || t.Proto.DstPort == nil {
+		return false
+	}
+	return true
 }
