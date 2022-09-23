@@ -14,6 +14,7 @@ import (
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -32,6 +33,7 @@ const (
 	EventTypeFileOpen        EventType = 8
 	EventTypeTCPRetransmit   EventType = 9
 
+	EventReasonNone    EventReason = 0
 	EventReasonOOMKill EventReason = 1
 )
 
@@ -151,6 +153,9 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string) error {
 
 	for name, spec := range spec.Programs {
 		p := t.collection.Programs[name]
+		if runtime.GOARCH == "arm64" && (spec.Name == "sys_enter_open" || spec.Name == "sys_exit_open") {
+			continue
+		}
 		var err error
 		var l link.Link
 		switch spec.Type {
@@ -196,6 +201,8 @@ func (t EventType) String() string {
 
 func (t EventReason) String() string {
 	switch t {
+	case EventReasonNone:
+		return "none"
 	case EventReasonOOMKill:
 		return "oom-kill"
 	}
