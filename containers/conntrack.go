@@ -1,8 +1,10 @@
 package containers
 
 import (
+	"github.com/coroot/coroot-node-agent/common"
 	"github.com/florianl/go-conntrack"
 	"inet.af/netaddr"
+	"k8s.io/klog/v2"
 	"syscall"
 )
 
@@ -19,9 +21,9 @@ func ConntrackInit() error {
 	return nil
 }
 
-func ConntrackGetActualDestination(src, dst netaddr.IPPort) (netaddr.IPPort, error) {
+func ConntrackGetActualDestination(src, dst netaddr.IPPort) netaddr.IPPort {
 	if conntrackClient == nil {
-		return dst, nil
+		return dst
 	}
 
 	tcp := uint8(syscall.IPPROTO_TCP)
@@ -47,7 +49,10 @@ func ConntrackGetActualDestination(src, dst netaddr.IPPort) (netaddr.IPPort, err
 	}
 	sessions, err := conntrackClient.Get(conntrack.Conntrack, family, req)
 	if err != nil {
-		return netaddr.IPPort{}, err
+		if !common.IsNotExist(err) {
+			klog.Errorf("failed to resolve actual destination for %s->%s: %s", src, dst, err)
+		}
+		return dst
 	}
 	for _, s := range sessions {
 		if !ipTupleValid(s.Origin) || !ipTupleValid(s.Reply) {
@@ -62,11 +67,13 @@ func ConntrackGetActualDestination(src, dst netaddr.IPPort) (netaddr.IPPort, err
 		if reply == nil {
 			continue
 		}
-		ip, _ := netaddr.FromStdIP(*reply.Src)
-		port := *reply.Proto.SrcPort
-		return netaddr.IPPortFrom(ip, port), nil
+		ip, ok := netaddr.FromStdIP(*reply.Src)
+		if !ok {
+			continue
+		}
+		return netaddr.IPPortFrom(ip, *reply.Proto.SrcPort)
 	}
-	return netaddr.IPPort{}, nil
+	return dst
 }
 
 func ipTuplesEqual(a, b *conntrack.IPTuple) bool {

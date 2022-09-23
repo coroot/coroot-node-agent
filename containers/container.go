@@ -374,15 +374,9 @@ func (c *Container) onConnectionOpen(pid uint32, src, dst netaddr.IPPort, failed
 	if failed {
 		c.connectsFailed[dst]++
 	} else {
-		actualDst, err := ConntrackGetActualDestination(src, dst)
-		if err != nil {
-			klog.Errorf("failed to resolve actual destination for %s->%s: %s", src, dst, err)
-		} else if actualDst.IsValid() {
-			c.connectsSuccessful[AddrPair{src: dst, dst: actualDst}]++
-			c.connectionsActive[AddrPair{src: src, dst: dst}] = actualDst
-		} else {
-			klog.Errorf("invalid actual destination for %s->%s: %s", src, dst, actualDst)
-		}
+		actualDst := ConntrackGetActualDestination(src, dst)
+		c.connectsSuccessful[AddrPair{src: dst, dst: actualDst}]++
+		c.connectionsActive[AddrPair{src: src, dst: dst}] = actualDst
 	}
 	c.connectLastAttempt[dst] = time.Now()
 }
