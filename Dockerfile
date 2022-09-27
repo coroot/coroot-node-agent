@@ -5,6 +5,7 @@ COPY go.sum /tmp/src/
 WORKDIR /tmp/src/
 RUN go mod download
 COPY . /tmp/src/
+RUN CGO_ENABLED=1 go test ./...
 ARG VERSION=unknown
 RUN CGO_ENABLED=1 go install -mod=readonly -ldflags "-X main.version=$VERSION" /tmp/src
 

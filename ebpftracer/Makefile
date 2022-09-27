@@ -8,7 +8,7 @@ test: test_vm1 test_vm2 test_vm3 test_vm4
 
 define test_in_vm
 	@echo ===TESTING IN $(1)===
-	vagrant ssh $(1) -c "uname -r && cd /tmp/src && sudo go test -p 1 -count 1 -v ./ebpftracer/..."
+	vagrant ssh $(1) -c "uname -r && cd /tmp/src && VM=$(1) sudo go test -p 1 -count 1 -v ./ebpftracer/..."
 	@echo
 endef
 

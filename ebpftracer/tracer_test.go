@@ -1,3 +1,5 @@
+//go:build amd64
+
 package ebpftracer
 
 import (
@@ -20,14 +22,14 @@ import (
 	"time"
 )
 
-func skipIfNotRoot(t *testing.T) {
-	if os.Getuid() != 0 {
+func skipIfNotVM(t *testing.T) {
+	if os.Getenv("VM") == "" {
 		t.SkipNow()
 	}
 }
 
 func TestProcessEvents(t *testing.T) {
-	skipIfNotRoot(t)
+	skipIfNotVM(t)
 	src := `
 		package main
 		
@@ -103,7 +105,7 @@ func TestProcessEvents(t *testing.T) {
 }
 
 func TestTcpEvents(t *testing.T) {
-	skipIfNotRoot(t)
+	skipIfNotVM(t)
 	l, err := net.Listen("tcp", "127.0.0.1:8080")
 	require.NoError(t, err)
 	listenAddr := l.Addr().String()
@@ -222,7 +224,7 @@ func TestTcpEvents(t *testing.T) {
 }
 
 func TestFileEvents(t *testing.T) {
-	skipIfNotRoot(t)
+	skipIfNotVM(t)
 	src := `
 		package main
 		
