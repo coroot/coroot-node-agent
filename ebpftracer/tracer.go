@@ -123,6 +123,11 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string) error {
 	if len(prg) == 0 {
 		return fmt.Errorf("unsupported kernel version: %s", kernelVersion)
 	}
+
+	if _, err := os.Stat("/sys/kernel/debug/tracing"); err != nil {
+		return fmt.Errorf("kernel tracing is not available: %w", err)
+	}
+
 	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(prg))
 	if err != nil {
 		return fmt.Errorf("failed to load spec: %w", err)
