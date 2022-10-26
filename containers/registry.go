@@ -219,15 +219,13 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		}
 		return nil
 	}
-	klog.Infof("got cgroup by pid %d -> %s", pid, cg.Id)
 	if c := r.containersByCgroupId[cg.Id]; c != nil {
-		klog.Infof("found container by cgroup pid %d -> %s", pid, cg.Id)
 		r.containersByPid[pid] = c
 		return c
 	}
 	md, err := getContainerMetadata(cg)
 	if err != nil {
-		klog.Warningln(err)
+		klog.Warningf("failed to get container metadata for pid %d -> %s: %s", pid, cg.Id, err)
 		return nil
 	}
 	id := calcId(cg, md)
@@ -253,7 +251,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		return c
 	}
 	c := NewContainer(cg, md)
-	klog.InfoS("detected container", "pid", pid, "cg", cg.Id, "id", id)
+	klog.InfoS("detected a new container", "pid", pid, "cg", cg.Id, "id", id)
 	if err := prometheus.WrapRegistererWith(prometheus.Labels{"container_id": string(id)}, r.reg).Register(c); err != nil {
 		klog.Warningln(err)
 		return nil
