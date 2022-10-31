@@ -57,6 +57,12 @@ type AddrPair struct {
 	dst netaddr.IPPort
 }
 
+type ActiveConnection struct {
+	ActualDest netaddr.IPPort
+	Pid        uint32
+	Fd         uint64
+}
+
 type Container struct {
 	cgroup   *cgroup.Cgroup
 	metadata *ContainerMetadata
@@ -76,8 +82,8 @@ type Container struct {
 	connectsSuccessful map[AddrPair]int             // dst:actual_dst -> count
 	connectsFailed     map[netaddr.IPPort]int       // dst -> count
 	connectLastAttempt map[netaddr.IPPort]time.Time // dst -> time
-	connectionsActive  map[AddrPair]netaddr.IPPort  // src:dst -> actual_dst
-	retransmits        map[AddrPair]int             // dst:actual_dst -> count
+	connectionsActive  map[AddrPair]ActiveConnection
+	retransmits        map[AddrPair]int // dst:actual_dst -> count
 
 	oomKills int
 
@@ -104,7 +110,7 @@ func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata) *Container {
 		connectsSuccessful: map[AddrPair]int{},
 		connectsFailed:     map[netaddr.IPPort]int{},
 		connectLastAttempt: map[netaddr.IPPort]time.Time{},
-		connectionsActive:  map[AddrPair]netaddr.IPPort{},
+		connectionsActive:  map[AddrPair]ActiveConnection{},
 		retransmits:        map[AddrPair]int{},
 
 		mountIds: map[string]struct{}{},
@@ -242,8 +248,8 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	connections := map[AddrPair]int{}
-	for c, actualDst := range c.connectionsActive {
-		connections[AddrPair{src: c.dst, dst: actualDst}]++
+	for c, conn := range c.connectionsActive {
+		connections[AddrPair{src: c.dst, dst: conn.ActualDest}]++
 	}
 	for d, count := range connections {
 		ch <- gauge(metrics.NetConnectionsActive, float64(count), d.src.String(), d.dst.String())
@@ -316,7 +322,7 @@ func (c *Container) onProcessExit(pid uint32, oomKill bool) {
 	}
 }
 
-func (c *Container) onFileOpen(pid uint32, fd uint32) {
+func (c *Container) onFileOpen(pid uint32, fd uint64) {
 	mntId, logPath := resolveFd(pid, fd)
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -349,7 +355,7 @@ func (c *Container) onListenClose(pid uint32, addr netaddr.IPPort) {
 	}
 }
 
-func (c *Container) onConnectionOpen(pid uint32, src, dst netaddr.IPPort, failed bool) {
+func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPPort, failed bool) {
 	if dst.IP().IsLoopback() {
 		netNs, err := proc.GetNetNs(pid)
 		isHostNs := err == nil && hostNetNsId == netNs.UniqueId()
@@ -376,7 +382,11 @@ func (c *Container) onConnectionOpen(pid uint32, src, dst netaddr.IPPort, failed
 	} else {
 		actualDst := ConntrackGetActualDestination(src, dst)
 		c.connectsSuccessful[AddrPair{src: dst, dst: actualDst}]++
-		c.connectionsActive[AddrPair{src: src, dst: dst}] = actualDst
+		c.connectionsActive[AddrPair{src: src, dst: dst}] = ActiveConnection{
+			ActualDest: actualDst,
+			Pid:        pid,
+			Fd:         fd,
+		}
 	}
 	c.connectLastAttempt[dst] = time.Now()
 }
@@ -394,11 +404,11 @@ func (c *Container) onConnectionClose(srcDst AddrPair) bool {
 func (c *Container) onRetransmit(srcDst AddrPair) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	actualDst, ok := c.connectionsActive[srcDst]
+	conn, ok := c.connectionsActive[srcDst]
 	if !ok {
 		return false
 	}
-	c.retransmits[AddrPair{src: srcDst.dst, dst: actualDst}]++
+	c.retransmits[AddrPair{src: srcDst.dst, dst: conn.ActualDest}]++
 	return true
 }
 
@@ -738,7 +748,7 @@ func (c *Container) revalidateListens(now time.Time, actualListens map[netaddr.I
 	}
 }
 
-func resolveFd(pid uint32, fd uint32) (mntId string, logPath string) {
+func resolveFd(pid uint32, fd uint64) (mntId string, logPath string) {
 	info := proc.GetFdInfo(pid, fd)
 	if info == nil {
 		return

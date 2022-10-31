@@ -3,7 +3,7 @@
 struct file_event {
 	__u32 type;
 	__u32 pid;
-	__u32 fd;
+	__u64 fd;
 };
 
 struct {

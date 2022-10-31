@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type EventType uint32
@@ -43,7 +44,7 @@ type Event struct {
 	Pid     uint32
 	SrcAddr netaddr.IPPort
 	DstAddr netaddr.IPPort
-	Fd      uint32
+	Fd      uint64
 }
 
 type Tracer struct {
@@ -104,6 +105,7 @@ func (t *Tracer) init(ch chan<- Event) error {
 		ch <- Event{
 			Type:    typ,
 			Pid:     s.pid,
+			Fd:      s.fd,
 			SrcAddr: s.SAddr,
 			DstAddr: s.DAddr,
 		}
@@ -229,6 +231,7 @@ func (e procEvent) Event() Event {
 }
 
 type tcpEvent struct {
+	Fd    uint64
 	Type  uint32
 	Pid   uint32
 	SPort uint16
@@ -238,13 +241,13 @@ type tcpEvent struct {
 }
 
 func (e tcpEvent) Event() Event {
-	return Event{Type: EventType(e.Type), Pid: e.Pid, SrcAddr: ipPort(e.SAddr, e.SPort), DstAddr: ipPort(e.DAddr, e.DPort)}
+	return Event{Type: EventType(e.Type), Pid: e.Pid, SrcAddr: ipPort(e.SAddr, e.SPort), DstAddr: ipPort(e.DAddr, e.DPort), Fd: e.Fd}
 }
 
 type fileEvent struct {
 	Type uint32
 	Pid  uint32
-	Fd   uint32
+	Fd   uint64
 }
 
 func (e fileEvent) Event() Event {

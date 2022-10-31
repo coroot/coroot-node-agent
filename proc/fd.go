@@ -8,7 +8,7 @@ import (
 )
 
 type Fd struct {
-	Fd   uint32
+	Fd   uint64
 	Dest string
 
 	SocketInode string
@@ -22,7 +22,7 @@ func ReadFds(pid uint32) ([]Fd, error) {
 	}
 	res := make([]Fd, 0, len(entries))
 	for _, entry := range entries {
-		fd, err := strconv.Atoi(entry.Name())
+		fd, err := strconv.ParseUint(entry.Name(), 10, 64)
 		if err != nil {
 			continue
 		}
@@ -34,7 +34,7 @@ func ReadFds(pid uint32) ([]Fd, error) {
 		if strings.HasPrefix(dest, "socket:[") && strings.HasSuffix(dest, "]") {
 			socketInode = dest[len("socket:[") : len(dest)-1]
 		}
-		res = append(res, Fd{Fd: uint32(fd), Dest: dest, SocketInode: socketInode})
+		res = append(res, Fd{Fd: fd, Dest: dest, SocketInode: socketInode})
 	}
 	return res, nil
 }
@@ -45,8 +45,8 @@ type FdInfo struct {
 	Dest  string
 }
 
-func GetFdInfo(pid uint32, fd uint32) *FdInfo {
-	fds := strconv.Itoa(int(fd))
+func GetFdInfo(pid uint32, fd uint64) *FdInfo {
+	fds := strconv.FormatUint(fd, 10)
 	data, err := os.ReadFile(Path(pid, "fdinfo", fds))
 	if err != nil {
 		return nil

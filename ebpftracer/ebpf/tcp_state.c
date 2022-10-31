@@ -1,6 +1,7 @@
 #define IPPROTO_TCP 6
 
 struct tcp_event {
+	__u64 fd;
 	__u32 type;
 	__u32 pid;
 	__u16 sport;
@@ -40,9 +41,16 @@ struct trace_event_raw_inet_sock_set_state__stub {
 	__u8 daddr_v6[16];
 };
 
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(key_size, sizeof(__u64));
+	__uint(value_size, sizeof(__u64));
+	__uint(max_entries, 10240);
+} fd_by_pid_tgid SEC(".maps");
+
 struct sk_info {
+	__u64 fd;
 	__u32 pid;
-//	__u64 ts;
 };
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
@@ -61,14 +69,24 @@ int inet_sock_set_state(void *ctx)
 	if (args.protocol != IPPROTO_TCP) {
 		return 0;
 	}
+	__u64 id = bpf_get_current_pid_tgid();
+	__u32 pid = id >> 32;
+
 	if (args.oldstate == BPF_TCP_CLOSE && args.newstate == BPF_TCP_SYN_SENT) {
-		struct sk_info i = {};
-		i.pid = bpf_get_current_pid_tgid() >> 32;
+        __u64 *fdp = bpf_map_lookup_elem(&fd_by_pid_tgid, &id);
+
+        if (!fdp) {
+            return 0;
+        }
+        bpf_map_delete_elem(&fd_by_pid_tgid, &id);
+        struct sk_info i = {};
+        i.pid = pid;
+        i.fd = *fdp;
 		bpf_map_update_elem(&sk_info, &args.skaddr, &i, BPF_ANY);
 		return 0;
 	}
 
-	__u32 pid = bpf_get_current_pid_tgid() >> 32;
+    __u64 fd = 0;
 	__u32 type = 0;
 	void *map = &tcp_connect_events;
 	if (args.oldstate == BPF_TCP_SYN_SENT) {
@@ -84,6 +102,7 @@ int inet_sock_set_state(void *ctx)
 			return 0;
 		}
 		pid = i->pid;
+		fd = i->fd;
 		bpf_map_delete_elem(&sk_info, &args.skaddr);
 	}
 	if (args.oldstate == BPF_TCP_ESTABLISHED && (args.newstate == BPF_TCP_FIN_WAIT1 || args.newstate == BPF_TCP_CLOSE_WAIT)) {
@@ -103,12 +122,12 @@ int inet_sock_set_state(void *ctx)
 		return 0;
 	}
 
-	struct tcp_event e = {
-		.type = type,
-		.pid = pid,
-		.sport = args.sport,
-		.dport = args.dport,
-	};
+	struct tcp_event e = {};
+	e.type = type;
+	e.pid = pid;
+	e.sport = args.sport;
+	e.dport = args.dport;
+    e.fd = fd;
 	__builtin_memcpy(&e.saddr, &args.saddr_v6, sizeof(e.saddr));
 	__builtin_memcpy(&e.daddr, &args.daddr_v6, sizeof(e.saddr));
 
@@ -116,3 +135,20 @@ int inet_sock_set_state(void *ctx)
 
 	return 0;
 }
+
+struct trace_event_raw_sys_enter_connect__stub {
+	__u64 unused;
+	long int id;
+	__u64 fd;
+};
+
+SEC("tracepoint/syscalls/sys_enter_connect")
+int sys_enter_connect(void *ctx) {
+    struct trace_event_raw_sys_enter_connect__stub args = {};
+    if (bpf_probe_read(&args, sizeof(args), ctx) < 0) {
+        return 0;
+    }
+    __u64 id = bpf_get_current_pid_tgid();
+    bpf_map_update_elem(&fd_by_pid_tgid, &id, &args.fd, BPF_ANY);
+}
+
