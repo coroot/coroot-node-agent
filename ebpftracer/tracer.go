@@ -33,18 +33,25 @@ const (
 	EventTypeListenClose     EventType = 7
 	EventTypeFileOpen        EventType = 8
 	EventTypeTCPRetransmit   EventType = 9
+	EventTypeHTTPRequest     EventType = 10
 
 	EventReasonNone    EventReason = 0
 	EventReasonOOMKill EventReason = 1
 )
 
+type HttpRequest struct {
+	Status   int
+	Duration time.Duration
+}
+
 type Event struct {
-	Type    EventType
-	Reason  EventReason
-	Pid     uint32
-	SrcAddr netaddr.IPPort
-	DstAddr netaddr.IPPort
-	Fd      uint64
+	Type        EventType
+	Reason      EventReason
+	Pid         uint32
+	SrcAddr     netaddr.IPPort
+	DstAddr     netaddr.IPPort
+	Fd          uint64
+	HttpRequest *HttpRequest
 }
 
 type Tracer struct {
@@ -147,6 +154,7 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string) error {
 		"tcp_connect_events":    &tcpEvent{},
 		"tcp_retransmit_events": &tcpEvent{},
 		"file_events":           &fileEvent{},
+		"http_events":           &httpEvent{},
 	}
 	for name, typ := range events {
 		r, err := perf.NewReader(t.collection.Maps[name], os.Getpagesize())
@@ -202,6 +210,8 @@ func (t EventType) String() string {
 		return "file-open"
 	case EventTypeTCPRetransmit:
 		return "tcp-retransmit"
+	case EventTypeHTTPRequest:
+		return "http-request"
 	}
 	return "unknown: " + strconv.Itoa(int(t))
 }
@@ -252,6 +262,20 @@ type fileEvent struct {
 
 func (e fileEvent) Event() Event {
 	return Event{Type: EventType(e.Type), Pid: e.Pid, Fd: e.Fd}
+}
+
+type httpEvent struct {
+	Fd       uint64
+	Pid      uint32
+	Status   uint32
+	Duration uint64
+}
+
+func (e httpEvent) Event() Event {
+	return Event{Type: EventTypeHTTPRequest, Pid: e.Pid, Fd: e.Fd, HttpRequest: &HttpRequest{
+		Status:   int(e.Status),
+		Duration: time.Duration(e.Duration),
+	}}
 }
 
 func runEventsReader(name string, r *perf.Reader, ch chan<- Event, e rawEvent) {

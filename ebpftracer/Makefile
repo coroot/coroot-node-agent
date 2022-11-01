@@ -1,7 +1,8 @@
 build:
 	@echo ===BUILDING===
+	docker rmi -f ebpftracer
 	docker build -t ebpftracer .
-	docker cp $(shell docker create --rm ebpftracer):/tmp/ebpf.go ./ebpf.go
+	docker run --rm --name ebpftracer ebpftracer cat /tmp/ebpf.go > ./ebpf.go
 	@echo
 
 test: test_vm1 test_vm2 test_vm3 test_vm4

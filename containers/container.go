@@ -401,6 +401,16 @@ func (c *Container) onConnectionClose(srcDst AddrPair) bool {
 	return true
 }
 
+//func (c *Container) onHttpRequest(pid uint32, fd uint64, r *ebpftracer.HttpRequest) {
+//klog.Infof("HTTP %s pid:%d fd:%d status:%d duration:%s", c.cgroup.Id, pid, fd, r.Status, r.Duration.String())
+//for dest, conn := range c.connectionsActive {
+//	if conn.Pid == pid && conn.Fd == fd {
+//		//desc, conn.ActualDest
+//		break
+//	}
+//}
+//}
+
 func (c *Container) onRetransmit(srcDst AddrPair) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()

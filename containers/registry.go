@@ -201,6 +201,14 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 						break
 					}
 				}
+			case ebpftracer.EventTypeHTTPRequest:
+				if e.HttpRequest == nil {
+					continue
+				}
+				klog.Infof("HTTP pid:%d fd:%d status:%d duration:%s", e.Pid, e.Fd, e.HttpRequest.Status, e.HttpRequest.Duration.String())
+				//if c := r.containersByPid[e.Pid]; c != nil {
+				//	c.onHttpRequest(e.Pid, e.Fd, e.HttpRequest)
+				//}
 			}
 		}
 	}

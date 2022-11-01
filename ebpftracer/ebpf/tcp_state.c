@@ -150,5 +150,6 @@ int sys_enter_connect(void *ctx) {
     }
     __u64 id = bpf_get_current_pid_tgid();
     bpf_map_update_elem(&fd_by_pid_tgid, &id, &args.fd, BPF_ANY);
+    return 0;
 }
 

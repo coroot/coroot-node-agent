@@ -19,5 +19,6 @@
 #include "file.c"
 #include "tcp_state.c"
 #include "tcp_retransmit.c"
+#include "l7.c"
 
 char _license[] SEC("license") = "GPL";
