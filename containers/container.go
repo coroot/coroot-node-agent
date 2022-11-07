@@ -295,7 +295,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		stats.Latency.Collect(ch)
 	}
 
-	if !*flags.NoPingUpstreams {
+	if !*flags.DisablePinger {
 		for ip, rtt := range c.ping(netNs) {
 			ch <- gauge(metrics.NetLatency, rtt, ip.String())
 		}
@@ -631,7 +631,7 @@ func (c *Container) ping(netNs netns.NsHandle) map[netaddr.IP]float64 {
 }
 
 func (c *Container) runLogParser(logPath string) {
-	if *flags.NoParseLogs {
+	if *flags.DisableLogParsing {
 		return
 	}
 
