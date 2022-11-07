@@ -3,6 +3,7 @@ package containers
 import (
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
+	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
@@ -14,6 +15,7 @@ import (
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,6 +65,11 @@ type ActiveConnection struct {
 	Fd         uint64
 }
 
+type HttpStats struct {
+	Requests *prometheus.CounterVec
+	Latency  prometheus.Histogram
+}
+
 type Container struct {
 	cgroup   *cgroup.Cgroup
 	metadata *ContainerMetadata
@@ -79,11 +86,12 @@ type Container struct {
 
 	listens map[netaddr.IPPort]map[uint32]time.Time // listen addr -> pid -> close time
 
-	connectsSuccessful map[AddrPair]int             // dst:actual_dst -> count
-	connectsFailed     map[netaddr.IPPort]int       // dst -> count
+	connectsSuccessful map[AddrPair]int64           // dst:actual_dst -> count
+	connectsFailed     map[netaddr.IPPort]int64     // dst -> count
 	connectLastAttempt map[netaddr.IPPort]time.Time // dst -> time
 	connectionsActive  map[AddrPair]ActiveConnection
-	retransmits        map[AddrPair]int // dst:actual_dst -> count
+	retransmits        map[AddrPair]int64      // dst:actual_dst -> count
+	http               map[AddrPair]*HttpStats // dst:actual_dst -> stats
 
 	oomKills int
 
@@ -107,11 +115,12 @@ func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata) *Container {
 
 		listens: map[netaddr.IPPort]map[uint32]time.Time{},
 
-		connectsSuccessful: map[AddrPair]int{},
-		connectsFailed:     map[netaddr.IPPort]int{},
+		connectsSuccessful: map[AddrPair]int64{},
+		connectsFailed:     map[netaddr.IPPort]int64{},
 		connectLastAttempt: map[netaddr.IPPort]time.Time{},
 		connectionsActive:  map[AddrPair]ActiveConnection{},
-		retransmits:        map[AddrPair]int{},
+		retransmits:        map[AddrPair]int64{},
+		http:               map[AddrPair]*HttpStats{},
 
 		mountIds: map[string]struct{}{},
 
@@ -152,6 +161,10 @@ func (c *Container) Dead(now time.Time) bool {
 func (c *Container) Describe(ch chan<- *prometheus.Desc) {
 	for _, m := range metricsList {
 		ch <- m
+	}
+	for _, s := range c.http {
+		s.Requests.Describe(ch)
+		s.Latency.Describe(ch)
 	}
 }
 
@@ -275,6 +288,11 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 	for appType := range appTypes {
 		ch <- gauge(metrics.ApplicationType, 1, appType)
+	}
+
+	for _, stats := range c.http {
+		stats.Requests.Collect(ch)
+		stats.Latency.Collect(ch)
 	}
 
 	if !*flags.NoPingUpstreams {
@@ -401,15 +419,42 @@ func (c *Container) onConnectionClose(srcDst AddrPair) bool {
 	return true
 }
 
-//func (c *Container) onHttpRequest(pid uint32, fd uint64, r *ebpftracer.HttpRequest) {
-//klog.Infof("HTTP %s pid:%d fd:%d status:%d duration:%s", c.cgroup.Id, pid, fd, r.Status, r.Duration.String())
-//for dest, conn := range c.connectionsActive {
-//	if conn.Pid == pid && conn.Fd == fd {
-//		//desc, conn.ActualDest
-//		break
-//	}
-//}
-//}
+func (c *Container) onHttpRequest(pid uint32, fd uint64, r *ebpftracer.HttpRequest) {
+	for dest, conn := range c.connectionsActive {
+		if conn.Pid == pid && conn.Fd == fd {
+			key := AddrPair{src: dest.dst, dst: conn.ActualDest}
+			s := c.http[key]
+			if s == nil {
+				requests := prometheus.NewCounterVec(
+					prometheus.CounterOpts{
+						Name: "container_http_requests_total",
+						Help: "Total number of outbound HTTP requests",
+						ConstLabels: map[string]string{
+							"destination":        dest.dst.String(),
+							"actual_destination": conn.ActualDest.String(),
+						},
+					},
+					[]string{"status"},
+				)
+				latency := prometheus.NewHistogram(
+					prometheus.HistogramOpts{
+						Name: "container_http_request_duration_seconds_total",
+						Help: "Histogram of the response time for each outbound HTTP request",
+						ConstLabels: map[string]string{
+							"destination":        dest.dst.String(),
+							"actual_destination": conn.ActualDest.String(),
+						},
+					},
+				)
+				s = &HttpStats{Requests: requests, Latency: latency}
+				c.http[key] = s
+			}
+			s.Requests.WithLabelValues(strconv.Itoa(r.Status)).Inc()
+			s.Latency.Observe(r.Duration.Seconds())
+			break
+		}
+	}
+}
 
 func (c *Container) onRetransmit(srcDst AddrPair) bool {
 	c.lock.Lock()
@@ -685,6 +730,11 @@ func (c *Container) gc(now time.Time) {
 			for d := range c.retransmits {
 				if d.src == dst {
 					delete(c.retransmits, d)
+				}
+			}
+			for d := range c.http {
+				if d.src == dst {
+					delete(c.http, d)
 				}
 			}
 		}
