@@ -5,6 +5,7 @@ import (
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
+	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
@@ -78,7 +79,7 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, er
 	}
 
 	go cs.handleEvents(cs.events)
-	t, err := ebpftracer.NewTracer(cs.events, kernelVersion)
+	t, err := ebpftracer.NewTracer(cs.events, kernelVersion, *flags.DisableL7Tracing)
 	if err != nil {
 		close(cs.events)
 		return nil, err

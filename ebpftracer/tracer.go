@@ -60,10 +60,13 @@ type Tracer struct {
 	links      []link.Link
 }
 
-func NewTracer(events chan<- Event, kernelVersion string) (*Tracer, error) {
+func NewTracer(events chan<- Event, kernelVersion string, disableL7Tracing bool) (*Tracer, error) {
 	t := &Tracer{readers: map[string]*perf.Reader{}}
-	if err := t.ebpf(events, kernelVersion); err != nil {
+	if err := t.ebpf(events, kernelVersion, disableL7Tracing); err != nil {
 		return nil, err
+	}
+	if disableL7Tracing {
+		klog.Infoln("L7 tracing is disabled")
 	}
 	if err := t.init(events); err != nil {
 		return nil, err
@@ -120,7 +123,7 @@ func (t *Tracer) init(ch chan<- Event) error {
 	return nil
 }
 
-func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string) error {
+func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bool) error {
 	kv := "v" + common.KernelMajorMinor(kernelVersion)
 	var prg []byte
 	for _, p := range ebpfProg {
@@ -154,8 +157,11 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string) error {
 		"tcp_connect_events":    &tcpEvent{},
 		"tcp_retransmit_events": &tcpEvent{},
 		"file_events":           &fileEvent{},
-		"http_events":           &httpEvent{},
 	}
+	if !disableL7Tracing {
+		events["http_events"] = &httpEvent{}
+	}
+
 	for name, typ := range events {
 		r, err := perf.NewReader(t.collection.Maps[name], os.Getpagesize())
 		if err != nil {
@@ -170,6 +176,16 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string) error {
 		p := t.collection.Programs[name]
 		if runtime.GOARCH == "arm64" && (spec.Name == "sys_enter_open" || spec.Name == "sys_exit_open") {
 			continue
+		}
+		if disableL7Tracing {
+			switch spec.Name {
+			case "sys_enter_writev", "sys_enter_write", "sys_enter_sendto":
+				continue
+			case "sys_enter_read", "sys_enter_readv", "sys_enter_recvfrom":
+				continue
+			case "sys_exit_read", "sys_exit_readv", "sys_exit_recvfrom":
+				continue
+			}
 		}
 		var err error
 		var l link.Link

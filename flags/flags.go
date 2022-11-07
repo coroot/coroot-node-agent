@@ -9,10 +9,12 @@ import (
 )
 
 var (
-	ListenAddress             = kingpin.Flag("listen", "Listen address - ip:port or :port").Default("0.0.0.0:80").String()
-	CgroupRoot                = kingpin.Flag("cgroupfs-root", "The mount point of the host cgroupfs root").Default("/sys/fs/cgroup").String()
-	NoParseLogs               = kingpin.Flag("no-parse-logs", "Disable container logs parsing").Default("false").Bool()
-	NoPingUpstreams           = kingpin.Flag("no-ping-upstreams", "Disable container upstreams ping").Default("false").Bool()
+	ListenAddress    = kingpin.Flag("listen", "Listen address - ip:port or :port").Default("0.0.0.0:80").String()
+	CgroupRoot       = kingpin.Flag("cgroupfs-root", "The mount point of the host cgroupfs root").Default("/sys/fs/cgroup").String()
+	NoParseLogs      = kingpin.Flag("no-parse-logs", "Disable container logs parsing").Default("false").Bool()
+	NoPingUpstreams  = kingpin.Flag("no-ping-upstreams", "Disable container upstreams ping").Default("false").Bool()
+	DisableL7Tracing = kingpin.Flag("disable-l7-tracing", "Disable L7 tracing").Default("false").Bool()
+
 	externalNetworksWhitelist = kingpin.Flag("track-public-network", "Allow track connections to the specified IP networks, all private networks are allowed by default (e.g., Y.Y.Y.Y/mask)").Strings()
 	ExternalNetworksWhitelist []netaddr.IPPrefix
 
