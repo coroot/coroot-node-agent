@@ -202,12 +202,13 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 						break
 					}
 				}
-			case ebpftracer.EventTypeHTTPRequest:
-				if e.HttpRequest == nil {
+			case ebpftracer.EventTypeL7Request:
+				if e.L7Request == nil {
 					continue
 				}
+				//klog.Infof("L7 request proto:%s pid:%d fd:%d", e.L7Request.Protocol.String(), e.Pid, e.Fd)
 				if c := r.containersByPid[e.Pid]; c != nil {
-					c.onHttpRequest(e.Pid, e.Fd, e.HttpRequest)
+					c.onL7Request(e.Pid, e.Fd, e.L7Request)
 				}
 			}
 		}

@@ -1,6 +1,7 @@
 package containers
 
 import (
+	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/prometheus/client_golang/prometheus"
 	"reflect"
 )
@@ -70,6 +71,17 @@ var metrics = struct {
 
 	ApplicationType: metric("container_application_type", "Type of the application running in the container (e.g. memcached, postgres, mysql)", "application_type"),
 }
+
+var (
+	L7Requests = map[ebpftracer.L7Protocol]prometheus.CounterOpts{
+		ebpftracer.L7ProtocolHTTP:     {Name: "container_http_requests_total", Help: "Total number of outbound HTTP requests"},
+		ebpftracer.L7ProtocolPostgres: {Name: "container_postgres_queries_total", Help: "Total number of outbound Postgres queries"},
+	}
+	L7Latency = map[ebpftracer.L7Protocol]prometheus.HistogramOpts{
+		ebpftracer.L7ProtocolHTTP:     {Name: "container_http_request_duration_seconds_total", Help: "Histogram of the response time for each outbound HTTP request"},
+		ebpftracer.L7ProtocolPostgres: {Name: "container_postgres_queries_duration_seconds_total", Help: "Histogram of the execution time for each outbound Postgres query"},
+	}
+)
 
 func metric(name, help string, labels ...string) *prometheus.Desc {
 	return prometheus.NewDesc(name, help, labels, nil)

@@ -33,25 +33,43 @@ const (
 	EventTypeListenClose     EventType = 7
 	EventTypeFileOpen        EventType = 8
 	EventTypeTCPRetransmit   EventType = 9
-	EventTypeHTTPRequest     EventType = 10
+	EventTypeL7Request       EventType = 10
 
 	EventReasonNone    EventReason = 0
 	EventReasonOOMKill EventReason = 1
 )
 
-type HttpRequest struct {
+type L7Protocol uint8
+
+const (
+	L7ProtocolHTTP     L7Protocol = 1
+	L7ProtocolPostgres L7Protocol = 2
+)
+
+func (p L7Protocol) String() string {
+	switch p {
+	case L7ProtocolHTTP:
+		return "HTTP"
+	case L7ProtocolPostgres:
+		return "Postgres"
+	}
+	return "UNKNOWN:" + strconv.Itoa(int(p))
+}
+
+type L7Request struct {
+	Protocol L7Protocol
 	Status   int
 	Duration time.Duration
 }
 
 type Event struct {
-	Type        EventType
-	Reason      EventReason
-	Pid         uint32
-	SrcAddr     netaddr.IPPort
-	DstAddr     netaddr.IPPort
-	Fd          uint64
-	HttpRequest *HttpRequest
+	Type      EventType
+	Reason    EventReason
+	Pid       uint32
+	SrcAddr   netaddr.IPPort
+	DstAddr   netaddr.IPPort
+	Fd        uint64
+	L7Request *L7Request
 }
 
 type Tracer struct {
@@ -159,7 +177,7 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bo
 		"file_events":           &fileEvent{},
 	}
 	if !disableL7Tracing {
-		events["http_events"] = &httpEvent{}
+		events["l7_events"] = &l7Event{}
 	}
 
 	for name, typ := range events {
@@ -226,8 +244,8 @@ func (t EventType) String() string {
 		return "file-open"
 	case EventTypeTCPRetransmit:
 		return "tcp-retransmit"
-	case EventTypeHTTPRequest:
-		return "http-request"
+	case EventTypeL7Request:
+		return "l7-request"
 	}
 	return "unknown: " + strconv.Itoa(int(t))
 }
@@ -280,15 +298,17 @@ func (e fileEvent) Event() Event {
 	return Event{Type: EventType(e.Type), Pid: e.Pid, Fd: e.Fd}
 }
 
-type httpEvent struct {
+type l7Event struct {
 	Fd       uint64
 	Pid      uint32
 	Status   uint32
 	Duration uint64
+	Protocol uint8
 }
 
-func (e httpEvent) Event() Event {
-	return Event{Type: EventTypeHTTPRequest, Pid: e.Pid, Fd: e.Fd, HttpRequest: &HttpRequest{
+func (e l7Event) Event() Event {
+	return Event{Type: EventTypeL7Request, Pid: e.Pid, Fd: e.Fd, L7Request: &L7Request{
+		Protocol: L7Protocol(e.Protocol),
 		Status:   int(e.Status),
 		Duration: time.Duration(e.Duration),
 	}}

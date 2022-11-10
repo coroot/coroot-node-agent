@@ -65,7 +65,7 @@ type ActiveConnection struct {
 	Fd         uint64
 }
 
-type HttpStats struct {
+type L7Stats struct {
 	Requests *prometheus.CounterVec
 	Latency  prometheus.Histogram
 }
@@ -90,8 +90,9 @@ type Container struct {
 	connectsFailed     map[netaddr.IPPort]int64     // dst -> count
 	connectLastAttempt map[netaddr.IPPort]time.Time // dst -> time
 	connectionsActive  map[AddrPair]ActiveConnection
-	retransmits        map[AddrPair]int64      // dst:actual_dst -> count
-	http               map[AddrPair]*HttpStats // dst:actual_dst -> stats
+	retransmits        map[AddrPair]int64 // dst:actual_dst -> count
+
+	l7Stats map[ebpftracer.L7Protocol]map[AddrPair]*L7Stats // protocol -> dst:actual_dst -> stats
 
 	oomKills int
 
@@ -120,7 +121,7 @@ func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata) *Container {
 		connectLastAttempt: map[netaddr.IPPort]time.Time{},
 		connectionsActive:  map[AddrPair]ActiveConnection{},
 		retransmits:        map[AddrPair]int64{},
-		http:               map[AddrPair]*HttpStats{},
+		l7Stats:            map[ebpftracer.L7Protocol]map[AddrPair]*L7Stats{},
 
 		mountIds: map[string]struct{}{},
 
@@ -162,9 +163,11 @@ func (c *Container) Describe(ch chan<- *prometheus.Desc) {
 	for _, m := range metricsList {
 		ch <- m
 	}
-	for _, s := range c.http {
-		s.Requests.Describe(ch)
-		s.Latency.Describe(ch)
+	for _, protoStats := range c.l7Stats {
+		for _, s := range protoStats {
+			s.Requests.Describe(ch)
+			s.Latency.Describe(ch)
+		}
 	}
 }
 
@@ -290,9 +293,11 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		ch <- gauge(metrics.ApplicationType, 1, appType)
 	}
 
-	for _, stats := range c.http {
-		stats.Requests.Collect(ch)
-		stats.Latency.Collect(ch)
+	for _, protoStats := range c.l7Stats {
+		for _, s := range protoStats {
+			s.Requests.Collect(ch)
+			s.Latency.Collect(ch)
+		}
 	}
 
 	if !*flags.DisablePinger {
@@ -419,39 +424,53 @@ func (c *Container) onConnectionClose(srcDst AddrPair) bool {
 	return true
 }
 
-func (c *Container) onHttpRequest(pid uint32, fd uint64, r *ebpftracer.HttpRequest) {
+func (c *Container) onL7Request(pid uint32, fd uint64, r *ebpftracer.L7Request) {
 	for dest, conn := range c.connectionsActive {
 		if conn.Pid == pid && conn.Fd == fd {
 			key := AddrPair{src: dest.dst, dst: conn.ActualDest}
-			s := c.http[key]
-			if s == nil {
-				requests := prometheus.NewCounterVec(
-					prometheus.CounterOpts{
-						Name: "container_http_requests_total",
-						Help: "Total number of outbound HTTP requests",
-						ConstLabels: map[string]string{
-							"destination":        dest.dst.String(),
-							"actual_destination": conn.ActualDest.String(),
-						},
-					},
-					[]string{"status"},
-				)
-				latency := prometheus.NewHistogram(
-					prometheus.HistogramOpts{
-						Name: "container_http_request_duration_seconds_total",
-						Help: "Histogram of the response time for each outbound HTTP request",
-						ConstLabels: map[string]string{
-							"destination":        dest.dst.String(),
-							"actual_destination": conn.ActualDest.String(),
-						},
-					},
-				)
-				s = &HttpStats{Requests: requests, Latency: latency}
-				c.http[key] = s
+			stats := c.l7Stats[r.Protocol]
+			if stats == nil {
+				stats = map[AddrPair]*L7Stats{}
+				c.l7Stats[r.Protocol] = stats
 			}
-			s.Requests.WithLabelValues(strconv.Itoa(r.Status)).Inc()
+			s := stats[key]
+			if s == nil {
+				constLabels := map[string]string{"destination": key.src.String(), "actual_destination": key.dst.String()}
+				cOpts, ok := L7Requests[r.Protocol]
+				if !ok {
+					klog.Warningln("cannot find metric description for L7 protocol: %s", r.Protocol.String())
+					return
+				}
+				hOpts, ok := L7Latency[r.Protocol]
+				if !ok {
+					klog.Warningln("cannot find metric description for L7 protocol: %s", r.Protocol.String())
+					return
+				}
+				s = &L7Stats{
+					Requests: prometheus.NewCounterVec(
+						prometheus.CounterOpts{Name: cOpts.Name, Help: cOpts.Help, ConstLabels: constLabels},
+						[]string{"status"},
+					),
+					Latency: prometheus.NewHistogram(
+						prometheus.HistogramOpts{Name: hOpts.Name, Help: hOpts.Help, ConstLabels: constLabels},
+					),
+				}
+				stats[key] = s
+			}
+			status := ""
+			switch r.Protocol {
+			case ebpftracer.L7ProtocolHTTP:
+				status = strconv.Itoa(r.Status)
+			case ebpftracer.L7ProtocolPostgres:
+				if r.Status == 500 {
+					status = "failed"
+				} else {
+					status = "ok"
+				}
+			}
+			s.Requests.WithLabelValues(status).Inc()
 			s.Latency.Observe(r.Duration.Seconds())
-			break
+			return
 		}
 	}
 }
@@ -732,9 +751,11 @@ func (c *Container) gc(now time.Time) {
 					delete(c.retransmits, d)
 				}
 			}
-			for d := range c.http {
-				if d.src == dst {
-					delete(c.http, d)
+			for _, protoStats := range c.l7Stats {
+				for d := range protoStats {
+					if d.src == dst {
+						delete(protoStats, d)
+					}
 				}
 			}
 		}
