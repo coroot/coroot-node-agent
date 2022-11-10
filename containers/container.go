@@ -461,7 +461,7 @@ func (c *Container) onL7Request(pid uint32, fd uint64, r *ebpftracer.L7Request) 
 			switch r.Protocol {
 			case ebpftracer.L7ProtocolHTTP:
 				status = strconv.Itoa(r.Status)
-			case ebpftracer.L7ProtocolPostgres, ebpftracer.L7ProtocolRedis:
+			case ebpftracer.L7ProtocolPostgres, ebpftracer.L7ProtocolRedis, ebpftracer.L7ProtocolMemcached:
 				if r.Status == 500 {
 					status = "failed"
 				} else {

@@ -1,7 +1,7 @@
 build:
 	@echo ===BUILDING===
 	docker rmi -f ebpftracer
-	docker build -t ebpftracer .
+	docker build -t ebpftracer --progress plain .
 	docker run --rm --name ebpftracer ebpftracer cat /tmp/ebpf.go > ./ebpf.go
 	@echo
 

@@ -1,11 +1,13 @@
 #include "http.c"
 #include "postgres.c"
 #include "redis.c"
+#include "memcached.c"
 
 #define PROTOCOL_UNKNOWN    0
 #define PROTOCOL_HTTP	    1
 #define PROTOCOL_POSTGRES	2
 #define PROTOCOL_REDIS	    3
+#define PROTOCOL_MEMCACHED  4
 
 struct l7_event {
 	__u64 fd;
@@ -82,6 +84,8 @@ int trace_enter_write(__u64 fd, char *buf, __u64 size) {
         req.protocol = PROTOCOL_POSTGRES;
     } else if (is_redis_query(buf)) {
         req.protocol = PROTOCOL_REDIS;
+    } else if (is_memcached_query(buf, size)) {
+        req.protocol = PROTOCOL_MEMCACHED;
     } else {
         return 0;
     }
@@ -132,6 +136,8 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
         e.status = parse_postgres_status(args->buf, ctx->ret);
     } else if (req->protocol == PROTOCOL_REDIS) {
         e.status = parse_redis_status(args->buf, ctx->ret);
+    } else if (req->protocol == PROTOCOL_MEMCACHED) {
+        e.status = parse_memcached_status(args->buf, ctx->ret);
     }
     if (e.status == 0) {
         return 0;
