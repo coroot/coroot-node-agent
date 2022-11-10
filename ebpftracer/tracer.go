@@ -44,6 +44,7 @@ type L7Protocol uint8
 const (
 	L7ProtocolHTTP     L7Protocol = 1
 	L7ProtocolPostgres L7Protocol = 2
+	L7ProtocolRedis    L7Protocol = 3
 )
 
 func (p L7Protocol) String() string {
@@ -52,6 +53,8 @@ func (p L7Protocol) String() string {
 		return "HTTP"
 	case L7ProtocolPostgres:
 		return "Postgres"
+	case L7ProtocolRedis:
+		return "Redis"
 	}
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }
