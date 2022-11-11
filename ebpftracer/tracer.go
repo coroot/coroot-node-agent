@@ -46,6 +46,7 @@ const (
 	L7ProtocolPostgres  L7Protocol = 2
 	L7ProtocolRedis     L7Protocol = 3
 	L7ProtocolMemcached L7Protocol = 4
+	L7ProtocolMysql     L7Protocol = 5
 )
 
 func (p L7Protocol) String() string {
@@ -58,6 +59,8 @@ func (p L7Protocol) String() string {
 		return "Redis"
 	case L7ProtocolMemcached:
 		return "Memcached"
+	case L7ProtocolMysql:
+		return "Mysql"
 	}
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }
