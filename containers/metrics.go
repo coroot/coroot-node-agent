@@ -79,6 +79,7 @@ var (
 		ebpftracer.L7ProtocolRedis:     {Name: "container_redis_queries_total", Help: "Total number of outbound Redis queries"},
 		ebpftracer.L7ProtocolMemcached: {Name: "container_memcached_queries_total", Help: "Total number of outbound Memcached queries"},
 		ebpftracer.L7ProtocolMysql:     {Name: "container_mysql_queries_total", Help: "Total number of outbound Mysql queries"},
+		ebpftracer.L7ProtocolMongo:     {Name: "container_mongo_queries_total", Help: "Total number of outbound Mongo queries"},
 	}
 	L7Latency = map[ebpftracer.L7Protocol]prometheus.HistogramOpts{
 		ebpftracer.L7ProtocolHTTP:      {Name: "container_http_request_duration_seconds_total", Help: "Histogram of the response time for each outbound HTTP request"},
@@ -86,6 +87,7 @@ var (
 		ebpftracer.L7ProtocolRedis:     {Name: "container_redis_queries_duration_seconds_total", Help: "Histogram of the execution time for each outbound Redis query"},
 		ebpftracer.L7ProtocolMemcached: {Name: "container_memcached_queries_duration_seconds_total", Help: "Histogram of the execution time for each outbound Memcached query"},
 		ebpftracer.L7ProtocolMysql:     {Name: "container_mysql_queries_duration_seconds_total", Help: "Histogram of the execution time for each outbound Mysql query"},
+		ebpftracer.L7ProtocolMongo:     {Name: "container_mongo_queries_duration_seconds_total", Help: "Histogram of the execution time for each outbound Mongo query"},
 	}
 )
 

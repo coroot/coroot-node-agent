@@ -3,6 +3,7 @@
 #include "redis.c"
 #include "memcached.c"
 #include "mysql.c"
+#include "mongo.c"
 
 #define PROTOCOL_UNKNOWN    0
 #define PROTOCOL_HTTP	    1
@@ -10,6 +11,7 @@
 #define PROTOCOL_REDIS	    3
 #define PROTOCOL_MEMCACHED  4
 #define PROTOCOL_MYSQL      5
+#define PROTOCOL_MONGO      6
 
 struct l7_event {
 	__u64 fd;
@@ -46,6 +48,7 @@ struct socket_key {
 struct l7_request {
     __u64 ns;
     __u8 protocol;
+    __u8 partial;
 };
 
 struct {
@@ -80,6 +83,7 @@ static inline __attribute__((__always_inline__))
 int trace_enter_write(__u64 fd, char *buf, __u64 size) {
     __u32 pid = bpf_get_current_pid_tgid() >> 32;
     struct l7_request req = {};
+    req.partial = 0;
     if (is_http_request(buf)) {
         req.protocol = PROTOCOL_HTTP;
     } else if (is_postgres_query(buf, size)) {
@@ -90,6 +94,8 @@ int trace_enter_write(__u64 fd, char *buf, __u64 size) {
         req.protocol = PROTOCOL_MEMCACHED;
     } else if (is_mysql_query(buf, size)) {
         req.protocol = PROTOCOL_MYSQL;
+    } else if (is_mongo_query(buf, size)) {
+        req.protocol = PROTOCOL_MONGO;
     } else {
         return 0;
     }
@@ -144,6 +150,13 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
         e.status = parse_memcached_status(args->buf, ctx->ret);
     } else if (req->protocol == PROTOCOL_MYSQL) {
         e.status = parse_mysql_status(args->buf, ctx->ret);
+    } else if (req->protocol == PROTOCOL_MONGO) {
+        e.status = parse_mongo_status(args->buf, ctx->ret, req->partial);
+        if (e.status == 1) {
+            req->partial = 1;
+            bpf_map_update_elem(&active_l7_requests, &k, req, BPF_ANY);
+            return 0;
+        }
     }
     if (e.status == 0) {
         return 0;
