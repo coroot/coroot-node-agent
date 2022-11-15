@@ -2,8 +2,8 @@ FROM alpine:3.13
 
 RUN apk add llvm clang libbpf-dev linux-headers
 
-COPY ebpf/* /tmp/
-WORKDIR /tmp
+COPY ebpf /tmp/ebpf
+WORKDIR /tmp/ebpf
 
 RUN clang -g -O2 -target bpf -D__KERNEL=416 -c ebpf.c -o ebpf416.o && llvm-strip --strip-debug ebpf416.o
 RUN clang -g -O2 -target bpf -D__KERNEL=420 -c ebpf.c -o ebpf420.o && llvm-strip --strip-debug ebpf420.o

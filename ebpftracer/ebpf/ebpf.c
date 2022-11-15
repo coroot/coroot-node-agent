@@ -18,8 +18,8 @@
 
 #include "proc.c"
 #include "file.c"
-#include "tcp_state.c"
-#include "tcp_retransmit.c"
-#include "l7.c"
+#include "tcp/state.c"
+#include "tcp/retransmit.c"
+#include "l7/l7.c"
 
 char _license[] SEC("license") = "GPL";
