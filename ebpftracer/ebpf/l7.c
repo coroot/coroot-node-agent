@@ -14,19 +14,18 @@
 #define PROTOCOL_MONGO      6
 
 struct l7_event {
-	__u64 fd;
-	__u32 pid;
+    __u64 fd;
+    __u32 pid;
     __u32 status;
     __u64 duration;
     __u8 protocol;
 };
 
 struct {
-	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	__uint(key_size, sizeof(int));
-	__uint(value_size, sizeof(int));
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(int));
+    __uint(value_size, sizeof(int));
 } l7_events SEC(".maps");
-
 
 struct rw_args_t {
     __u64 fd;
@@ -34,10 +33,10 @@ struct rw_args_t {
 };
 
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(key_size, sizeof(__u64));
-	__uint(value_size, sizeof(struct rw_args_t));
-	__uint(max_entries, 10240);
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(struct rw_args_t));
+    __uint(max_entries, 10240);
 } active_reads SEC(".maps");
 
 struct socket_key {
@@ -52,32 +51,25 @@ struct l7_request {
 };
 
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(key_size, sizeof(struct socket_key));
-	__uint(value_size, sizeof(struct l7_request));
-	__uint(max_entries, 10240);
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(key_size, sizeof(struct socket_key));
+    __uint(value_size, sizeof(struct l7_request));
+    __uint(max_entries, 10240);
 } active_l7_requests SEC(".maps");
 
 struct trace_event_raw_sys_enter_rw__stub {
-	__u64 unused;
-	long int id;
-	__u64 fd;
-	char* buf;
-	__u64 size;
+    __u64 unused;
+    long int id;
+    __u64 fd;
+    char* buf;
+    __u64 size;
 };
 
 struct trace_event_raw_sys_exit_rw__stub {
-	__u64 unused;
-	long int id;
-	long int ret;
+    __u64 unused;
+    long int id;
+    long int ret;
 };
-
-#define bpf_printk(fmt, ...)                            \
-({                                                      \
-        char ____fmt[] = fmt;                           \
-        bpf_trace_printk(____fmt, sizeof(____fmt),      \
-                         ##__VA_ARGS__);                \
-})
 
 static inline __attribute__((__always_inline__))
 int trace_enter_write(__u64 fd, char *buf, __u64 size) {
