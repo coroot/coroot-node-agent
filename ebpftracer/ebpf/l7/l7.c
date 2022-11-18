@@ -51,10 +51,10 @@ struct l7_request {
 };
 
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(key_size, sizeof(struct socket_key));
     __uint(value_size, sizeof(struct l7_request));
-    __uint(max_entries, 10240);
+    __uint(max_entries, 32768);
 } active_l7_requests SEC(".maps");
 
 struct trace_event_raw_sys_enter_rw__stub {
