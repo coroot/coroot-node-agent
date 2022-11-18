@@ -153,3 +153,10 @@ int sys_enter_connect(void *ctx) {
     return 0;
 }
 
+SEC("tracepoint/syscalls/sys_exit_connect")
+int sys_exit_connect(void *ctx) {
+    __u64 id = bpf_get_current_pid_tgid();
+    bpf_map_delete_elem(&fd_by_pid_tgid, &id);
+    return 0;
+}
+
