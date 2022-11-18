@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type EventType uint32
@@ -32,18 +33,55 @@ const (
 	EventTypeListenClose     EventType = 7
 	EventTypeFileOpen        EventType = 8
 	EventTypeTCPRetransmit   EventType = 9
+	EventTypeL7Request       EventType = 10
 
 	EventReasonNone    EventReason = 0
 	EventReasonOOMKill EventReason = 1
 )
 
+type L7Protocol uint8
+
+const (
+	L7ProtocolHTTP      L7Protocol = 1
+	L7ProtocolPostgres  L7Protocol = 2
+	L7ProtocolRedis     L7Protocol = 3
+	L7ProtocolMemcached L7Protocol = 4
+	L7ProtocolMysql     L7Protocol = 5
+	L7ProtocolMongo     L7Protocol = 6
+)
+
+func (p L7Protocol) String() string {
+	switch p {
+	case L7ProtocolHTTP:
+		return "HTTP"
+	case L7ProtocolPostgres:
+		return "Postgres"
+	case L7ProtocolRedis:
+		return "Redis"
+	case L7ProtocolMemcached:
+		return "Memcached"
+	case L7ProtocolMysql:
+		return "Mysql"
+	case L7ProtocolMongo:
+		return "Mongo"
+	}
+	return "UNKNOWN:" + strconv.Itoa(int(p))
+}
+
+type L7Request struct {
+	Protocol L7Protocol
+	Status   int
+	Duration time.Duration
+}
+
 type Event struct {
-	Type    EventType
-	Reason  EventReason
-	Pid     uint32
-	SrcAddr netaddr.IPPort
-	DstAddr netaddr.IPPort
-	Fd      uint32
+	Type      EventType
+	Reason    EventReason
+	Pid       uint32
+	SrcAddr   netaddr.IPPort
+	DstAddr   netaddr.IPPort
+	Fd        uint64
+	L7Request *L7Request
 }
 
 type Tracer struct {
@@ -52,10 +90,13 @@ type Tracer struct {
 	links      []link.Link
 }
 
-func NewTracer(events chan<- Event, kernelVersion string) (*Tracer, error) {
+func NewTracer(events chan<- Event, kernelVersion string, disableL7Tracing bool) (*Tracer, error) {
 	t := &Tracer{readers: map[string]*perf.Reader{}}
-	if err := t.ebpf(events, kernelVersion); err != nil {
+	if err := t.ebpf(events, kernelVersion, disableL7Tracing); err != nil {
 		return nil, err
+	}
+	if disableL7Tracing {
+		klog.Infoln("L7 tracing is disabled")
 	}
 	if err := t.init(events); err != nil {
 		return nil, err
@@ -104,6 +145,7 @@ func (t *Tracer) init(ch chan<- Event) error {
 		ch <- Event{
 			Type:    typ,
 			Pid:     s.pid,
+			Fd:      s.fd,
 			SrcAddr: s.SAddr,
 			DstAddr: s.DAddr,
 		}
@@ -111,7 +153,7 @@ func (t *Tracer) init(ch chan<- Event) error {
 	return nil
 }
 
-func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string) error {
+func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bool) error {
 	kv := "v" + common.KernelMajorMinor(kernelVersion)
 	var prg []byte
 	for _, p := range ebpfProg {
@@ -146,6 +188,10 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string) error {
 		"tcp_retransmit_events": &tcpEvent{},
 		"file_events":           &fileEvent{},
 	}
+	if !disableL7Tracing {
+		events["l7_events"] = &l7Event{}
+	}
+
 	for name, typ := range events {
 		r, err := perf.NewReader(t.collection.Maps[name], os.Getpagesize())
 		if err != nil {
@@ -160,6 +206,16 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string) error {
 		p := t.collection.Programs[name]
 		if runtime.GOARCH == "arm64" && (spec.Name == "sys_enter_open" || spec.Name == "sys_exit_open") {
 			continue
+		}
+		if disableL7Tracing {
+			switch spec.Name {
+			case "sys_enter_writev", "sys_enter_write", "sys_enter_sendto":
+				continue
+			case "sys_enter_read", "sys_enter_readv", "sys_enter_recvfrom":
+				continue
+			case "sys_exit_read", "sys_exit_readv", "sys_exit_recvfrom":
+				continue
+			}
 		}
 		var err error
 		var l link.Link
@@ -200,6 +256,8 @@ func (t EventType) String() string {
 		return "file-open"
 	case EventTypeTCPRetransmit:
 		return "tcp-retransmit"
+	case EventTypeL7Request:
+		return "l7-request"
 	}
 	return "unknown: " + strconv.Itoa(int(t))
 }
@@ -229,6 +287,7 @@ func (e procEvent) Event() Event {
 }
 
 type tcpEvent struct {
+	Fd    uint64
 	Type  uint32
 	Pid   uint32
 	SPort uint16
@@ -238,17 +297,33 @@ type tcpEvent struct {
 }
 
 func (e tcpEvent) Event() Event {
-	return Event{Type: EventType(e.Type), Pid: e.Pid, SrcAddr: ipPort(e.SAddr, e.SPort), DstAddr: ipPort(e.DAddr, e.DPort)}
+	return Event{Type: EventType(e.Type), Pid: e.Pid, SrcAddr: ipPort(e.SAddr, e.SPort), DstAddr: ipPort(e.DAddr, e.DPort), Fd: e.Fd}
 }
 
 type fileEvent struct {
 	Type uint32
 	Pid  uint32
-	Fd   uint32
+	Fd   uint64
 }
 
 func (e fileEvent) Event() Event {
 	return Event{Type: EventType(e.Type), Pid: e.Pid, Fd: e.Fd}
+}
+
+type l7Event struct {
+	Fd       uint64
+	Pid      uint32
+	Status   uint32
+	Duration uint64
+	Protocol uint8
+}
+
+func (e l7Event) Event() Event {
+	return Event{Type: EventTypeL7Request, Pid: e.Pid, Fd: e.Fd, L7Request: &L7Request{
+		Protocol: L7Protocol(e.Protocol),
+		Status:   int(e.Status),
+		Duration: time.Duration(e.Duration),
+	}}
 }
 
 func runEventsReader(name string, r *perf.Reader, ch chan<- Event, e rawEvent) {

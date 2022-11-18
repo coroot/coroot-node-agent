@@ -5,6 +5,7 @@ import (
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
+	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
@@ -78,7 +79,7 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, er
 	}
 
 	go cs.handleEvents(cs.events)
-	t, err := ebpftracer.NewTracer(cs.events, kernelVersion)
+	t, err := ebpftracer.NewTracer(cs.events, kernelVersion, *flags.DisableL7Tracing)
 	if err != nil {
 		close(cs.events)
 		return nil, err
@@ -177,13 +178,13 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 
 			case ebpftracer.EventTypeConnectionOpen:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onConnectionOpen(e.Pid, e.SrcAddr, e.DstAddr, false)
+					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, false)
 				} else {
 					klog.Infoln("TCP connection from unknown container", e)
 				}
 			case ebpftracer.EventTypeConnectionError:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onConnectionOpen(e.Pid, e.SrcAddr, e.DstAddr, true)
+					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, true)
 				} else {
 					klog.Infoln("TCP connection error from unknown container", e)
 				}
@@ -200,6 +201,13 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					if c.onRetransmit(srcDst) {
 						break
 					}
+				}
+			case ebpftracer.EventTypeL7Request:
+				if e.L7Request == nil {
+					continue
+				}
+				if c := r.containersByPid[e.Pid]; c != nil {
+					c.onL7Request(e.Pid, e.Fd, e.L7Request)
 				}
 			}
 		}

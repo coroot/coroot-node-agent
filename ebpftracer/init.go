@@ -8,11 +8,12 @@ import (
 
 type file struct {
 	pid uint32
-	fd  uint32
+	fd  uint64
 }
 
 type sock struct {
 	pid uint32
+	fd  uint64
 	proc.Sock
 }
 
@@ -46,6 +47,7 @@ func readFds(pids []uint32) (files []file, socks []sock) {
 			switch {
 			case fd.SocketInode != "":
 				if s, ok := sockets[fd.SocketInode]; ok {
+					s.fd = fd.Fd
 					s.pid = pid
 					socks = append(socks, s)
 				}

@@ -3,6 +3,7 @@ package containers
 import (
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
+	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
@@ -14,6 +15,7 @@ import (
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +59,17 @@ type AddrPair struct {
 	dst netaddr.IPPort
 }
 
+type ActiveConnection struct {
+	ActualDest netaddr.IPPort
+	Pid        uint32
+	Fd         uint64
+}
+
+type L7Stats struct {
+	Requests *prometheus.CounterVec
+	Latency  prometheus.Histogram
+}
+
 type Container struct {
 	cgroup   *cgroup.Cgroup
 	metadata *ContainerMetadata
@@ -73,11 +86,13 @@ type Container struct {
 
 	listens map[netaddr.IPPort]map[uint32]time.Time // listen addr -> pid -> close time
 
-	connectsSuccessful map[AddrPair]int             // dst:actual_dst -> count
-	connectsFailed     map[netaddr.IPPort]int       // dst -> count
+	connectsSuccessful map[AddrPair]int64           // dst:actual_dst -> count
+	connectsFailed     map[netaddr.IPPort]int64     // dst -> count
 	connectLastAttempt map[netaddr.IPPort]time.Time // dst -> time
-	connectionsActive  map[AddrPair]netaddr.IPPort  // src:dst -> actual_dst
-	retransmits        map[AddrPair]int             // dst:actual_dst -> count
+	connectionsActive  map[AddrPair]ActiveConnection
+	retransmits        map[AddrPair]int64 // dst:actual_dst -> count
+
+	l7Stats map[ebpftracer.L7Protocol]map[AddrPair]*L7Stats // protocol -> dst:actual_dst -> stats
 
 	oomKills int
 
@@ -101,11 +116,12 @@ func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata) *Container {
 
 		listens: map[netaddr.IPPort]map[uint32]time.Time{},
 
-		connectsSuccessful: map[AddrPair]int{},
-		connectsFailed:     map[netaddr.IPPort]int{},
+		connectsSuccessful: map[AddrPair]int64{},
+		connectsFailed:     map[netaddr.IPPort]int64{},
 		connectLastAttempt: map[netaddr.IPPort]time.Time{},
-		connectionsActive:  map[AddrPair]netaddr.IPPort{},
-		retransmits:        map[AddrPair]int{},
+		connectionsActive:  map[AddrPair]ActiveConnection{},
+		retransmits:        map[AddrPair]int64{},
+		l7Stats:            map[ebpftracer.L7Protocol]map[AddrPair]*L7Stats{},
 
 		mountIds: map[string]struct{}{},
 
@@ -146,6 +162,12 @@ func (c *Container) Dead(now time.Time) bool {
 func (c *Container) Describe(ch chan<- *prometheus.Desc) {
 	for _, m := range metricsList {
 		ch <- m
+	}
+	for _, protoStats := range c.l7Stats {
+		for _, s := range protoStats {
+			s.Requests.Describe(ch)
+			s.Latency.Describe(ch)
+		}
 	}
 }
 
@@ -242,8 +264,8 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	connections := map[AddrPair]int{}
-	for c, actualDst := range c.connectionsActive {
-		connections[AddrPair{src: c.dst, dst: actualDst}]++
+	for c, conn := range c.connectionsActive {
+		connections[AddrPair{src: c.dst, dst: conn.ActualDest}]++
 	}
 	for d, count := range connections {
 		ch <- gauge(metrics.NetConnectionsActive, float64(count), d.src.String(), d.dst.String())
@@ -271,7 +293,14 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		ch <- gauge(metrics.ApplicationType, 1, appType)
 	}
 
-	if !*flags.NoPingUpstreams {
+	for _, protoStats := range c.l7Stats {
+		for _, s := range protoStats {
+			s.Requests.Collect(ch)
+			s.Latency.Collect(ch)
+		}
+	}
+
+	if !*flags.DisablePinger {
 		for ip, rtt := range c.ping(netNs) {
 			ch <- gauge(metrics.NetLatency, rtt, ip.String())
 		}
@@ -316,7 +345,7 @@ func (c *Container) onProcessExit(pid uint32, oomKill bool) {
 	}
 }
 
-func (c *Container) onFileOpen(pid uint32, fd uint32) {
+func (c *Container) onFileOpen(pid uint32, fd uint64) {
 	mntId, logPath := resolveFd(pid, fd)
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -349,7 +378,7 @@ func (c *Container) onListenClose(pid uint32, addr netaddr.IPPort) {
 	}
 }
 
-func (c *Container) onConnectionOpen(pid uint32, src, dst netaddr.IPPort, failed bool) {
+func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPPort, failed bool) {
 	if dst.IP().IsLoopback() {
 		netNs, err := proc.GetNetNs(pid)
 		isHostNs := err == nil && hostNetNsId == netNs.UniqueId()
@@ -376,7 +405,11 @@ func (c *Container) onConnectionOpen(pid uint32, src, dst netaddr.IPPort, failed
 	} else {
 		actualDst := ConntrackGetActualDestination(src, dst)
 		c.connectsSuccessful[AddrPair{src: dst, dst: actualDst}]++
-		c.connectionsActive[AddrPair{src: src, dst: dst}] = actualDst
+		c.connectionsActive[AddrPair{src: src, dst: dst}] = ActiveConnection{
+			ActualDest: actualDst,
+			Pid:        pid,
+			Fd:         fd,
+		}
 	}
 	c.connectLastAttempt[dst] = time.Now()
 }
@@ -391,14 +424,65 @@ func (c *Container) onConnectionClose(srcDst AddrPair) bool {
 	return true
 }
 
+func (c *Container) onL7Request(pid uint32, fd uint64, r *ebpftracer.L7Request) {
+	for dest, conn := range c.connectionsActive {
+		if conn.Pid == pid && conn.Fd == fd {
+			key := AddrPair{src: dest.dst, dst: conn.ActualDest}
+			stats := c.l7Stats[r.Protocol]
+			if stats == nil {
+				stats = map[AddrPair]*L7Stats{}
+				c.l7Stats[r.Protocol] = stats
+			}
+			s := stats[key]
+			if s == nil {
+				constLabels := map[string]string{"destination": key.src.String(), "actual_destination": key.dst.String()}
+				cOpts, ok := L7Requests[r.Protocol]
+				if !ok {
+					klog.Warningln("cannot find metric description for L7 protocol: %s", r.Protocol.String())
+					return
+				}
+				hOpts, ok := L7Latency[r.Protocol]
+				if !ok {
+					klog.Warningln("cannot find metric description for L7 protocol: %s", r.Protocol.String())
+					return
+				}
+				s = &L7Stats{
+					Requests: prometheus.NewCounterVec(
+						prometheus.CounterOpts{Name: cOpts.Name, Help: cOpts.Help, ConstLabels: constLabels},
+						[]string{"status"},
+					),
+					Latency: prometheus.NewHistogram(
+						prometheus.HistogramOpts{Name: hOpts.Name, Help: hOpts.Help, ConstLabels: constLabels},
+					),
+				}
+				stats[key] = s
+			}
+			status := ""
+			switch r.Protocol {
+			case ebpftracer.L7ProtocolHTTP:
+				status = strconv.Itoa(r.Status)
+			default:
+				if r.Status == 500 {
+					status = "failed"
+				} else {
+					status = "ok"
+				}
+			}
+			s.Requests.WithLabelValues(status).Inc()
+			s.Latency.Observe(r.Duration.Seconds())
+			return
+		}
+	}
+}
+
 func (c *Container) onRetransmit(srcDst AddrPair) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	actualDst, ok := c.connectionsActive[srcDst]
+	conn, ok := c.connectionsActive[srcDst]
 	if !ok {
 		return false
 	}
-	c.retransmits[AddrPair{src: srcDst.dst, dst: actualDst}]++
+	c.retransmits[AddrPair{src: srcDst.dst, dst: conn.ActualDest}]++
 	return true
 }
 
@@ -566,7 +650,7 @@ func (c *Container) ping(netNs netns.NsHandle) map[netaddr.IP]float64 {
 }
 
 func (c *Container) runLogParser(logPath string) {
-	if *flags.NoParseLogs {
+	if *flags.DisableLogParsing {
 		return
 	}
 
@@ -667,6 +751,13 @@ func (c *Container) gc(now time.Time) {
 					delete(c.retransmits, d)
 				}
 			}
+			for _, protoStats := range c.l7Stats {
+				for d := range protoStats {
+					if d.src == dst {
+						delete(protoStats, d)
+					}
+				}
+			}
 		}
 	}
 }
@@ -738,7 +829,7 @@ func (c *Container) revalidateListens(now time.Time, actualListens map[netaddr.I
 	}
 }
 
-func resolveFd(pid uint32, fd uint32) (mntId string, logPath string) {
+func resolveFd(pid uint32, fd uint64) (mntId string, logPath string) {
 	info := proc.GetFdInfo(pid, fd)
 	if info == nil {
 		return
