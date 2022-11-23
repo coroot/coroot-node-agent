@@ -73,7 +73,7 @@ struct trace_event_raw_sys_exit_rw__stub {
 
 static inline __attribute__((__always_inline__))
 int trace_enter_write(__u64 fd, char *buf, __u64 size) {
-    __u32 pid = bpf_get_current_pid_tgid() >> 32;
+    __u64 id = bpf_get_current_pid_tgid();
     struct l7_request req = {};
     req.partial = 0;
     if (is_http_request(buf)) {
@@ -93,7 +93,7 @@ int trace_enter_write(__u64 fd, char *buf, __u64 size) {
     }
     req.ns = bpf_ktime_get_ns();
     struct socket_key k = {};
-    k.pid = pid;
+    k.pid = id >> 32;
     k.fd = fd;
     bpf_map_update_elem(&active_l7_requests, &k, &req, BPF_ANY);
     return 0;
@@ -117,46 +117,54 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
     if (!args) {
         return 0;
     }
+    char *buf;
+    struct socket_key k = {};
+    k.pid = id >> 32;
+    k.fd = args->fd;
+    buf = args->buf;
+
     bpf_map_delete_elem(&active_reads, &id);
     if (ctx->ret <= 0) {
         return 0;
     }
-    struct socket_key k = {};
-    k.pid = id >> 32;
-    k.fd = args->fd;
 
     struct l7_request *req = bpf_map_lookup_elem(&active_l7_requests, &k);
     if (!req) {
         return 0;
     }
+    struct l7_event e = {};
+    e.protocol = req->protocol;
+    e.fd = k.fd;
+    e.pid = k.pid;
+    __u64 ns = req->ns;
+    __u8 partial = req->partial;
     bpf_map_delete_elem(&active_l7_requests, &k);
 
-    struct l7_event e = {};
     if (req->protocol == PROTOCOL_HTTP) {
-        e.status = parse_http_status(args->buf);
+        e.status = parse_http_status(buf);
     } else if (req->protocol == PROTOCOL_POSTGRES) {
-        e.status = parse_postgres_status(args->buf, ctx->ret);
+        e.status = parse_postgres_status(buf, ctx->ret);
     } else if (req->protocol == PROTOCOL_REDIS) {
-        e.status = parse_redis_status(args->buf, ctx->ret);
+        e.status = parse_redis_status(buf, ctx->ret);
     } else if (req->protocol == PROTOCOL_MEMCACHED) {
-        e.status = parse_memcached_status(args->buf, ctx->ret);
+        e.status = parse_memcached_status(buf, ctx->ret);
     } else if (req->protocol == PROTOCOL_MYSQL) {
-        e.status = parse_mysql_status(args->buf, ctx->ret);
+        e.status = parse_mysql_status(buf, ctx->ret);
     } else if (req->protocol == PROTOCOL_MONGO) {
-        e.status = parse_mongo_status(args->buf, ctx->ret, req->partial);
+        e.status = parse_mongo_status(buf, ctx->ret, partial);
         if (e.status == 1) {
-            req->partial = 1;
-            bpf_map_update_elem(&active_l7_requests, &k, req, BPF_ANY);
+            struct l7_request r = {};
+            r.partial = 1;
+            r.protocol = e.protocol;
+            r.ns = ns;
+            bpf_map_update_elem(&active_l7_requests, &k, &r, BPF_ANY);
             return 0;
         }
     }
     if (e.status == 0) {
         return 0;
     }
-    e.protocol = req->protocol;
-    e.fd = k.fd;
-    e.pid = k.pid;
-    e.duration = bpf_ktime_get_ns() - req->ns;
+    e.duration = bpf_ktime_get_ns() - ns;
     bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, &e, sizeof(e));
     return 0;
 }

@@ -78,10 +78,10 @@ int inet_sock_set_state(void *ctx)
         if (!fdp) {
             return 0;
         }
-        bpf_map_delete_elem(&fd_by_pid_tgid, &id);
         struct sk_info i = {};
         i.pid = pid;
         i.fd = *fdp;
+        bpf_map_delete_elem(&fd_by_pid_tgid, &id);
         bpf_map_update_elem(&sk_info, &args.skaddr, &i, BPF_ANY);
         return 0;
     }
