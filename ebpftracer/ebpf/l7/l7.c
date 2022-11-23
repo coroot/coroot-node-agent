@@ -15,6 +15,7 @@
 
 struct l7_event {
     __u64 fd;
+    __u64 connection_timestamp;
     __u32 pid;
     __u32 status;
     __u64 duration;
@@ -136,6 +137,7 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
     e.protocol = req->protocol;
     e.fd = k.fd;
     e.pid = k.pid;
+    e.connection_timestamp = 0;
     __u64 ns = req->ns;
     __u8 partial = req->partial;
     bpf_map_delete_elem(&active_l7_requests, &k);
@@ -165,6 +167,10 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
         return 0;
     }
     e.duration = bpf_ktime_get_ns() - ns;
+    __u64 *timestamp = bpf_map_lookup_elem(&connection_timestamps, &k);
+    if (timestamp) {
+        e.connection_timestamp = *timestamp;
+    }
     bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, &e, sizeof(e));
     return 0;
 }

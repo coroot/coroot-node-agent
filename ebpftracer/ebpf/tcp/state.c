@@ -2,6 +2,7 @@
 
 struct tcp_event {
     __u64 fd;
+    __u64 timestamp;
     __u32 type;
     __u32 pid;
     __u16 sport;
@@ -59,6 +60,13 @@ struct {
     __uint(max_entries, 10240);
 } sk_info SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(struct sk_info));
+    __uint(value_size, sizeof(__u64));
+    __uint(max_entries, 32768);
+} connection_timestamps SEC(".maps");
+
 SEC("tracepoint/sock/inet_sock_set_state")
 int inet_sock_set_state(void *ctx)
 {
@@ -88,18 +96,22 @@ int inet_sock_set_state(void *ctx)
 
     __u64 fd = 0;
     __u32 type = 0;
+    __u64 timestamp = 0;
     void *map = &tcp_connect_events;
     if (args.oldstate == BPF_TCP_SYN_SENT) {
-        if (args.newstate == BPF_TCP_ESTABLISHED) {
-            type = EVENT_TYPE_CONNECTION_OPEN;
-        } else if (args.newstate == BPF_TCP_CLOSE) {
-            type = EVENT_TYPE_CONNECTION_ERROR;
-        } else {
-            return 0;
-        }
         struct sk_info *i = bpf_map_lookup_elem(&sk_info, &args.skaddr);
         if (!i) {
             return 0;
+        }
+        if (args.newstate == BPF_TCP_ESTABLISHED) {
+            timestamp = bpf_ktime_get_ns();
+            struct sk_info k = {};
+            k.pid = i->pid;
+            k.fd = i->fd;
+            bpf_map_update_elem(&connection_timestamps, &k, &timestamp, BPF_ANY);
+            type = EVENT_TYPE_CONNECTION_OPEN;
+        } else if (args.newstate == BPF_TCP_CLOSE) {
+            type = EVENT_TYPE_CONNECTION_ERROR;
         }
         pid = i->pid;
         fd = i->fd;
@@ -124,6 +136,7 @@ int inet_sock_set_state(void *ctx)
 
     struct tcp_event e = {};
     e.type = type;
+    e.timestamp = timestamp;
     e.pid = pid;
     e.sport = args.sport;
     e.dport = args.dport;
@@ -136,7 +149,7 @@ int inet_sock_set_state(void *ctx)
     return 0;
 }
 
-struct trace_event_raw_sys_enter_connect__stub {
+struct trace_event_raw_args_with_fd__stub {
     __u64 unused;
     long int id;
     __u64 fd;
@@ -144,7 +157,7 @@ struct trace_event_raw_sys_enter_connect__stub {
 
 SEC("tracepoint/syscalls/sys_enter_connect")
 int sys_enter_connect(void *ctx) {
-    struct trace_event_raw_sys_enter_connect__stub args = {};
+    struct trace_event_raw_args_with_fd__stub args = {};
     if (bpf_probe_read(&args, sizeof(args), ctx) < 0) {
         return 0;
     }

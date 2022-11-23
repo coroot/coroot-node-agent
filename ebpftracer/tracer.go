@@ -81,6 +81,7 @@ type Event struct {
 	SrcAddr   netaddr.IPPort
 	DstAddr   netaddr.IPPort
 	Fd        uint64
+	Timestamp uint64
 	L7Request *L7Request
 }
 
@@ -287,17 +288,25 @@ func (e procEvent) Event() Event {
 }
 
 type tcpEvent struct {
-	Fd    uint64
-	Type  uint32
-	Pid   uint32
-	SPort uint16
-	DPort uint16
-	SAddr [16]byte
-	DAddr [16]byte
+	Fd        uint64
+	Timestamp uint64
+	Type      uint32
+	Pid       uint32
+	SPort     uint16
+	DPort     uint16
+	SAddr     [16]byte
+	DAddr     [16]byte
 }
 
 func (e tcpEvent) Event() Event {
-	return Event{Type: EventType(e.Type), Pid: e.Pid, SrcAddr: ipPort(e.SAddr, e.SPort), DstAddr: ipPort(e.DAddr, e.DPort), Fd: e.Fd}
+	return Event{
+		Type:      EventType(e.Type),
+		Pid:       e.Pid,
+		SrcAddr:   ipPort(e.SAddr, e.SPort),
+		DstAddr:   ipPort(e.DAddr, e.DPort),
+		Fd:        e.Fd,
+		Timestamp: e.Timestamp,
+	}
 }
 
 type fileEvent struct {
@@ -311,15 +320,16 @@ func (e fileEvent) Event() Event {
 }
 
 type l7Event struct {
-	Fd       uint64
-	Pid      uint32
-	Status   uint32
-	Duration uint64
-	Protocol uint8
+	Fd                  uint64
+	ConnectionTimestamp uint64
+	Pid                 uint32
+	Status              uint32
+	Duration            uint64
+	Protocol            uint8
 }
 
 func (e l7Event) Event() Event {
-	return Event{Type: EventTypeL7Request, Pid: e.Pid, Fd: e.Fd, L7Request: &L7Request{
+	return Event{Type: EventTypeL7Request, Pid: e.Pid, Fd: e.Fd, Timestamp: e.ConnectionTimestamp, L7Request: &L7Request{
 		Protocol: L7Protocol(e.Protocol),
 		Status:   int(e.Status),
 		Duration: time.Duration(e.Duration),

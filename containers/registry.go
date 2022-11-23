@@ -178,13 +178,13 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 
 			case ebpftracer.EventTypeConnectionOpen:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, false)
+					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, e.Timestamp, false)
 				} else {
 					klog.Infoln("TCP connection from unknown container", e)
 				}
 			case ebpftracer.EventTypeConnectionError:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, true)
+					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, 0, true)
 				} else {
 					klog.Infoln("TCP connection error from unknown container", e)
 				}
@@ -207,7 +207,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					continue
 				}
 				if c := r.containersByPid[e.Pid]; c != nil {
-					c.onL7Request(e.Pid, e.Fd, e.L7Request)
+					c.onL7Request(e.Pid, e.Fd, e.Timestamp, e.L7Request)
 				}
 			}
 		}

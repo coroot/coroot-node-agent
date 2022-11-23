@@ -63,6 +63,8 @@ type ActiveConnection struct {
 	ActualDest netaddr.IPPort
 	Pid        uint32
 	Fd         uint64
+	Timestamp  uint64
+	Closed     time.Time
 }
 
 type L7Stats struct {
@@ -89,7 +91,7 @@ type Container struct {
 	connectsSuccessful map[AddrPair]int64           // dst:actual_dst -> count
 	connectsFailed     map[netaddr.IPPort]int64     // dst -> count
 	connectLastAttempt map[netaddr.IPPort]time.Time // dst -> time
-	connectionsActive  map[AddrPair]ActiveConnection
+	connectionsActive  map[AddrPair]*ActiveConnection
 	retransmits        map[AddrPair]int64 // dst:actual_dst -> count
 
 	l7Stats map[ebpftracer.L7Protocol]map[AddrPair]*L7Stats // protocol -> dst:actual_dst -> stats
@@ -119,7 +121,7 @@ func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata) *Container {
 		connectsSuccessful: map[AddrPair]int64{},
 		connectsFailed:     map[netaddr.IPPort]int64{},
 		connectLastAttempt: map[netaddr.IPPort]time.Time{},
-		connectionsActive:  map[AddrPair]ActiveConnection{},
+		connectionsActive:  map[AddrPair]*ActiveConnection{},
 		retransmits:        map[AddrPair]int64{},
 		l7Stats:            map[ebpftracer.L7Protocol]map[AddrPair]*L7Stats{},
 
@@ -265,6 +267,9 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	connections := map[AddrPair]int{}
 	for c, conn := range c.connectionsActive {
+		if !conn.Closed.IsZero() {
+			continue
+		}
 		connections[AddrPair{src: c.dst, dst: conn.ActualDest}]++
 	}
 	for d, count := range connections {
@@ -378,7 +383,7 @@ func (c *Container) onListenClose(pid uint32, addr netaddr.IPPort) {
 	}
 }
 
-func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPPort, failed bool) {
+func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPPort, timestamp uint64, failed bool) {
 	if dst.IP().IsLoopback() {
 		netNs, err := proc.GetNetNs(pid)
 		isHostNs := err == nil && hostNetNsId == netNs.UniqueId()
@@ -405,10 +410,11 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 	} else {
 		actualDst := ConntrackGetActualDestination(src, dst)
 		c.connectsSuccessful[AddrPair{src: dst, dst: actualDst}]++
-		c.connectionsActive[AddrPair{src: src, dst: dst}] = ActiveConnection{
+		c.connectionsActive[AddrPair{src: src, dst: dst}] = &ActiveConnection{
 			ActualDest: actualDst,
 			Pid:        pid,
 			Fd:         fd,
+			Timestamp:  timestamp,
 		}
 	}
 	c.connectLastAttempt[dst] = time.Now()
@@ -417,16 +423,17 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 func (c *Container) onConnectionClose(srcDst AddrPair) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if _, ok := c.connectionsActive[srcDst]; !ok {
+	conn := c.connectionsActive[srcDst]
+	if conn == nil {
 		return false
 	}
-	delete(c.connectionsActive, srcDst)
+	conn.Closed = time.Now()
 	return true
 }
 
-func (c *Container) onL7Request(pid uint32, fd uint64, r *ebpftracer.L7Request) {
+func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *ebpftracer.L7Request) {
 	for dest, conn := range c.connectionsActive {
-		if conn.Pid == pid && conn.Fd == fd {
+		if conn.Pid == pid && conn.Fd == fd && (timestamp == 0 || conn.Timestamp == timestamp) {
 			key := AddrPair{src: dest.dst, dst: conn.ActualDest}
 			stats := c.l7Stats[r.Protocol]
 			if stats == nil {
@@ -731,8 +738,12 @@ func (c *Container) gc(now time.Time) {
 
 	c.revalidateListens(now, listens)
 
-	for srcDst := range c.connectionsActive {
+	for srcDst, conn := range c.connectionsActive {
 		if _, ok := established[srcDst]; !ok {
+			delete(c.connectionsActive, srcDst)
+			continue
+		}
+		if !conn.Closed.IsZero() && now.Sub(conn.Closed) > gcInterval {
 			delete(c.connectionsActive, srcDst)
 		}
 	}
