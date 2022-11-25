@@ -26,6 +26,8 @@ type Registry struct {
 	tracer *ebpftracer.Tracer
 	events chan ebpftracer.Event
 
+	hostConntrack *Conntrack
+
 	containersById       map[ContainerID]*Container
 	containersByCgroupId map[string]*Container
 	containersByPid      map[uint32]*Container
@@ -48,9 +50,6 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, er
 		if err := TaskstatsInit(); err != nil {
 			return err
 		}
-		if err := ConntrackInit(); err != nil {
-			return err
-		}
 		return nil
 	})
 	if err != nil {
@@ -68,10 +67,16 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, er
 	if err := JournaldInit(); err != nil {
 		klog.Warningln(err)
 	}
+	ct, err := NewConntrack(hostNetNs)
+	if err != nil {
+		return nil, err
+	}
 
 	cs := &Registry{
 		reg:    reg,
 		events: make(chan ebpftracer.Event, 10000),
+
+		hostConntrack: ct,
 
 		containersById:       map[ContainerID]*Container{},
 		containersByCgroupId: map[string]*Container{},
@@ -258,7 +263,12 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		r.containersByCgroupId[cg.Id] = c
 		return c
 	}
-	c := NewContainer(cg, md)
+	c, err := NewContainer(cg, md, r.hostConntrack, pid)
+	if err != nil {
+		klog.Warningf("failed to create container pid=%d cg=%s id=%s: %s", pid, cg.Id, id, err)
+		return nil
+	}
+
 	klog.InfoS("detected a new container", "pid", pid, "cg", cg.Id, "id", id)
 	if err := prometheus.WrapRegistererWith(prometheus.Labels{"container_id": string(id)}, r.reg).Register(c); err != nil {
 		klog.Warningln(err)

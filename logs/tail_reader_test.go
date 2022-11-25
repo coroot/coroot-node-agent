@@ -26,7 +26,7 @@ func TestTailReader(t *testing.T) {
 	}
 
 	wait := func() {
-		time.Sleep(3 * tailPollInterval)
+		time.Sleep(time.Second)
 	}
 
 	get := func(expected string) {

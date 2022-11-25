@@ -102,12 +102,21 @@ type Container struct {
 
 	logParsers map[string]*LogParser
 
+	isHostNs      bool
+	hostConntrack *Conntrack
+	nsConntrack   *Conntrack
+
 	lock sync.RWMutex
 
 	done chan struct{}
 }
 
-func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata) *Container {
+func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata, hostConntrack *Conntrack, pid uint32) (*Container, error) {
+	netNs, err := proc.GetNetNs(pid)
+	if err != nil {
+		return nil, err
+	}
+	defer netNs.Close()
 	c := &Container{
 		cgroup:   cg,
 		metadata: md,
@@ -129,6 +138,9 @@ func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata) *Container {
 
 		logParsers: map[string]*LogParser{},
 
+		isHostNs:      hostNetNsId == netNs.UniqueId(),
+		hostConntrack: hostConntrack,
+
 		done: make(chan struct{}),
 	}
 
@@ -147,12 +159,15 @@ func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata) *Container {
 		}
 	}()
 
-	return c
+	return c, nil
 }
 
 func (c *Container) Close() {
 	for _, p := range c.logParsers {
 		p.Stop()
+	}
+	if c.nsConntrack != nil {
+		_ = c.nsConntrack.Close()
 	}
 	close(c.done)
 }
@@ -384,34 +399,52 @@ func (c *Container) onListenClose(pid uint32, addr netaddr.IPPort) {
 }
 
 func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPPort, timestamp uint64, failed bool) {
-	if dst.IP().IsLoopback() {
-		netNs, err := proc.GetNetNs(pid)
-		isHostNs := err == nil && hostNetNsId == netNs.UniqueId()
-		netNs.Close()
-		if !isHostNs {
-			return
+	if dst.IP().IsLoopback() && !c.isHostNs {
+		return
+	}
+	whitelisted := false
+	for _, prefix := range flags.ExternalNetworksWhitelist {
+		if prefix.Contains(dst.IP()) {
+			whitelisted = true
+			break
 		}
-	} else {
-		whitelisted := false
-		for _, prefix := range flags.ExternalNetworksWhitelist {
-			if prefix.Contains(dst.IP()) {
-				whitelisted = true
-				break
-			}
-		}
-		if !whitelisted && !common.IsIpPrivate(dst.IP()) {
-			return
-		}
+	}
+	if !whitelisted && !common.IsIpPrivate(dst.IP()) {
+		return
 	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if failed {
 		c.connectsFailed[dst]++
 	} else {
-		actualDst := ConntrackGetActualDestination(src, dst)
-		c.connectsSuccessful[AddrPair{src: dst, dst: actualDst}]++
+		actualDst := c.hostConntrack.GetActualDestination(src, dst)
+		if actualDst == nil && !c.isHostNs {
+			if c.nsConntrack == nil {
+				netNs, err := proc.GetNetNs(pid)
+				if err != nil {
+					if !common.IsNotExist(err) {
+						klog.Warningf("cannot open NetNs for pid %d: %s", pid, err)
+					}
+					return
+				}
+				defer netNs.Close()
+				c.nsConntrack, err = NewConntrack(netNs)
+				if err != nil {
+					klog.Warningln(err)
+					return
+				}
+			}
+			actualDst = c.nsConntrack.GetActualDestination(src, dst)
+		}
+		switch {
+		case actualDst == nil:
+			actualDst = &dst
+		case actualDst.IP().IsLoopback() && !c.isHostNs:
+			return
+		}
+		c.connectsSuccessful[AddrPair{src: dst, dst: *actualDst}]++
 		c.connectionsActive[AddrPair{src: src, dst: dst}] = &ActiveConnection{
-			ActualDest: actualDst,
+			ActualDest: *actualDst,
 			Pid:        pid,
 			Fd:         fd,
 			Timestamp:  timestamp,

@@ -3,29 +3,25 @@ package containers
 import (
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/florianl/go-conntrack"
+	"github.com/vishvananda/netns"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 	"syscall"
 )
 
-var (
-	conntrackClient *conntrack.Nfct
-)
-
-func ConntrackInit() error {
-	c, err := conntrack.Open(&conntrack.Config{})
-	if err != nil {
-		return err
-	}
-	conntrackClient = c
-	return nil
+type Conntrack struct {
+	client *conntrack.Nfct
 }
 
-func ConntrackGetActualDestination(src, dst netaddr.IPPort) netaddr.IPPort {
-	if conntrackClient == nil {
-		return dst
+func NewConntrack(netNs netns.NsHandle) (*Conntrack, error) {
+	c, err := conntrack.Open(&conntrack.Config{NetNS: int(netNs)})
+	if err != nil {
+		return nil, err
 	}
+	return &Conntrack{client: c}, nil
+}
 
+func (c *Conntrack) GetActualDestination(src, dst netaddr.IPPort) *netaddr.IPPort {
 	tcp := uint8(syscall.IPPROTO_TCP)
 	sip := src.IP().IPAddr().IP
 	dip := dst.IP().IPAddr().IP
@@ -47,12 +43,12 @@ func ConntrackGetActualDestination(src, dst netaddr.IPPort) netaddr.IPPort {
 	if dst.IP().Is6() {
 		family = conntrack.IPv6
 	}
-	sessions, err := conntrackClient.Get(conntrack.Conntrack, family, req)
+	sessions, err := c.client.Get(conntrack.Conntrack, family, req)
 	if err != nil {
 		if !common.IsNotExist(err) {
 			klog.Errorf("failed to resolve actual destination for %s->%s: %s", src, dst, err)
 		}
-		return dst
+		return nil
 	}
 	for _, s := range sessions {
 		if !ipTupleValid(s.Origin) || !ipTupleValid(s.Reply) {
@@ -71,9 +67,14 @@ func ConntrackGetActualDestination(src, dst netaddr.IPPort) netaddr.IPPort {
 		if !ok {
 			continue
 		}
-		return netaddr.IPPortFrom(ip, *reply.Proto.SrcPort)
+		res := netaddr.IPPortFrom(ip, *reply.Proto.SrcPort)
+		return &res
 	}
-	return dst
+	return nil
+}
+
+func (c *Conntrack) Close() error {
+	return c.client.Close()
 }
 
 func ipTuplesEqual(a, b *conntrack.IPTuple) bool {
