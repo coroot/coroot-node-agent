@@ -72,6 +72,11 @@ struct trace_event_raw_sys_exit_rw__stub {
     long int ret;
 };
 
+struct iov {
+    char* buf;
+    __u64 size;
+};
+
 static inline __attribute__((__always_inline__))
 int trace_enter_write(__u64 fd, char *buf, __u64 size) {
     __u64 id = bpf_get_current_pid_tgid();
@@ -177,11 +182,11 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
 
 SEC("tracepoint/syscalls/sys_enter_writev")
 int sys_enter_writev(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    void *vec;
-    if (bpf_probe_read(&vec, sizeof(void*), (void *)ctx->buf) < 0) {
+    struct iov iov0 = {};
+    if (bpf_probe_read(&iov0, sizeof(struct iov), (void *)ctx->buf) < 0) {
         return 0;
     }
-    return trace_enter_write(ctx->fd, vec, 0);
+    return trace_enter_write(ctx->fd, iov0.buf, iov0.size);
 }
 
 SEC("tracepoint/syscalls/sys_enter_write")
