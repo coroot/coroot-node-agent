@@ -501,6 +501,8 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *ebpf
 			switch r.Protocol {
 			case ebpftracer.L7ProtocolHTTP:
 				status = strconv.Itoa(r.Status)
+			case ebpftracer.L7ProtocolMongo, ebpftracer.L7ProtocolKafka:
+				status = "unknown"
 			default:
 				if r.Status == 500 {
 					status = "failed"

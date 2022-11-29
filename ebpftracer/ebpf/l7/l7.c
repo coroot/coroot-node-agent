@@ -4,6 +4,8 @@
 #include "memcached.c"
 #include "mysql.c"
 #include "mongo.c"
+#include "kafka.c"
+
 
 #define PROTOCOL_UNKNOWN    0
 #define PROTOCOL_HTTP	    1
@@ -12,6 +14,7 @@
 #define PROTOCOL_MEMCACHED  4
 #define PROTOCOL_MYSQL      5
 #define PROTOCOL_MONGO      6
+#define PROTOCOL_KAFKA      7
 
 struct l7_event {
     __u64 fd;
@@ -49,6 +52,7 @@ struct l7_request {
     __u64 ns;
     __u8 protocol;
     __u8 partial;
+    __s32 request_id;
 };
 
 struct {
@@ -81,7 +85,13 @@ static inline __attribute__((__always_inline__))
 int trace_enter_write(__u64 fd, char *buf, __u64 size) {
     __u64 id = bpf_get_current_pid_tgid();
     struct l7_request req = {};
+    req.protocol = PROTOCOL_UNKNOWN;
     req.partial = 0;
+    req.request_id = 0;
+    req.ns = 0;
+    struct socket_key k = {};
+    k.pid = id >> 32;
+    k.fd = fd;
     if (is_http_request(buf)) {
         req.protocol = PROTOCOL_HTTP;
     } else if (is_postgres_query(buf, size)) {
@@ -95,12 +105,22 @@ int trace_enter_write(__u64 fd, char *buf, __u64 size) {
     } else if (is_mongo_query(buf, size)) {
         req.protocol = PROTOCOL_MONGO;
     } else {
+        __s32 request_id = is_kafka_request(buf, size);
+        if  (request_id > 0) {
+            req.request_id = request_id;
+            req.protocol = PROTOCOL_KAFKA;
+            struct l7_request *prev_req = bpf_map_lookup_elem(&active_l7_requests, &k);
+            if (prev_req && prev_req->protocol == PROTOCOL_KAFKA) {
+                req.ns = prev_req->ns;
+            }
+        }
+    }
+    if (req.protocol == PROTOCOL_UNKNOWN) {
         return 0;
     }
-    req.ns = bpf_ktime_get_ns();
-    struct socket_key k = {};
-    k.pid = id >> 32;
-    k.fd = fd;
+    if (req.ns == 0) {
+        req.ns = bpf_ktime_get_ns();
+    }
     bpf_map_update_elem(&active_l7_requests, &k, &req, BPF_ANY);
     return 0;
 }
@@ -138,6 +158,7 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
     if (!req) {
         return 0;
     }
+    __s32 request_id = req->request_id;
     struct l7_event e = {};
     e.protocol = req->protocol;
     e.fd = k.fd;
@@ -146,18 +167,17 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
     __u64 ns = req->ns;
     __u8 partial = req->partial;
     bpf_map_delete_elem(&active_l7_requests, &k);
-
-    if (req->protocol == PROTOCOL_HTTP) {
+    if (e.protocol == PROTOCOL_HTTP) {
         e.status = parse_http_status(buf);
-    } else if (req->protocol == PROTOCOL_POSTGRES) {
+    } else if (e.protocol == PROTOCOL_POSTGRES) {
         e.status = parse_postgres_status(buf, ctx->ret);
-    } else if (req->protocol == PROTOCOL_REDIS) {
+    } else if (e.protocol == PROTOCOL_REDIS) {
         e.status = parse_redis_status(buf, ctx->ret);
-    } else if (req->protocol == PROTOCOL_MEMCACHED) {
+    } else if (e.protocol == PROTOCOL_MEMCACHED) {
         e.status = parse_memcached_status(buf, ctx->ret);
-    } else if (req->protocol == PROTOCOL_MYSQL) {
+    } else if (e.protocol == PROTOCOL_MYSQL) {
         e.status = parse_mysql_status(buf, ctx->ret);
-    } else if (req->protocol == PROTOCOL_MONGO) {
+    } else if (e.protocol == PROTOCOL_MONGO) {
         e.status = parse_mongo_status(buf, ctx->ret, partial);
         if (e.status == 1) {
             struct l7_request r = {};
@@ -167,6 +187,8 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
             bpf_map_update_elem(&active_l7_requests, &k, &r, BPF_ANY);
             return 0;
         }
+    } else if (e.protocol == PROTOCOL_KAFKA) {
+        e.status = parse_kafka_status(request_id, buf, ctx->ret, partial);
     }
     if (e.status == 0) {
         return 0;

@@ -48,6 +48,7 @@ const (
 	L7ProtocolMemcached L7Protocol = 4
 	L7ProtocolMysql     L7Protocol = 5
 	L7ProtocolMongo     L7Protocol = 6
+	L7ProtocolKafka     L7Protocol = 7
 )
 
 func (p L7Protocol) String() string {
@@ -64,6 +65,8 @@ func (p L7Protocol) String() string {
 		return "Mysql"
 	case L7ProtocolMongo:
 		return "Mongo"
+	case L7ProtocolKafka:
+		return "Kafka"
 	}
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }
