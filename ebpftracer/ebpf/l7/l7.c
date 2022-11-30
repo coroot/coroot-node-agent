@@ -214,7 +214,10 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
         return 0;
     }
     e.duration = bpf_ktime_get_ns() - ns;
-    __u64 *timestamp = bpf_map_lookup_elem(&connection_timestamps, &k);
+    struct sk_info sk = {};
+    sk.pid = k.pid;
+    sk.fd = k.fd;
+    __u64 *timestamp = bpf_map_lookup_elem(&connection_timestamps, &sk);
     if (timestamp) {
         e.connection_timestamp = *timestamp;
     }
