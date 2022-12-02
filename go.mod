@@ -19,6 +19,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/vishvananda/netlink v1.1.0
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f
+	github.com/xin053/hsperfdata v0.2.3
 	golang.org/x/mod v0.3.0
 	golang.org/x/net v0.0.0-20210913180222-943fd674d43e
 	golang.org/x/sys v0.0.0-20210915083310-ed5796bab164

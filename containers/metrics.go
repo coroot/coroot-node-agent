@@ -38,6 +38,13 @@ var metrics = struct {
 	LogMessages *prometheus.Desc
 
 	ApplicationType *prometheus.Desc
+
+	JvmInfo              *prometheus.Desc
+	JvmHeapSize          *prometheus.Desc
+	JvmHeapUsed          *prometheus.Desc
+	JvmGCTime            *prometheus.Desc
+	JvmSafepointTime     *prometheus.Desc
+	JvmSafepointSyncTime *prometheus.Desc
 }{
 	Restarts: metric("container_restarts_total", "Number of times the container was restarted"),
 
@@ -70,6 +77,13 @@ var metrics = struct {
 	LogMessages: metric("container_log_messages_total", "Number of messages grouped by the automatically extracted repeated pattern", "source", "level", "pattern_hash", "sample"),
 
 	ApplicationType: metric("container_application_type", "Type of the application running in the container (e.g. memcached, postgres, mysql)", "application_type"),
+
+	JvmInfo:              metric("container_jvm_info", "Meta information about the JVM", "jvm", "java_version"),
+	JvmHeapSize:          metric("container_jvm_heap_size_bytes", "Total heap size in bytes", "jvm"),
+	JvmHeapUsed:          metric("container_jvm_heap_used_bytes", "Used heap size in bytes", "jvm"),
+	JvmGCTime:            metric("container_jvm_gc_time_seconds", "Time spent in the given JVM garbage collector in seconds", "jvm", "gc"),
+	JvmSafepointTime:     metric("container_jvm_safepoint_time_seconds", "Time the application has been stopped for safepoint operations in seconds", "jvm"),
+	JvmSafepointSyncTime: metric("container_jvm_safepoint_sync_time_seconds", "Time spent getting to safepoints in seconds", "jvm"),
 }
 
 var (

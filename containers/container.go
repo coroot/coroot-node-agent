@@ -298,16 +298,25 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	appTypes := map[string]struct{}{}
+	seenJvms := map[string]bool{}
 	for pid := range c.pids {
 		cmdline := proc.GetCmdline(pid)
 		if len(cmdline) == 0 {
 			continue
 		}
 		appType := guessApplicationType(cmdline)
-		if appType == "" {
-			continue
+		if appType != "" {
+			appTypes[appType] = struct{}{}
 		}
-		appTypes[appType] = struct{}{}
+		if isJvm(cmdline) {
+			jvm, jMetrics := jvmMetrics(pid)
+			if len(jMetrics) > 0 && !seenJvms[jvm] {
+				seenJvms[jvm] = true
+				for _, m := range jMetrics {
+					ch <- m
+				}
+			}
+		}
 	}
 	for appType := range appTypes {
 		ch <- gauge(metrics.ApplicationType, 1, appType)

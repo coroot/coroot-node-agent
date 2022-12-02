@@ -5,7 +5,7 @@ import (
 )
 
 func guessApplicationType(cmdline []byte) string {
-	parts := bytes.Split([]byte(cmdline), []byte{0})
+	parts := bytes.Split(cmdline, []byte{0})
 	cmd := bytes.TrimSuffix(bytes.Fields(parts[0])[0], []byte{':'})
 	switch {
 	case bytes.HasSuffix(cmd, []byte("memcached")):

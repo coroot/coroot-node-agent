@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 )
 
 var root = "/proc"
@@ -23,6 +24,28 @@ func GetCmdline(pid uint32) []byte {
 		return nil
 	}
 	return cmdline
+}
+
+func GetNsPid(pid uint32) uint32 {
+	data, err := os.ReadFile(Path(pid, "status"))
+	if err != nil {
+		return pid
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if fields[0] == "NSpid:" {
+			if len(fields) == 3 {
+				if nsPid, err := strconv.ParseUint(fields[2], 10, 32); err == nil {
+					return uint32(nsPid)
+				}
+			}
+			return pid
+		}
+	}
+	return pid
 }
 
 func ReadCgroup(pid uint32) (*cgroup.Cgroup, error) {
