@@ -88,14 +88,11 @@ The documentation is available at [coroot.com/docs/metric-exporters/node-agent](
 
 The collected metrics are described [here](https://coroot.com/docs/metrics/node-agent).
 
-## Coroot live demo
+## Coroot
 
-Coroot turns telemetry data gathered by node-agent into answers about app issues and how to fix them.
+The best way to turn metrics to answers about app issues is to use [Coroot](https://github.com/coroot/coroot) - a zero-instrumentation observability tool for microservice architectures. 
 
-<img src="https://coroot.com/static/img/model.png" width="600" />
-
-Live demo is available at [https://coroot.com/demo](https://coroot.com/demo).
-
+A live demo of Coroot is available at [community-demo.coroot.com](https://community-demo.coroot.com)
 
 ## License
 
