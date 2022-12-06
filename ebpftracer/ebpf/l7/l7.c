@@ -117,10 +117,12 @@ int trace_enter_write(__u64 fd, char *buf, __u64 size) {
             if (prev_req && prev_req->protocol == PROTOCOL_KAFKA) {
                 req.ns = prev_req->ns;
             }
-        }
-        k.stream_id = is_cassandra_request(buf, size);
-        if  (k.stream_id != -1) {
-            req.protocol = PROTOCOL_CASSANDRA;
+        } else {
+            __s16 stream_id = is_cassandra_request(buf, size);
+            if  (stream_id != -1) {
+                k.stream_id = stream_id;
+                req.protocol = PROTOCOL_CASSANDRA;
+            }
         }
     }
     if (req.protocol == PROTOCOL_UNKNOWN) {

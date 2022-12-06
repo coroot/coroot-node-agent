@@ -15,7 +15,7 @@ int is_postgres_query(char *buf, int buf_size) {
     if (bpf_probe_read(&f_length, sizeof(f_length), (void *)((char *)buf+1)) < 0) {
         return 0;
     }
-    f_length = bpf_ntohl(f_length);
+    f_length = bpf_htonl(f_length);
     if (f_cmd == 'Q' && f_length+1 == buf_size) {
         return 1;
     }
@@ -39,7 +39,7 @@ __u32 parse_postgres_status(char *buf, int buf_size) {
     if (bpf_probe_read(&length, sizeof(length), (void *)((char *)buf+1)) < 0) {
         return 0;
     }
-    length = bpf_ntohl(length);
+    length = bpf_htonl(length);
 
     if (length+1 > buf_size) {
         return 0;
