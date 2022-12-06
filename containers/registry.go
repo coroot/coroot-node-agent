@@ -261,6 +261,10 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 			c.cgroup = cg
 			c.metadata = md
 			c.runLogParser("")
+			if c.nsConntrack != nil {
+				_ = c.nsConntrack.Close()
+				c.nsConntrack = nil
+			}
 		}
 		r.containersByPid[pid] = c
 		r.containersByCgroupId[cg.Id] = c
