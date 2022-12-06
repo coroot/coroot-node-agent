@@ -474,6 +474,8 @@ func (c *Container) onConnectionClose(srcDst AddrPair) bool {
 }
 
 func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *ebpftracer.L7Request) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	for dest, conn := range c.connectionsActive {
 		if conn.Pid == pid && conn.Fd == fd && (timestamp == 0 || conn.Timestamp == timestamp) {
 			key := AddrPair{src: dest.dst, dst: conn.ActualDest}
