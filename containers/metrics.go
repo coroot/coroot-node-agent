@@ -3,7 +3,6 @@ package containers
 import (
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/prometheus/client_golang/prometheus"
-	"reflect"
 )
 
 var metrics = struct {
@@ -111,13 +110,4 @@ var (
 
 func metric(name, help string, labels ...string) *prometheus.Desc {
 	return prometheus.NewDesc(name, help, labels, nil)
-}
-
-var metricsList []*prometheus.Desc
-
-func init() {
-	v := reflect.ValueOf(metrics)
-	for i := 0; i < v.NumField(); i++ {
-		metricsList = append(metricsList, v.Field(i).Interface().(*prometheus.Desc))
-	}
 }

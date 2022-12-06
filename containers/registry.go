@@ -124,6 +124,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				if !c.Dead(now) {
 					continue
 				}
+				klog.Infoln("deleting dead container:", id)
 				for cg, cc := range r.containersByCgroupId {
 					if cc == c {
 						delete(r.containersByCgroupId, cg)
@@ -134,7 +135,9 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 						delete(r.containersByPid, pid)
 					}
 				}
-				prometheus.WrapRegistererWith(prometheus.Labels{"container_id": string(id)}, r.reg).Unregister(c)
+				if ok := prometheus.WrapRegistererWith(prometheus.Labels{"container_id": string(id)}, r.reg).Unregister(c); !ok {
+					klog.Warningln("failed to unregister container:", id)
+				}
 				delete(r.containersById, id)
 				c.Close()
 			}
@@ -271,7 +274,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 
 	klog.InfoS("detected a new container", "pid", pid, "cg", cg.Id, "id", id)
 	if err := prometheus.WrapRegistererWith(prometheus.Labels{"container_id": string(id)}, r.reg).Register(c); err != nil {
-		klog.Warningln(err)
+		klog.Warningln("failed to register container:", err)
 		return nil
 	}
 	r.containersByPid[pid] = c

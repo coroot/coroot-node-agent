@@ -177,15 +177,8 @@ func (c *Container) Dead(now time.Time) bool {
 }
 
 func (c *Container) Describe(ch chan<- *prometheus.Desc) {
-	for _, m := range metricsList {
-		ch <- m
-	}
-	for _, protoStats := range c.l7Stats {
-		for _, s := range protoStats {
-			s.Requests.Describe(ch)
-			s.Latency.Describe(ch)
-		}
-	}
+	// some fixed metric description is required here to register/unregister the collector correctly
+	ch <- prometheus.NewDesc("container", "", nil, nil)
 }
 
 func (c *Container) Collect(ch chan<- prometheus.Metric) {
@@ -610,11 +603,7 @@ func (c *Container) getListens(netNs netns.NsHandle) map[netaddr.IPPort]int {
 		}
 		var ips []netaddr.IP
 		if addr.IP().IsUnspecified() {
-			if nsIps, err := proc.GetNsIps(netNs); err != nil {
-				klog.Warningln(err)
-			} else {
-				ips = nsIps
-			}
+			ips = c.nsIPs
 		} else {
 			ips = []netaddr.IP{addr.IP()}
 		}
