@@ -469,7 +469,7 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *ebpf
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	for dest, conn := range c.connectionsActive {
-		if conn.Pid == pid && conn.Fd == fd && (timestamp == 0 || conn.Timestamp == timestamp) {
+		if conn.Pid == pid && conn.Fd == fd && (conn.Timestamp == 0 || conn.Timestamp == timestamp) {
 			key := AddrPair{src: dest.dst, dst: conn.ActualDest}
 			stats := c.l7Stats[r.Protocol]
 			if stats == nil {
