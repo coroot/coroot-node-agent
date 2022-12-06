@@ -100,6 +100,8 @@ type Container struct {
 
 	mountIds map[string]struct{}
 
+	nsIPs []netaddr.IP
+
 	logParsers map[string]*LogParser
 
 	isHostNs      bool
@@ -235,26 +237,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
-	netNs := netns.None()
-	for pid := range c.pids {
-		if pid == agentPid {
-			netNs = selfNetNs
-			break
-		}
-		ns, err := proc.GetNetNs(pid)
-		if err != nil {
-			if !common.IsNotExist(err) {
-				klog.Warningln(err)
-			}
-			continue
-		}
-		netNs = ns
-		defer netNs.Close()
-		break
-	}
-
-	listens := c.getListens(netNs)
-	for addr, open := range listens {
+	for addr, open := range c.getListens() {
 		ch <- gauge(metrics.NetListenInfo, float64(open), addr.String(), "")
 	}
 	for proxy, addrs := range c.getProxiedListens() {
@@ -323,7 +306,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	if !*flags.DisablePinger {
-		for ip, rtt := range c.ping(netNs) {
+		for ip, rtt := range c.ping() {
 			ch <- gauge(metrics.NetLatency, rtt, ip.String())
 		}
 	}
@@ -388,6 +371,22 @@ func (c *Container) onListenOpen(pid uint32, addr netaddr.IPPort, safe bool) {
 		c.listens[addr] = map[uint32]time.Time{}
 	}
 	c.listens[addr][pid] = time.Time{}
+
+	if addr.IP().IsUnspecified() {
+		ns, err := proc.GetNetNs(pid)
+		if err != nil {
+			if !common.IsNotExist(err) {
+				klog.Warningln(err)
+			}
+			return
+		}
+		defer ns.Close()
+		if ips, err := proc.GetNsIps(ns); err != nil {
+			klog.Warningln(err)
+		} else {
+			c.nsIPs = ips
+		}
+	}
 }
 
 func (c *Container) onListenClose(pid uint32, addr netaddr.IPPort) {
@@ -587,11 +586,7 @@ func (c *Container) getMounts() map[string]map[string]*proc.FSStat {
 	return res
 }
 
-func (c *Container) getListens(netNs netns.NsHandle) map[netaddr.IPPort]int {
-	if !netNs.IsOpen() {
-		return nil
-	}
-	isHostNs := hostNetNsId == netNs.UniqueId()
+func (c *Container) getListens() map[netaddr.IPPort]int {
 	res := map[netaddr.IPPort]int{}
 	for addr, byPid := range c.listens {
 		open := 0
@@ -608,7 +603,7 @@ func (c *Container) getListens(netNs netns.NsHandle) map[netaddr.IPPort]int {
 			ips = []netaddr.IP{addr.IP()}
 		}
 		for _, ip := range ips {
-			if ip.IsLoopback() && !isHostNs {
+			if ip.IsLoopback() && !c.isHostNs {
 				continue
 			}
 			res[netaddr.IPPortFrom(ip, addr.Port())] = open
@@ -665,10 +660,28 @@ func (c *Container) getProxiedListens() map[string]map[netaddr.IPPort]struct{} {
 	return res
 }
 
-func (c *Container) ping(netNs netns.NsHandle) map[netaddr.IP]float64 {
+func (c *Container) ping() map[netaddr.IP]float64 {
+	netNs := netns.None()
+	for pid := range c.pids {
+		if pid == agentPid {
+			netNs = selfNetNs
+			break
+		}
+		ns, err := proc.GetNetNs(pid)
+		if err != nil {
+			if !common.IsNotExist(err) {
+				klog.Warningln(err)
+			}
+			continue
+		}
+		netNs = ns
+		defer netNs.Close()
+		break
+	}
 	if !netNs.IsOpen() {
 		return nil
 	}
+
 	ips := map[netaddr.IP]struct{}{}
 	for d := range c.connectsSuccessful {
 		ips[d.dst.IP()] = struct{}{}
