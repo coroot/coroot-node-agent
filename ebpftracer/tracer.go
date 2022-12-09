@@ -50,6 +50,7 @@ const (
 	L7ProtocolMongo     L7Protocol = 6
 	L7ProtocolKafka     L7Protocol = 7
 	L7ProtocolCassandra L7Protocol = 8
+	L7ProtocolRabbitmq  L7Protocol = 9
 )
 
 func (p L7Protocol) String() string {
@@ -74,10 +75,44 @@ func (p L7Protocol) String() string {
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }
 
+type L7Method uint8
+
+const (
+	L7MethodUnknown L7Method = 0
+	L7MethodProduce L7Method = 1
+	L7MethodConsume L7Method = 2
+)
+
+func (m L7Method) String() string {
+	switch m {
+	case L7MethodUnknown:
+		return "unknown"
+	case L7MethodProduce:
+		return "produce"
+	case L7MethodConsume:
+		return "consume"
+	}
+	return "UNKNOWN:" + strconv.Itoa(int(m))
+}
+
 type L7Request struct {
 	Protocol L7Protocol
 	Status   int
 	Duration time.Duration
+	Method   L7Method
+}
+
+func (r *L7Request) StatusString() string {
+	switch r.Protocol {
+	case L7ProtocolHTTP:
+		return strconv.Itoa(r.Status)
+	case L7ProtocolMongo, L7ProtocolKafka, L7ProtocolRabbitmq:
+		return "unknown"
+	}
+	if r.Status == 500 {
+		return "failed"
+	}
+	return "ok"
 }
 
 type Event struct {
@@ -332,6 +367,7 @@ type l7Event struct {
 	Status              uint32
 	Duration            uint64
 	Protocol            uint8
+	Method              uint8
 }
 
 func (e l7Event) Event() Event {
@@ -339,6 +375,7 @@ func (e l7Event) Event() Event {
 		Protocol: L7Protocol(e.Protocol),
 		Status:   int(e.Status),
 		Duration: time.Duration(e.Duration),
+		Method:   L7Method(e.Method),
 	}}
 }
 

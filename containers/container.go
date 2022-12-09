@@ -15,7 +15,6 @@ import (
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -300,8 +299,12 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	for _, protoStats := range c.l7Stats {
 		for _, s := range protoStats {
-			s.Requests.Collect(ch)
-			s.Latency.Collect(ch)
+			if s.Requests != nil {
+				s.Requests.Collect(ch)
+			}
+			if s.Latency != nil {
+				s.Latency.Collect(ch)
+			}
 		}
 	}
 
@@ -479,42 +482,43 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *ebpf
 			s := stats[key]
 			if s == nil {
 				constLabels := map[string]string{"destination": key.src.String(), "actual_destination": key.dst.String()}
+				s = &L7Stats{}
 				cOpts, ok := L7Requests[r.Protocol]
 				if !ok {
 					klog.Warningln("cannot find metric description for L7 protocol: %s", r.Protocol.String())
 					return
+				}
+				if cOpts.Name != "" {
+					labels := []string{"status"}
+					if r.Protocol == ebpftracer.L7ProtocolRabbitmq {
+						labels = append(labels, "method")
+					}
+					s.Requests = prometheus.NewCounterVec(
+						prometheus.CounterOpts{Name: cOpts.Name, Help: cOpts.Help, ConstLabels: constLabels}, labels,
+					)
 				}
 				hOpts, ok := L7Latency[r.Protocol]
 				if !ok {
 					klog.Warningln("cannot find metric description for L7 protocol: %s", r.Protocol.String())
 					return
 				}
-				s = &L7Stats{
-					Requests: prometheus.NewCounterVec(
-						prometheus.CounterOpts{Name: cOpts.Name, Help: cOpts.Help, ConstLabels: constLabels},
-						[]string{"status"},
-					),
-					Latency: prometheus.NewHistogram(
+				if hOpts.Name != "" {
+					s.Latency = prometheus.NewHistogram(
 						prometheus.HistogramOpts{Name: hOpts.Name, Help: hOpts.Help, ConstLabels: constLabels},
-					),
+					)
 				}
 				stats[key] = s
 			}
-			status := ""
-			switch r.Protocol {
-			case ebpftracer.L7ProtocolHTTP:
-				status = strconv.Itoa(r.Status)
-			case ebpftracer.L7ProtocolMongo, ebpftracer.L7ProtocolKafka:
-				status = "unknown"
-			default:
-				if r.Status == 500 {
-					status = "failed"
+			if s.Requests != nil {
+				if r.Protocol == ebpftracer.L7ProtocolRabbitmq {
+					s.Requests.WithLabelValues(r.StatusString(), r.Method.String()).Inc()
 				} else {
-					status = "ok"
+					s.Requests.WithLabelValues(r.StatusString()).Inc()
 				}
 			}
-			s.Requests.WithLabelValues(status).Inc()
-			s.Latency.Observe(r.Duration.Seconds())
+			if s.Latency != nil {
+				s.Latency.Observe(r.Duration.Seconds())
+			}
 			return
 		}
 	}

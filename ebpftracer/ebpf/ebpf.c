@@ -16,6 +16,20 @@
 
 #define EVENT_REASON_OOM_KILL		1
 
+#define bpf_read(src, dst)                            \
+({                                                    \
+    if (bpf_probe_read(&dst, sizeof(dst), src) < 0) { \
+        return 0;                                     \
+    }                                                 \
+})
+
+#define bpf_printk(fmt, ...)                                   \
+({                                                             \
+    char ____fmt[] = fmt;                                      \
+    bpf_trace_printk(____fmt, sizeof(____fmt), ##__VA_ARGS__); \
+})
+
+
 #include "proc.c"
 #include "file.c"
 #include "tcp/state.c"
