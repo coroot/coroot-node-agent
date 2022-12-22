@@ -56,6 +56,7 @@ func ContainerdInspect(containerID string) (*ContainerMetadata, error) {
 
 	res := &ContainerMetadata{
 		labels:  c.Labels,
+		image:   c.Image,
 		volumes: map[string]string{},
 	}
 

@@ -6,7 +6,8 @@ import (
 )
 
 var metrics = struct {
-	Restarts *prometheus.Desc
+	ContainerInfo *prometheus.Desc
+	Restarts      *prometheus.Desc
 
 	CPULimit      *prometheus.Desc
 	CPUUsage      *prometheus.Desc
@@ -45,6 +46,8 @@ var metrics = struct {
 	JvmSafepointTime     *prometheus.Desc
 	JvmSafepointSyncTime *prometheus.Desc
 }{
+	ContainerInfo: metric("container_info", "Meta information about the container", "image"),
+
 	Restarts: metric("container_restarts_total", "Number of times the container was restarted"),
 
 	CPULimit:      metric("container_resources_cpu_limit_cores", "CPU limit of the container"),
