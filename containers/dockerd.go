@@ -48,7 +48,7 @@ func DockerdInspect(containerID string) (*ContainerMetadata, error) {
 	res := &ContainerMetadata{
 		name:        strings.TrimPrefix(c.Name, "/"),
 		labels:      c.Config.Labels,
-		image:       c.Image,
+		image:       c.Config.Image,
 		volumes:     map[string]string{},
 		hostListens: map[string][]netaddr.IPPort{},
 	}
