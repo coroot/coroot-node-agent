@@ -22,7 +22,7 @@ var (
 )
 
 func ContainerdInit() error {
-	sockets := []string{"/run/k3s/containerd/containerd.sock", "/run/containerd/containerd.sock"}
+	sockets := []string{"/var/snap/microk8s/common/run/containerd.sock", "/run/k3s/containerd/containerd.sock", "/run/containerd/containerd.sock"}
 	var err error
 	for _, socket := range sockets {
 		containerdClient, err = containerd.New(proc.HostPath(socket),
