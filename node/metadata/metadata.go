@@ -14,11 +14,12 @@ const metadataServiceTimeout = 5 * time.Second
 type CloudProvider string
 
 const (
-	CloudProviderAWS     CloudProvider = "AWS"
-	CloudProviderGCP     CloudProvider = "GCP"
-	CloudProviderAzure   CloudProvider = "Azure"
-	CloudProviderHetzner CloudProvider = "Hetzner"
-	CloudProviderUnknown CloudProvider = ""
+	CloudProviderAWS          CloudProvider = "AWS"
+	CloudProviderGCP          CloudProvider = "GCP"
+	CloudProviderAzure        CloudProvider = "Azure"
+	CloudProviderHetzner      CloudProvider = "Hetzner"
+	CloudProviderDigitalOcean CloudProvider = "DigitalOcean"
+	CloudProviderUnknown      CloudProvider = ""
 )
 
 type CloudMetadata struct {
@@ -48,6 +49,8 @@ func getCloudProvider() CloudProvider {
 			return CloudProviderGCP
 		case "Microsoft Corporation":
 			return CloudProviderAzure
+		case "DigitalOcean":
+			return CloudProviderDigitalOcean
 		}
 	}
 	if vendor, err := os.ReadFile("/sys/class/dmi/id/sys_vendor"); err == nil {
@@ -70,6 +73,8 @@ func GetInstanceMetadata() *CloudMetadata {
 		return getAzureMetadata()
 	case CloudProviderHetzner:
 		return getHetznerMetadata()
+	case CloudProviderDigitalOcean:
+		return getDigitalOceanMetadata()
 	}
 	return nil
 }
