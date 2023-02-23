@@ -21,6 +21,11 @@ var (
 		"Meta information about the cloud instance",
 		[]string{"provider", "account_id", "instance_id", "instance_type", "instance_life_cycle", "region", "availability_zone", "availability_zone_id", "local_ipv4", "public_ipv4"}, nil,
 	)
+	uptimeDesc = prometheus.NewDesc(
+		"node_uptime_seconds",
+		"Uptime of the node in seconds",
+		[]string{}, nil,
+	)
 	cpuUsageDesc = prometheus.NewDesc(
 		"node_resources_cpu_usage_seconds_total",
 		"The amount of CPU time spent in each mode",
@@ -159,6 +164,14 @@ func NewCollector(hostname, kernelVersion string) *Collector {
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	ch <- gauge(infoDesc, 1, c.hostname, c.kernelVersion)
+
+	v, err := uptime(procRoot)
+	if err != nil {
+		klog.Errorln(err)
+	} else {
+		ch <- gauge(uptimeDesc, v)
+	}
+
 	cpu, err := cpuStat(procRoot)
 	if err != nil {
 		if !common.IsNotExist(err) {
@@ -236,6 +249,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- infoDesc
 	ch <- cloudInfoDesc
+	ch <- uptimeDesc
 	ch <- cpuUsageDesc
 	ch <- cpuLogicalCoresDesc
 	ch <- memTotalDesc
