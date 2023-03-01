@@ -22,13 +22,19 @@ var (
 )
 
 func ContainerdInit() error {
-	sockets := []string{"/var/snap/microk8s/common/run/containerd.sock", "/run/k3s/containerd/containerd.sock", "/run/containerd/containerd.sock"}
+	sockets := []string{
+		"/var/snap/microk8s/common/run/containerd.sock",
+		"/run/k0s/containerd.sock",
+		"/run/k3s/containerd/containerd.sock",
+		"/run/containerd/containerd.sock",
+	}
 	var err error
 	for _, socket := range sockets {
 		containerdClient, err = containerd.New(proc.HostPath(socket),
 			containerd.WithDefaultNamespace(constants.K8sContainerdNamespace),
 			containerd.WithTimeout(time.Second))
 		if err == nil {
+			klog.Infoln("using", socket)
 			break
 		}
 	}
