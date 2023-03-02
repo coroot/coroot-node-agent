@@ -53,6 +53,10 @@ func GetNsIps(ns netns.NsHandle) ([]netaddr.IP, error) {
 	}
 	var res []netaddr.IP
 	for _, link := range links {
+		attrs := link.Attrs()
+		if attrs.OperState == netlink.OperDown {
+			continue
+		}
 		addrs, err := h.AddrList(link, unix.AF_UNSPEC)
 		if err != nil {
 			return nil, err
