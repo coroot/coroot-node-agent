@@ -426,24 +426,12 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 	if failed {
 		c.connectsFailed[dst]++
 	} else {
-		actualDst := c.hostConntrack.GetActualDestination(src, dst)
-		if actualDst == nil && !c.isHostNs {
-			if c.nsConntrack == nil {
-				netNs, err := proc.GetNetNs(pid)
-				if err != nil {
-					if !common.IsNotExist(err) {
-						klog.Warningf("cannot open NetNs for pid %d: %s", pid, err)
-					}
-					return
-				}
-				defer netNs.Close()
-				c.nsConntrack, err = NewConntrack(netNs)
-				if err != nil {
-					klog.Warningln(err)
-					return
-				}
+		actualDst, err := c.getActualDestination(pid, src, dst)
+		if err != nil {
+			if !common.IsNotExist(err) {
+				klog.Warningf("cannot open NetNs for pid %d: %s", pid, err)
 			}
-			actualDst = c.nsConntrack.GetActualDestination(src, dst)
+			return
 		}
 		switch {
 		case actualDst == nil:
@@ -460,6 +448,31 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 		}
 	}
 	c.connectLastAttempt[dst] = time.Now()
+}
+
+func (c *Container) getActualDestination(pid uint32, src, dst netaddr.IPPort) (*netaddr.IPPort, error) {
+	if actualDst := lookupCiliumConntrackTable(src, dst); actualDst != nil {
+		return actualDst, nil
+	}
+	actualDst := c.hostConntrack.GetActualDestination(src, dst)
+	if actualDst != nil {
+		return actualDst, nil
+	}
+	if !c.isHostNs {
+		if c.nsConntrack == nil {
+			netNs, err := proc.GetNetNs(pid)
+			if err != nil {
+				return nil, err
+			}
+			defer netNs.Close()
+			c.nsConntrack, err = NewConntrack(netNs)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return c.nsConntrack.GetActualDestination(src, dst), nil
+	}
+	return nil, nil
 }
 
 func (c *Container) onConnectionClose(srcDst AddrPair) bool {

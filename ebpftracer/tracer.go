@@ -3,6 +3,7 @@ package ebpftracer
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -264,9 +265,9 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bo
 		switch spec.Type {
 		case ebpf.TracePoint:
 			parts := strings.SplitN(spec.AttachTo, "/", 2)
-			l, err = link.Tracepoint(parts[0], parts[1], p)
+			l, err = link.Tracepoint(parts[0], parts[1], p, nil)
 		case ebpf.Kprobe:
-			l, err = link.Kprobe(spec.AttachTo, p)
+			l, err = link.Kprobe(spec.AttachTo, p, nil)
 		}
 		if err != nil {
 			t.Close()
@@ -383,7 +384,7 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, e rawEvent) {
 	for {
 		rec, err := r.Read()
 		if err != nil {
-			if perf.IsClosed(err) {
+			if errors.Is(err, perf.ErrClosed) {
 				break
 			}
 			continue
