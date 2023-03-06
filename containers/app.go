@@ -26,6 +26,8 @@ func guessApplicationType(cmdline []byte) string {
 		return "redis"
 	case bytes.HasSuffix(cmd, []byte("redis-sentinel")):
 		return "redis-sentinel"
+	case bytes.HasSuffix(cmd, []byte("keydb-server")):
+		return "keydb"
 	case bytes.HasSuffix(cmd, []byte("beam.smp")) && bytes.Contains(cmdline, []byte("rabbit")):
 		return "rabbitmq"
 	case bytes.HasSuffix(cmd, []byte("beam.smp")) && bytes.Contains(cmdline, []byte("couch")):
