@@ -98,7 +98,7 @@ type Container struct {
 
 	oomKills int
 
-	mountIds map[string]struct{}
+	mounts map[string]proc.MountInfo
 
 	nsIPs []netaddr.IP
 
@@ -136,7 +136,7 @@ func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata, hostConntrack *Connt
 		retransmits:        map[AddrPair]int64{},
 		l7Stats:            map[ebpftracer.L7Protocol]map[AddrPair]*L7Stats{},
 
-		mountIds: map[string]struct{}{},
+		mounts: map[string]proc.MountInfo{},
 
 		logParsers: map[string]*LogParser{},
 
@@ -360,13 +360,30 @@ func (c *Container) onProcessExit(pid uint32, oomKill bool) {
 
 func (c *Container) onFileOpen(pid uint32, fd uint64) {
 	mntId, logPath := resolveFd(pid, fd)
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	if mntId != "" {
-		c.mountIds[mntId] = struct{}{}
-	}
+	func() {
+		if mntId == "" {
+			return
+		}
+		c.lock.Lock()
+		_, ok := c.mounts[mntId]
+		c.lock.Unlock()
+		if ok {
+			return
+		}
+		byMountId := proc.GetMountInfo(pid)
+		if byMountId == nil {
+			return
+		}
+		if mi, ok := byMountId[mntId]; ok {
+			c.lock.Lock()
+			c.mounts[mntId] = mi
+			c.lock.Unlock()
+		}
+	}()
 	if logPath != "" {
+		c.lock.Lock()
 		c.runLogParser(logPath)
+		c.lock.Unlock()
 	}
 }
 
@@ -571,24 +588,11 @@ func (c *Container) updateDelays() {
 }
 
 func (c *Container) getMounts() map[string]map[string]*proc.FSStat {
-	mounts := map[string]proc.MountInfo{}
-	for p := range c.pids {
-		mi := proc.GetMountInfo(p)
-		if mi != nil {
-			mounts = mi
-			break
-		}
-	}
-	for mountId := range mounts {
-		if _, ok := c.mountIds[mountId]; !ok {
-			delete(mounts, mountId)
-		}
-	}
-	if len(mounts) == 0 {
+	if len(c.mounts) == 0 {
 		return nil
 	}
 	res := map[string]map[string]*proc.FSStat{}
-	for _, mi := range mounts {
+	for _, mi := range c.mounts {
 		var stat *proc.FSStat
 		for pid := range c.pids {
 			s, err := proc.StatFS(proc.Path(pid, "root", mi.MountPoint))
