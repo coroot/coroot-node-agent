@@ -42,6 +42,7 @@ const (
 	ContainerTypeContainerd
 	ContainerTypeLxc
 	ContainerTypeSystemdService
+	ContainerTypeSandbox
 )
 
 func (t ContainerType) String() string {
@@ -144,7 +145,7 @@ func containerByCgroup(path string) (ContainerType, string, error) {
 		}
 		matches := dockerIdRegexp.FindStringSubmatch(path)
 		if matches == nil {
-			return ContainerTypeUnknown, "", fmt.Errorf("invalid docker cgroup %s", path)
+			return ContainerTypeSandbox, "", nil
 		}
 		return ContainerTypeDocker, matches[1], nil
 	}

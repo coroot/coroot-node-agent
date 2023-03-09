@@ -1,6 +1,7 @@
 package containers
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
@@ -11,13 +12,15 @@ import (
 	"github.com/vishvananda/netns"
 	"k8s.io/klog/v2"
 	"os"
+	"regexp"
 	"time"
 )
 
 var (
-	selfNetNs   = netns.None()
-	hostNetNsId = netns.None().UniqueId()
-	agentPid    = uint32(os.Getpid())
+	selfNetNs         = netns.None()
+	hostNetNsId       = netns.None().UniqueId()
+	agentPid          = uint32(os.Getpid())
+	containerIdRegexp = regexp.MustCompile(`[a-z0-9]{64}`)
 )
 
 type Registry struct {
@@ -239,6 +242,16 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		r.containersByPid[pid] = c
 		return c
 	}
+	if cg.ContainerType == cgroup.ContainerTypeSandbox {
+		cmdline := proc.GetCmdline(pid)
+		parts := bytes.Split(cmdline, []byte{0})
+		if len(parts) > 0 {
+			lastArg := parts[len(parts)-1]
+			if bytes.HasSuffix(parts[0], []byte("runsc-sandbox")) && containerIdRegexp.Match(lastArg) {
+				cg.ContainerId = string(lastArg)
+			}
+		}
+	}
 	md, err := getContainerMetadata(cg)
 	if err != nil {
 		klog.Warningf("failed to get container metadata for pid %d -> %s: %s", pid, cg.Id, err)
@@ -291,14 +304,19 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 	if cg.ContainerType == cgroup.ContainerTypeSystemdService {
 		return ContainerID(cg.ContainerId)
 	}
-	if cg.ContainerType != cgroup.ContainerTypeDocker && cg.ContainerType != cgroup.ContainerTypeContainerd {
+	switch cg.ContainerType {
+	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox:
+	default:
 		return ""
 	}
 	if md.labels["io.kubernetes.pod.name"] != "" {
 		pod := md.labels["io.kubernetes.pod.name"]
 		namespace := md.labels["io.kubernetes.pod.namespace"]
 		name := md.labels["io.kubernetes.container.name"]
-		if name == "" || name == "POD" { // skip pause|sandbox containers
+		if cg.ContainerType == cgroup.ContainerTypeSandbox {
+			name = "sandbox"
+		}
+		if name == "" || name == "POD" { // skip pause containers
 			return ""
 		}
 		return ContainerID(fmt.Sprintf("/k8s/%s/%s/%s", namespace, pod, name))
@@ -311,7 +329,12 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 }
 
 func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
-	if cg.ContainerType != cgroup.ContainerTypeDocker && cg.ContainerType != cgroup.ContainerTypeContainerd {
+	switch cg.ContainerType {
+	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox:
+	default:
+		return &ContainerMetadata{}, nil
+	}
+	if cg.ContainerId == "" {
 		return &ContainerMetadata{}, nil
 	}
 	var dockerdErr error
@@ -320,7 +343,6 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 		if err == nil {
 			return md, nil
 		}
-		klog.Warningf("failed to inspect container %s: %s", cg.ContainerId, err)
 		dockerdErr = err
 	}
 	var containerdErr error
@@ -329,7 +351,6 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 		if err == nil {
 			return md, nil
 		}
-		klog.Warningf("failed to inspect container %s: %s", cg.ContainerId, err)
 		containerdErr = err
 	}
 	return nil, fmt.Errorf("failed to interact with dockerd (%s) or with containerd (%s)", dockerdErr, containerdErr)

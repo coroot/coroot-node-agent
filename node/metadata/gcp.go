@@ -3,21 +3,19 @@ package metadata
 import (
 	gcp "cloud.google.com/go/compute/metadata"
 	"k8s.io/klog/v2"
-	"net/http"
 	"strings"
 )
 
 func getGcpMetadata() *CloudMetadata {
-	hc := http.DefaultClient
-	hc.Timeout = metadataServiceTimeout
-	c := gcp.NewClient(hc)
-	md := &CloudMetadata{
-		Provider:   CloudProviderGCP,
-		AccountId:  getGcpMetadataVariable(c, "project/project-id"),
-		InstanceId: getGcpMetadataVariable(c, "instance/id"),
-		LocalIPv4:  getGcpMetadataVariable(c, "instance/network-interfaces/0/ip"),
-		PublicIPv4: getGcpMetadataVariable(c, "instance/network-interfaces/0/access-configs/0/external-ip"),
+	c := gcp.NewClient(nil)
+	md := &CloudMetadata{Provider: CloudProviderGCP}
+	if md.AccountId = getGcpMetadataVariable(c, "project/project-id"); md.AccountId == "" {
+		return md
 	}
+	md.InstanceId = getGcpMetadataVariable(c, "instance/id")
+	md.LocalIPv4 = getGcpMetadataVariable(c, "instance/network-interfaces/0/ip")
+	md.PublicIPv4 = getGcpMetadataVariable(c, "instance/network-interfaces/0/access-configs/0/external-ip")
+
 	switch strings.ToLower(getGcpMetadataVariable(c, "instance/scheduling/preemptible")) {
 	case "false":
 		md.LifeCycle = "on-demand"

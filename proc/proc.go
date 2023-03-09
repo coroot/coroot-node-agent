@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"bytes"
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"os"
 	"path"
@@ -23,7 +24,7 @@ func GetCmdline(pid uint32) []byte {
 	if err != nil {
 		return nil
 	}
-	return cmdline
+	return bytes.TrimSuffix(cmdline, []byte{0})
 }
 
 func GetNsPid(pid uint32) uint32 {
