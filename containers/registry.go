@@ -246,8 +246,9 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		cmdline := proc.GetCmdline(pid)
 		parts := bytes.Split(cmdline, []byte{0})
 		if len(parts) > 0 {
+			cmd := parts[0]
 			lastArg := parts[len(parts)-1]
-			if bytes.HasSuffix(parts[0], []byte("runsc-sandbox")) && containerIdRegexp.Match(lastArg) {
+			if (bytes.HasSuffix(cmd, []byte("runsc-sandbox")) || bytes.HasSuffix(cmd, []byte("runsc"))) && containerIdRegexp.Match(lastArg) {
 				cg.ContainerId = string(lastArg)
 			}
 		}
@@ -307,6 +308,9 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 	switch cg.ContainerType {
 	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox:
 	default:
+		return ""
+	}
+	if cg.ContainerId == "" {
 		return ""
 	}
 	if md.labels["io.kubernetes.pod.name"] != "" {
