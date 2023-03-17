@@ -256,8 +256,8 @@ github.com/coreos/go-systemd/v22 v22.5.0 h1:RrqgGjYQKalulkV8NGVIfkXQf6YYmOyiJKk8
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/coreos/pkg v0.0.0-20160727233714-3ac0863d7acf/go.mod h1:E3G3o1h8I7cfcXa63jLwjI0eiQQMgzzUDFVpN/nH/eA=
 github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f/go.mod h1:E3G3o1h8I7cfcXa63jLwjI0eiQQMgzzUDFVpN/nH/eA=
-github.com/coroot/logparser v1.0.4 h1:xp3Tc6/3gVFcm6t9TD/zJrHCCu16e7wA/VnnFLtoseU=
-github.com/coroot/logparser v1.0.4/go.mod h1:GHsVO1xE8pR5mmu9Eiop9IXHwN/QzNRx1s0fuzVxq7I=
+github.com/coroot/logparser v1.0.5 h1:ag8OPMqFYNRhu07eN4uWXIcp8tiZvv5GYXB4uGAKIRg=
+github.com/coroot/logparser v1.0.5/go.mod h1:GHsVO1xE8pR5mmu9Eiop9IXHwN/QzNRx1s0fuzVxq7I=
 github.com/coroot/taskstats v0.0.0-20230306100019-4faaee49e6cf h1:WSp31iRtFHn+cr0K3WdUnEvooeomDACFqcU+yoHr4AM=
 github.com/coroot/taskstats v0.0.0-20230306100019-4faaee49e6cf/go.mod h1:gQbj5SFPbyCfuZcOnxFy5XrGxgBTYFwgPMxyv0ERq+E=
 github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d/go.mod h1:maD7wRr/U5Z6m/iR4s+kqSMx2CaBsrgA7czyZG/E6dU=
