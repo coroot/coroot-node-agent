@@ -232,18 +232,29 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
+	im := metadata.CloudMetadata{}
 	if c.instanceMetadata != nil {
-		im := c.instanceMetadata
-		ch <- gauge(cloudInfoDesc, 1,
-			string(im.Provider), im.AccountId, im.InstanceId, im.InstanceType, im.LifeCycle,
-			im.Region, im.AvailabilityZone, im.AvailabilityZoneId, im.LocalIPv4, im.PublicIPv4,
-		)
-	} else if flags.Provider != nil || flags.Region != nil || flags.AvailabilityZone != nil {
-		ch <- gauge(cloudInfoDesc, 1,
-			flags.GetString(flags.Provider), "", "", "", "",
-			flags.GetString(flags.Region), flags.GetString(flags.AvailabilityZone), "", "", "",
-		)
+		im = *c.instanceMetadata
 	}
+	if flags.Provider != nil {
+		im.Provider = metadata.CloudProvider(flags.GetString(flags.Provider))
+	}
+	if flags.Region != nil {
+		im.Region = flags.GetString(flags.Region)
+	}
+	if flags.AvailabilityZone != nil {
+		im.AvailabilityZone = flags.GetString(flags.AvailabilityZone)
+	}
+	if flags.InstanceType != nil {
+		im.InstanceType = flags.GetString(flags.InstanceType)
+	}
+	if flags.InstanceLifeCycle != nil {
+		im.LifeCycle = flags.GetString(flags.InstanceLifeCycle)
+	}
+	ch <- gauge(cloudInfoDesc, 1,
+		string(im.Provider), im.AccountId, im.InstanceId, im.InstanceType, im.LifeCycle,
+		im.Region, im.AvailabilityZone, im.AvailabilityZoneId, im.LocalIPv4, im.PublicIPv4,
+	)
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) {

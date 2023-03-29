@@ -18,9 +18,11 @@ var (
 	externalNetworksWhitelist = kingpin.Flag("track-public-network", "Allow track connections to the specified IP networks, all private networks are allowed by default (e.g., Y.Y.Y.Y/mask)").Strings()
 	ExternalNetworksWhitelist []netaddr.IPPrefix
 
-	Provider         = kingpin.Flag("provider", "`provider` label for `node_cloud_info` metric").String()
-	Region           = kingpin.Flag("region", "`region` label for `node_cloud_info` metric").String()
-	AvailabilityZone = kingpin.Flag("availability-zone", "`availability_zone` label for `node_cloud_info` metric").String()
+	Provider          = kingpin.Flag("provider", "`provider` label for `node_cloud_info` metric").Envar("PROVIDER").String()
+	Region            = kingpin.Flag("region", "`region` label for `node_cloud_info` metric").Envar("REGION").String()
+	AvailabilityZone  = kingpin.Flag("availability-zone", "`availability_zone` label for `node_cloud_info` metric").Envar("AVAILABILITY_ZONE").String()
+	InstanceType      = kingpin.Flag("instance-type", "`instance_type` label for `node_cloud_info` metric").Envar("INSTANCE_TYPE").String()
+	InstanceLifeCycle = kingpin.Flag("instance-life-cycle", "`instance_life_cycle` label for `node_cloud_info` metric").Envar("INSTANCE_LIFE_CYCLE").String()
 )
 
 func GetString(fl *string) string {
