@@ -236,20 +236,20 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	if c.instanceMetadata != nil {
 		im = *c.instanceMetadata
 	}
-	if flags.Provider != nil {
-		im.Provider = metadata.CloudProvider(flags.GetString(flags.Provider))
+	if f := flags.GetString(flags.Provider); f != "" {
+		im.Provider = metadata.CloudProvider(f)
 	}
-	if flags.Region != nil {
-		im.Region = flags.GetString(flags.Region)
+	if f := flags.GetString(flags.Region); f != "" {
+		im.Region = f
 	}
-	if flags.AvailabilityZone != nil {
-		im.AvailabilityZone = flags.GetString(flags.AvailabilityZone)
+	if f := flags.GetString(flags.AvailabilityZone); f != "" {
+		im.AvailabilityZone = f
 	}
-	if flags.InstanceType != nil {
-		im.InstanceType = flags.GetString(flags.InstanceType)
+	if f := flags.GetString(flags.InstanceType); f != "" {
+		im.InstanceType = f
 	}
-	if flags.InstanceLifeCycle != nil {
-		im.LifeCycle = flags.GetString(flags.InstanceLifeCycle)
+	if f := flags.GetString(flags.InstanceLifeCycle); f != "" {
+		im.LifeCycle = f
 	}
 	ch <- gauge(cloudInfoDesc, 1,
 		string(im.Provider), im.AccountId, im.InstanceId, im.InstanceType, im.LifeCycle,
