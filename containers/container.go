@@ -9,6 +9,7 @@ import (
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/pinger"
 	"github.com/coroot/coroot-node-agent/proc"
+	"github.com/coroot/coroot-node-agent/tracing"
 	"github.com/coroot/logparser"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
@@ -65,6 +66,8 @@ type ActiveConnection struct {
 	Fd         uint64
 	Timestamp  uint64
 	Closed     time.Time
+
+	PreparedStatements map[string]string
 }
 
 type L7Stats struct {
@@ -73,6 +76,7 @@ type L7Stats struct {
 }
 
 type Container struct {
+	id       ContainerID
 	cgroup   *cgroup.Cgroup
 	metadata *ContainerMetadata
 
@@ -113,13 +117,14 @@ type Container struct {
 	done chan struct{}
 }
 
-func NewContainer(cg *cgroup.Cgroup, md *ContainerMetadata, hostConntrack *Conntrack, pid uint32) (*Container, error) {
+func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, hostConntrack *Conntrack, pid uint32) (*Container, error) {
 	netNs, err := proc.GetNetNs(pid)
 	if err != nil {
 		return nil, err
 	}
 	defer netNs.Close()
 	c := &Container{
+		id:       id,
 		cgroup:   cg,
 		metadata: md,
 
@@ -458,10 +463,11 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 		}
 		c.connectsSuccessful[AddrPair{src: dst, dst: *actualDst}]++
 		c.connectionsActive[AddrPair{src: src, dst: dst}] = &ActiveConnection{
-			ActualDest: *actualDst,
-			Pid:        pid,
-			Fd:         fd,
-			Timestamp:  timestamp,
+			ActualDest:         *actualDst,
+			Pid:                pid,
+			Fd:                 fd,
+			Timestamp:          timestamp,
+			PreparedStatements: map[string]string{},
 		}
 	}
 	c.connectLastAttempt[dst] = time.Now()
@@ -513,6 +519,10 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *ebpf
 			if stats == nil {
 				stats = map[AddrPair]*L7Stats{}
 				c.l7Stats[r.Protocol] = stats
+			}
+			tracing.HandleL7Request(string(c.id), conn.ActualDest, r, conn.PreparedStatements)
+			if r.Method == ebpftracer.L7MethodStatementClose {
+				return
 			}
 			s := stats[key]
 			if s == nil {

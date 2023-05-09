@@ -284,7 +284,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		r.containersByCgroupId[cg.Id] = c
 		return c
 	}
-	c, err := NewContainer(cg, md, r.hostConntrack, pid)
+	c, err := NewContainer(id, cg, md, r.hostConntrack, pid)
 	if err != nil {
 		klog.Warningf("failed to create container pid=%d cg=%s id=%s: %s", pid, cg.Id, id, err)
 		return nil

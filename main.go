@@ -6,6 +6,7 @@ import (
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/node"
+	"github.com/coroot/coroot-node-agent/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/mod/semver"
@@ -89,8 +90,12 @@ func main() {
 	if semver.Compare("v"+ver, "v"+minSupportedKernelVersion) == -1 {
 		klog.Exitf("the minimum Linux kernel version required is %s or later", minSupportedKernelVersion)
 	}
+
+	machineId := machineID()
+	tracing.Init(machineId, hostname, version)
+
 	registry := prometheus.NewRegistry()
-	registerer := prometheus.WrapRegistererWith(prometheus.Labels{"machine_id": machineID()}, registry)
+	registerer := prometheus.WrapRegistererWith(prometheus.Labels{"machine_id": machineId}, registry)
 
 	registerer.MustRegister(info("node_agent_info", version))
 
