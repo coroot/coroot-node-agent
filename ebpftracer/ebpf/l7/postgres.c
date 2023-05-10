@@ -2,8 +2,12 @@
 // https://www.pgcon.org/2014/schedule/attachments/330_postgres-for-the-wire.pdf
 // https://www.postgresql.org/docs/current/protocol-message-formats.html
 
+#define POSTGRES_FRAME_SIMPLE_QUERY 'Q'
+#define POSTGRES_FRAME_PARSE 'P'
+#define POSTGRES_FRAME_CLOSE 'C'
+
 static __always_inline
-int is_postgres_query(char *buf, int buf_size) {
+int is_postgres_query(char *buf, int buf_size, __u8 *request_type) {
     if (buf_size < 1) {
         return 0;
     }
@@ -16,7 +20,9 @@ int is_postgres_query(char *buf, int buf_size) {
         return 0;
     }
     f_length = bpf_htonl(f_length);
-    if (f_cmd == 'Q' && f_length+1 == buf_size) {
+
+    *request_type = f_cmd;
+    if ((f_cmd == POSTGRES_FRAME_SIMPLE_QUERY || f_cmd == POSTGRES_FRAME_CLOSE) && f_length+1 == buf_size) {
         return 1;
     }
     char sync[5];
@@ -44,7 +50,7 @@ __u32 parse_postgres_status(char *buf, int buf_size) {
     if (length+1 > buf_size) {
         return 0;
     }
-    if (cmd == '2' && length == 4 && buf_size >= 10) {
+    if ((cmd == '1' || cmd == '2') && length == 4 && buf_size >= 10) {
         if (bpf_probe_read(&cmd, sizeof(cmd), (void *)((char *)buf+5)) < 0) {
             return 0;
         }
@@ -55,7 +61,7 @@ __u32 parse_postgres_status(char *buf, int buf_size) {
     if (cmd == 'E') {
         return 500;
     }
-    if (cmd == 'T' || cmd == 'D' || cmd == 'C') {
+    if (cmd == 't' || cmd == 'T' || cmd == 'D' || cmd == 'C') {
         return 200;
     }
     return 0;

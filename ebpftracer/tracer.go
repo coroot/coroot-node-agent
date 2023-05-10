@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+const PayloadSize = 512
+
 type EventType uint32
 type EventReason uint32
 
@@ -79,9 +81,11 @@ func (p L7Protocol) String() string {
 type L7Method uint8
 
 const (
-	L7MethodUnknown L7Method = 0
-	L7MethodProduce L7Method = 1
-	L7MethodConsume L7Method = 2
+	L7MethodUnknown          L7Method = 0
+	L7MethodProduce          L7Method = 1
+	L7MethodConsume          L7Method = 2
+	L7MethodStatementPrepare L7Method = 3
+	L7MethodStatementClose   L7Method = 4
 )
 
 func (m L7Method) String() string {
@@ -97,10 +101,12 @@ func (m L7Method) String() string {
 }
 
 type L7Request struct {
-	Protocol L7Protocol
-	Status   int
-	Duration time.Duration
-	Method   L7Method
+	Protocol    L7Protocol
+	Status      int
+	Duration    time.Duration
+	Method      L7Method
+	StatementId uint32
+	Payload     [PayloadSize]byte
 }
 
 func (r *L7Request) StatusString() string {
@@ -196,6 +202,12 @@ func (t *Tracer) init(ch chan<- Event) error {
 	return nil
 }
 
+type perfMap struct {
+	name                  string
+	perCPUBufferSizePages int
+	event                 rawEvent
+}
+
 func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bool) error {
 	kv := "v" + common.KernelMajorMinor(kernelVersion)
 	var prg []byte
@@ -224,25 +236,26 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bo
 	}
 	t.collection = c
 
-	events := map[string]rawEvent{
-		"proc_events":           &procEvent{},
-		"tcp_listen_events":     &tcpEvent{},
-		"tcp_connect_events":    &tcpEvent{},
-		"tcp_retransmit_events": &tcpEvent{},
-		"file_events":           &fileEvent{},
-	}
-	if !disableL7Tracing {
-		events["l7_events"] = &l7Event{}
+	perfMaps := []perfMap{
+		{name: "proc_events", event: &procEvent{}, perCPUBufferSizePages: 4},
+		{name: "tcp_listen_events", event: &tcpEvent{}, perCPUBufferSizePages: 4},
+		{name: "tcp_connect_events", event: &tcpEvent{}, perCPUBufferSizePages: 8},
+		{name: "tcp_retransmit_events", event: &tcpEvent{}, perCPUBufferSizePages: 4},
+		{name: "file_events", event: &fileEvent{}, perCPUBufferSizePages: 4},
 	}
 
-	for name, typ := range events {
-		r, err := perf.NewReader(t.collection.Maps[name], os.Getpagesize())
+	if !disableL7Tracing {
+		perfMaps = append(perfMaps, perfMap{name: "l7_events", event: &l7Event{}, perCPUBufferSizePages: 16})
+	}
+
+	for _, pm := range perfMaps {
+		r, err := perf.NewReader(t.collection.Maps[pm.name], pm.perCPUBufferSizePages*os.Getpagesize())
 		if err != nil {
 			t.Close()
 			return fmt.Errorf("failed to create ebpf reader: %w", err)
 		}
-		t.readers[name] = r
-		go runEventsReader(name, r, ch, typ)
+		t.readers[pm.name] = r
+		go runEventsReader(pm.name, r, ch, pm.event)
 	}
 
 	for name, spec := range spec.Programs {
@@ -369,14 +382,19 @@ type l7Event struct {
 	Duration            uint64
 	Protocol            uint8
 	Method              uint8
+	Padding             uint16
+	StatementId         uint32
+	Payload             [PayloadSize]byte
 }
 
 func (e l7Event) Event() Event {
 	return Event{Type: EventTypeL7Request, Pid: e.Pid, Fd: e.Fd, Timestamp: e.ConnectionTimestamp, L7Request: &L7Request{
-		Protocol: L7Protocol(e.Protocol),
-		Status:   int(e.Status),
-		Duration: time.Duration(e.Duration),
-		Method:   L7Method(e.Method),
+		Protocol:    L7Protocol(e.Protocol),
+		Status:      int(e.Status),
+		Duration:    time.Duration(e.Duration),
+		Method:      L7Method(e.Method),
+		StatementId: e.StatementId,
+		Payload:     e.Payload,
 	}}
 }
 
