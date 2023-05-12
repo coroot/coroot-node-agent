@@ -15,12 +15,10 @@ import (
 )
 
 var (
-	ciliumCt4           *bpf.Map
-	ciliumCt6           *bpf.Map
-	backends4Map        *bpf.Map
-	backends4MapVersion string
-	backends6Map        *bpf.Map
-	backends6MapVersion string
+	ciliumCt4    *bpf.Map
+	ciliumCt6    *bpf.Map
+	backends4Map *bpf.Map
+	backends6Map *bpf.Map
 )
 
 func init() {
@@ -44,7 +42,6 @@ func init() {
 			klog.Infoln(err)
 		} else {
 			klog.Infoln("found cilium ebpf-map:", n)
-			backends4MapVersion = n
 			break
 		}
 	}
@@ -54,7 +51,6 @@ func init() {
 			klog.Infoln(err)
 		} else {
 			klog.Infoln("found cilium ebpf-map:", n)
-			backends6MapVersion = n
 			break
 		}
 	}
@@ -102,11 +98,11 @@ func lookupCilium4(src, dst netaddr.IPPort) *netaddr.IPPort {
 		return nil
 	}
 	var backend lbmap.BackendValue
-	switch backends4MapVersion {
-	case lbmap.Backend4MapV2Name:
-		backend = b.(*lbmap.Backend4Value).ToHost()
-	case lbmap.Backend4MapV3Name:
-		backend = b.(*lbmap.Backend4ValueV3).ToHost()
+	switch bv := b.(type) {
+	case *lbmap.Backend4Value:
+		backend = bv.ToHost()
+	case *lbmap.Backend4ValueV3:
+		backend = bv.ToHost()
 	default:
 		return nil
 	}
@@ -143,11 +139,11 @@ func lookupCilium6(src, dst netaddr.IPPort) *netaddr.IPPort {
 		return nil
 	}
 	var backend lbmap.BackendValue
-	switch backends6MapVersion {
-	case lbmap.Backend6MapV2Name:
-		backend = b.(*lbmap.Backend6Value).ToHost()
-	case lbmap.Backend6MapV3Name:
-		backend = b.(*lbmap.Backend6ValueV3).ToHost()
+	switch bv := b.(type) {
+	case *lbmap.Backend6Value:
+		backend = bv.ToHost()
+	case *lbmap.Backend6ValueV3:
+		backend = bv.ToHost()
 	default:
 		return nil
 	}
