@@ -56,10 +56,13 @@ func parseMongo(payload []byte) string {
 	return bsonToString(reader)
 }
 
-func bsonToString(r io.Reader) string {
-	raw, err := bson.NewFromIOReader(r)
-	if err != nil {
-		return "<truncated>"
+func bsonToString(r io.Reader) (res string) {
+	res = "<truncated>"
+	defer func() {
+		recover()
+	}()
+	if raw, err := bson.NewFromIOReader(r); err == nil {
+		res = raw.String()
 	}
-	return raw.String()
+	return
 }
