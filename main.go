@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/mod/semver"
 	"golang.org/x/sys/unix"
+	"golang.org/x/time/rate"
 	"k8s.io/klog/v2"
 	"net/http"
 	_ "net/http/pprof"
@@ -74,6 +75,9 @@ func machineID() string {
 }
 
 func main() {
+	klog.LogToStderr(false)
+	klog.SetOutput(&RateLimitedLogOutput{limiter: rate.NewLimiter(10, 100)})
+
 	klog.Infoln("agent version:", version)
 
 	hostname, kv, err := uname()
@@ -127,4 +131,15 @@ type logger struct{}
 
 func (l logger) Println(v ...interface{}) {
 	klog.Errorln(v...)
+}
+
+type RateLimitedLogOutput struct {
+	limiter *rate.Limiter
+}
+
+func (o *RateLimitedLogOutput) Write(data []byte) (int, error) {
+	if !o.limiter.Allow() {
+		return len(data), nil
+	}
+	return os.Stderr.Write(data)
 }
