@@ -109,6 +109,11 @@ func TestContainerByCgroup(t *testing.T) {
 	as.Equal("/system.slice/system-serial\\x2dgetty.slice", id)
 	as.Nil(err)
 
+	typ, id, err = containerByCgroup("/runtime.slice/kubelet.service")
+	as.Equal(typ, ContainerTypeSystemdService)
+	as.Equal("/runtime.slice/kubelet.service", id)
+	as.Nil(err)
+
 	typ, id, err = containerByCgroup("/system.slice/system-postgresql.slice/postgresql@9.4-main.service")
 	as.Equal(typ, ContainerTypeSystemdService)
 	as.Equal("/system.slice/system-postgresql.slice", id)

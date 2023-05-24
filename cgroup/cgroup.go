@@ -22,7 +22,7 @@ var (
 	crioIdRegexp        = regexp.MustCompile(`crio-([a-z0-9]{64})`)
 	containerdIdRegexp  = regexp.MustCompile(`cri-containerd[-:]([a-z0-9]{64})`)
 	lxcIdRegexp         = regexp.MustCompile(`/lxc/([^/]+)`)
-	systemSliceIdRegexp = regexp.MustCompile(`(/system\.slice/([^/]+))`)
+	systemSliceIdRegexp = regexp.MustCompile(`(/(system|runtime)\.slice/([^/]+))`)
 )
 
 type Version uint8
@@ -156,7 +156,7 @@ func containerByCgroup(path string) (ContainerType, string, error) {
 		}
 		return ContainerTypeLxc, matches[1], nil
 	}
-	if prefix == "system.slice" {
+	if prefix == "system.slice" || prefix == "runtime.slice" {
 		matches := systemSliceIdRegexp.FindStringSubmatch(path)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid systemd cgroup %s", path)
