@@ -7,7 +7,10 @@ import (
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/logparser"
 	"github.com/docker/docker/client"
+	"github.com/vishvananda/netns"
 	"inet.af/netaddr"
+	"os"
+	"path"
 	"strings"
 	"time"
 )
@@ -51,6 +54,7 @@ func DockerdInspect(containerID string) (*ContainerMetadata, error) {
 		image:       c.Config.Image,
 		volumes:     map[string]string{},
 		hostListens: map[string][]netaddr.IPPort{},
+		networks:    map[string]ContainerNetwork{},
 	}
 	for _, m := range c.Mounts {
 		res.volumes[m.Destination] = common.ParseKubernetesVolumeSource(m.Source)
@@ -78,6 +82,30 @@ func DockerdInspect(containerID string) (*ContainerMetadata, error) {
 			}
 			res.hostListens["dockerd"] = s
 		}
+		for name, network := range c.NetworkSettings.Networks {
+			res.networks[name] = ContainerNetwork{
+				NetworkID: network.NetworkID,
+			}
+		}
 	}
 	return res, nil
+}
+
+func FindNetworkLoadBalancerNs(networkId string) netns.NsHandle {
+	basePath := "/run/docker/netns"
+	files, err := os.ReadDir(proc.HostPath(basePath))
+	if err != nil {
+		return -1
+	}
+	for _, f := range files {
+		if !f.Type().IsRegular() || !strings.HasPrefix(f.Name(), "lb_") {
+			continue
+		}
+		idPrefix := strings.Split(f.Name(), "_")[1]
+		if strings.HasPrefix(networkId, idPrefix) {
+			ns, _ := netns.GetFromPath(proc.HostPath(path.Join(basePath, f.Name())))
+			return ns
+		}
+	}
+	return -1
 }

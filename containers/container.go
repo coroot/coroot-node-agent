@@ -28,6 +28,10 @@ var (
 
 type ContainerID string
 
+type ContainerNetwork struct {
+	NetworkID string
+}
+
 type ContainerMetadata struct {
 	name        string
 	labels      map[string]string
@@ -36,6 +40,7 @@ type ContainerMetadata struct {
 	image       string
 	logDecoder  logparser.Decoder
 	hostListens map[string][]netaddr.IPPort
+	networks    map[string]ContainerNetwork
 }
 
 type Delays struct {
@@ -111,6 +116,7 @@ type Container struct {
 	isHostNs      bool
 	hostConntrack *Conntrack
 	nsConntrack   *Conntrack
+	lbConntracks  []*Conntrack
 
 	lock sync.RWMutex
 
@@ -151,6 +157,17 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 		done: make(chan struct{}),
 	}
 
+	for _, n := range md.networks {
+		if nsHandle := FindNetworkLoadBalancerNs(n.NetworkID); nsHandle.IsOpen() {
+			if ct, err := NewConntrack(nsHandle); err != nil {
+				klog.Warningln(err)
+			} else {
+				c.lbConntracks = append(c.lbConntracks, ct)
+			}
+			_ = nsHandle.Close()
+		}
+	}
+
 	c.runLogParser("")
 
 	go func() {
@@ -172,6 +189,9 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 func (c *Container) Close() {
 	for _, p := range c.logParsers {
 		p.Stop()
+	}
+	for _, ct := range c.lbConntracks {
+		_ = ct.Close()
 	}
 	if c.nsConntrack != nil {
 		_ = c.nsConntrack.Close()
@@ -476,6 +496,11 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 func (c *Container) getActualDestination(pid uint32, src, dst netaddr.IPPort) (*netaddr.IPPort, error) {
 	if actualDst := lookupCiliumConntrackTable(src, dst); actualDst != nil {
 		return actualDst, nil
+	}
+	for _, lb := range c.lbConntracks {
+		if actualDst := lb.GetActualDestination(src, dst); actualDst != nil {
+			return actualDst, nil
+		}
 	}
 	actualDst := c.hostConntrack.GetActualDestination(src, dst)
 	if actualDst != nil {
