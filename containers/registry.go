@@ -13,6 +13,7 @@ import (
 	"k8s.io/klog/v2"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -324,6 +325,17 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 			return ""
 		}
 		return ContainerID(fmt.Sprintf("/k8s/%s/%s/%s", namespace, pod, name))
+	}
+	if taskNameParts := strings.SplitN(md.labels["com.docker.swarm.task.name"], ".", 3); len(taskNameParts) == 3 {
+		namespace := md.labels["com.docker.stack.namespace"]
+		service := md.labels["com.docker.swarm.service.name"]
+		if namespace != "" {
+			service = strings.TrimPrefix(service, namespace+"_")
+		}
+		if namespace == "" {
+			namespace = "_"
+		}
+		return ContainerID(fmt.Sprintf("/swarm/%s/%s/%s", namespace, service, taskNameParts[1]))
 	}
 	if md.name == "" { // should be "pure" dockerd container here
 		klog.Warningln("empty dockerd container name for:", cg.ContainerId)
