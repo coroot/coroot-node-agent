@@ -42,7 +42,7 @@ func getAzureMetadata() *CloudMetadata {
 	q.Add("api-version", "2021-05-01")
 	r.URL.RawQuery = q.Encode()
 
-	resp, err := httpGetWithTimeout(r)
+	resp, err := httpCallWithTimeout(r)
 	if err != nil {
 		klog.Errorln(err)
 		return nil

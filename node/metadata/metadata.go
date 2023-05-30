@@ -79,7 +79,7 @@ func GetInstanceMetadata() *CloudMetadata {
 	return nil
 }
 
-func httpGetWithTimeout(r *http.Request) (*http.Response, error) {
+func httpCallWithTimeout(r *http.Request) (*http.Response, error) {
 	client := http.DefaultClient
 	client.Timeout = metadataServiceTimeout
 	resp, err := client.Do(r)
@@ -87,7 +87,6 @@ func httpGetWithTimeout(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		klog.Errorln()
 		return nil, fmt.Errorf("metadata service response: %s", resp.Status)
 	}
 	return resp, nil

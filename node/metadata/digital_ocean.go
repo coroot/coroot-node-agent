@@ -12,7 +12,7 @@ func getDigitalOceanMetadata() *CloudMetadata {
 	var lastErr error
 	getVar := func(path string) string {
 		r, _ := http.NewRequest(http.MethodGet, doInstanceMetadataURL+path, nil)
-		resp, err := httpGetWithTimeout(r)
+		resp, err := httpCallWithTimeout(r)
 		if err != nil {
 			lastErr = err
 			return ""
