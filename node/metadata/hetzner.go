@@ -18,7 +18,7 @@ type hetznerInstanceMetadata struct {
 
 func getHetznerMetadata() *CloudMetadata {
 	r, _ := http.NewRequest(http.MethodGet, hetznerInstanceMetadataURL, nil)
-	resp, err := httpGetWithTimeout(r)
+	resp, err := httpCallWithTimeout(r)
 	if err != nil {
 		klog.Errorln(err)
 		return nil
