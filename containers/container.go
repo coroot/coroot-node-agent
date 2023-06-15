@@ -484,7 +484,7 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 			break
 		}
 	}
-	if !whitelisted && !common.IsIpPrivate(dst.IP()) {
+	if !whitelisted && !common.IsIpPrivate(dst.IP()) && !dst.IP().IsLoopback() {
 		return
 	}
 	c.lock.Lock()
