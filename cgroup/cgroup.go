@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/flags"
-	"io/ioutil"
 	"k8s.io/klog/v2"
 	"os"
 	"path"
@@ -89,7 +88,7 @@ func (cg *Cgroup) CreatedAt() time.Time {
 }
 
 func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}

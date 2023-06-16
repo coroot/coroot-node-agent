@@ -68,6 +68,9 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, er
 	if err := ContainerdInit(); err != nil {
 		klog.Warningln(err)
 	}
+	if err := CrioInit(); err != nil {
+		klog.Warningln(err)
+	}
 	if err := JournaldInit(); err != nil {
 		klog.Warningln(err)
 	}
@@ -304,10 +307,13 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 
 func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 	if cg.ContainerType == cgroup.ContainerTypeSystemdService {
+		if strings.HasPrefix(cg.ContainerId, "/system.slice/crio-conmon-") {
+			return ""
+		}
 		return ContainerID(cg.ContainerId)
 	}
 	switch cg.ContainerType {
-	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox:
+	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
 	default:
 		return ""
 	}
@@ -346,12 +352,15 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 
 func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 	switch cg.ContainerType {
-	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox:
+	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
 	default:
 		return &ContainerMetadata{}, nil
 	}
 	if cg.ContainerId == "" {
 		return &ContainerMetadata{}, nil
+	}
+	if cg.ContainerType == cgroup.ContainerTypeCrio {
+		return CrioInspect(cg.ContainerId)
 	}
 	var dockerdErr error
 	if dockerdClient != nil {
