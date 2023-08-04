@@ -1,8 +1,6 @@
 package tracing
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/binary"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"go.mongodb.org/mongo-driver/bson"
@@ -10,7 +8,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
-	"io"
 	"time"
 )
 
@@ -31,38 +28,31 @@ func handleMongoQuery(start, end time.Time, r *ebpftracer.L7Request, attrs []att
 	span.End(trace.WithTimestamp(end))
 }
 
-type mongoMsgHeader struct {
-	MessageLength int32
-	RequestID     int32
-	ResponseTo    int32
-	OpCode        int32
-}
+const (
+	mongoHeaderLength      = 20
+	mongoOpCodeOffset      = 12
+	mongoSectionKindLength = 1
+	mongoSectionSizeLength = 4
+	mongoSectionKindBody   = 0
+)
 
-func parseMongo(payload []byte) string {
-	h := &mongoMsgHeader{}
-	reader := bufio.NewReader(bytes.NewReader(payload))
-	if err := binary.Read(reader, binary.LittleEndian, h); err != nil {
-		return ""
-	}
-	if h.OpCode != MongoOpMSG {
-		return ""
-	}
-	if _, err := reader.Discard(4); err != nil { //flagBits
-		return ""
-	}
-	if sectionKind, err := reader.ReadByte(); err != nil || sectionKind != 0 {
-		return ""
-	}
-	return bsonToString(reader)
-}
-
-func bsonToString(r io.Reader) (res string) {
+func parseMongo(payload []byte) (res string) {
 	res = "<truncated>"
-	defer func() {
-		recover()
-	}()
-	if raw, err := bson.NewFromIOReader(r); err == nil {
-		res = raw.String()
+	if len(payload) < mongoHeaderLength+mongoSectionKindLength+mongoSectionSizeLength {
+		return
 	}
-	return
+	opCode := binary.LittleEndian.Uint32(payload[mongoOpCodeOffset:])
+	if opCode != MongoOpMSG {
+		return
+	}
+	sectionKind := payload[mongoHeaderLength]
+	if sectionKind != mongoSectionKindBody {
+		return
+	}
+	sectionData := payload[mongoHeaderLength+mongoSectionKindLength:]
+	sectionLength := binary.LittleEndian.Uint32(sectionData)
+	if sectionLength < 1 || int(sectionLength) > len(sectionData) {
+		return
+	}
+	return bson.Raw(sectionData).String()
 }
