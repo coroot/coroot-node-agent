@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"bytes"
+	"encoding/binary"
 	"github.com/stretchr/testify/assert"
 	"go.mongodb.org/mongo-driver/bson"
 	"testing"
@@ -52,12 +53,36 @@ func Test_parseRedis(t *testing.T) {
 	assert.Equal(t, "mylist", args)
 }
 
+type mongoHeader struct {
+	MessageLength int32
+	RequestID     int32
+	ResponseTo    int32
+	OpCode        int32
+	Flags         int32
+	SectionKind   uint8
+}
+
 func Test_parseMongo(t *testing.T) {
+	buf := bytes.NewBuffer(nil)
 	v := bson.M{"a": "bssssssssssssssssssssssssssssssssssssssssss"}
-	buf := make([]byte, 1024)
 	data, err := bson.Marshal(v)
+
+	h := mongoHeader{
+		MessageLength: 16 + 4 + 1 + int32(len(data)),
+		OpCode:        MongoOpMSG,
+	}
+
+	assert.NoError(t, binary.Write(buf, binary.LittleEndian, h))
+	_, err = buf.Write(data)
 	assert.NoError(t, err)
-	copy(buf, data)
-	assert.Equal(t, `{"a": "bssssssssssssssssssssssssssssssssssssssssss"}`, bsonToString(bytes.NewReader(buf)))
-	assert.Equal(t, `<truncated>`, bsonToString(bytes.NewReader(buf[:20])))
+
+	payload := buf.Bytes()
+
+	assert.Equal(t, `{"a": "bssssssssssssssssssssssssssssssssssssssssss"}`, parseMongo(payload))
+	assert.Equal(t, `<truncated>`, parseMongo(payload[:20]))
+
+	dataSize := binary.LittleEndian.Uint32(data)
+
+	binary.LittleEndian.PutUint32(payload[mongoHeaderLength+mongoSectionKindLength:], dataSize+1)
+	assert.Equal(t, `<truncated>`, parseMongo(payload))
 }
