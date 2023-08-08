@@ -1,4 +1,5 @@
 #include <uapi/linux/bpf.h>
+#include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
@@ -29,11 +30,11 @@
     bpf_trace_printk(____fmt, sizeof(____fmt), ##__VA_ARGS__); \
 })
 
-
 #include "proc.c"
 #include "file.c"
 #include "tcp/state.c"
 #include "tcp/retransmit.c"
 #include "l7/l7.c"
+#include "l7/tls.c"
 
 char _license[] SEC("license") = "GPL";

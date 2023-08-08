@@ -1,6 +1,7 @@
 package containers
 
 import (
+	"github.com/cilium/ebpf/link"
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
@@ -89,6 +90,7 @@ type Process struct {
 	Pid       uint32
 	StartedAt time.Time
 	NetNsId   string
+	uprobes   []link.Link
 }
 
 func (p *Process) isHostNs() bool {
@@ -356,7 +358,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (c *Container) onProcessStart(pid uint32) {
+func (c *Container) onProcessStart(pid uint32, uprobes []link.Link) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	stats, err := TaskstatsPID(pid)
@@ -369,7 +371,7 @@ func (c *Container) onProcessStart(pid uint32) {
 	}
 	defer ns.Close()
 	c.zombieAt = time.Time{}
-	c.processes[pid] = &Process{Pid: pid, StartedAt: stats.BeginTime, NetNsId: ns.UniqueId()}
+	c.processes[pid] = &Process{Pid: pid, StartedAt: stats.BeginTime, NetNsId: ns.UniqueId(), uprobes: uprobes}
 
 	if c.startedAt.IsZero() {
 		c.startedAt = stats.BeginTime
@@ -390,6 +392,11 @@ func (c *Container) onProcessStart(pid uint32) {
 func (c *Container) onProcessExit(pid uint32, oomKill bool) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if p := c.processes[pid]; p != nil {
+		for _, u := range p.uprobes {
+			_ = u.Close()
+		}
+	}
 	delete(c.processes, pid)
 	if len(c.processes) == 0 {
 		c.zombieAt = time.Now()
