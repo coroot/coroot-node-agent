@@ -75,6 +75,7 @@ int trace_exit(struct trace_event_raw_sys_exit__stub* ctx)
 	return 0;
 }
 
+#if defined(__TARGET_ARCH_x86)
 SEC("tracepoint/syscalls/sys_enter_open")
 int sys_enter_open(struct trace_event_raw_sys_enter__stub* ctx)
 {
@@ -86,6 +87,7 @@ int sys_exit_open(struct trace_event_raw_sys_exit__stub* ctx)
 {
 	return trace_exit(ctx);
 }
+#endif
 
 SEC("tracepoint/syscalls/sys_enter_openat")
 int sys_enter_openat(struct trace_event_raw_sys_enter__stub* ctx)

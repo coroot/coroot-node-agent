@@ -53,22 +53,22 @@ struct {
     __uint(value_size, sizeof(int));
 } l7_events SEC(".maps");
 
-struct rw_args_t {
+struct read_args {
     __u64 fd;
     char* buf;
-    __u64 size;
 };
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(key_size, sizeof(__u64));
-    __uint(value_size, sizeof(struct rw_args_t));
+    __uint(value_size, sizeof(struct read_args));
     __uint(max_entries, 10240);
 } active_reads SEC(".maps");
 
 struct socket_key {
     __u64 fd;
     __u32 pid;
+    __u16 is_tls;
     __s16 stream_id;
 };
 
@@ -109,7 +109,7 @@ struct trace_event_raw_sys_exit_rw__stub {
     long int ret;
 };
 
-struct iov {
+struct iovec {
     char* buf;
     __u64 size;
 };
@@ -127,7 +127,7 @@ __u64 get_connection_timestamp(__u32 pid, __u64 fd) {
 }
 
 static inline __attribute__((__always_inline__))
-int trace_enter_write(struct trace_event_raw_sys_enter_rw__stub* ctx, __u64 fd, char *buf, __u64 size) {
+int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size) {
     __u64 id = bpf_get_current_pid_tgid();
     int zero = 0;
     struct l7_request *req = bpf_map_lookup_elem(&l7_request_heap, &zero);
@@ -141,6 +141,7 @@ int trace_enter_write(struct trace_event_raw_sys_enter_rw__stub* ctx, __u64 fd, 
     struct socket_key k = {};
     k.pid = id >> 32;
     k.fd = fd;
+    k.is_tls = is_tls;
     k.stream_id = -1;
 
     if (is_http_request(buf)) {
@@ -228,37 +229,33 @@ int trace_enter_write(struct trace_event_raw_sys_enter_rw__stub* ctx, __u64 fd, 
 }
 
 static inline __attribute__((__always_inline__))
-int trace_enter_read(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    __u64 id = bpf_get_current_pid_tgid();
-    struct rw_args_t args = {};
-    args.fd = ctx->fd;
-    args.buf = ctx->buf;
-    args.size = ctx->size;
+int trace_enter_read(__u64 id, __u64 fd, char *buf) {
+    struct read_args args = {};
+    args.fd = fd;
+    args.buf = buf;
     bpf_map_update_elem(&active_reads, &id, &args, BPF_ANY);
     return 0;
 }
 
 static inline __attribute__((__always_inline__))
-int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
-    __u64 id = bpf_get_current_pid_tgid();
-    int zero = 0;
-    struct rw_args_t *args = bpf_map_lookup_elem(&active_reads, &id);
+int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) {
+    struct read_args *args = bpf_map_lookup_elem(&active_reads, &id);
     if (!args) {
         return 0;
     }
     struct socket_key k = {};
-    k.pid = id >> 32;
+    k.pid = pid;
     k.fd = args->fd;
+    k.is_tls = is_tls;
     k.stream_id = -1;
-    char *buf = args->buf;
-    __u64 size = args->size;
 
     bpf_map_delete_elem(&active_reads, &id);
 
-    if (ctx->ret <= 0) {
+    if (ret <= 0) {
         return 0;
     }
 
+    int zero = 0;
     struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
     if (!e) {
         return 0;
@@ -270,7 +267,7 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
     e->method = METHOD_UNKNOWN;
     e->statement_id = 0;
 
-    if (is_rabbitmq_consume(buf, size)) {
+    if (is_rabbitmq_consume(args->buf, ret)) {
         e->protocol = PROTOCOL_RABBITMQ;
         e->status = 200;
         e->method = METHOD_CONSUME;
@@ -283,7 +280,7 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
     cassandra_response.stream_id = -1;
     struct l7_request *req = bpf_map_lookup_elem(&active_l7_requests, &k);
     if (!req) {
-        if (bpf_probe_read(&cassandra_response, sizeof(cassandra_response), (void *)(buf)) < 0) {
+        if (bpf_probe_read(&cassandra_response, sizeof(cassandra_response), (void *)(args->buf)) < 0) {
             return 0;
         }
         k.stream_id = cassandra_response.stream_id;
@@ -301,23 +298,23 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
     __u8 request_type = req->request_type;
     bpf_map_delete_elem(&active_l7_requests, &k);
     if (e->protocol == PROTOCOL_HTTP) {
-        e->status = parse_http_status(buf);
+        e->status = parse_http_status(args->buf);
     } else if (e->protocol == PROTOCOL_POSTGRES) {
-        e->status = parse_postgres_status(buf, ctx->ret);
+        e->status = parse_postgres_status(args->buf, ret);
         if (request_type == POSTGRES_FRAME_PARSE) {
             e->method = METHOD_STATEMENT_PREPARE;
         }
     } else if (e->protocol == PROTOCOL_REDIS) {
-        e->status = parse_redis_status(buf, ctx->ret);
+        e->status = parse_redis_status(args->buf, ret);
     } else if (e->protocol == PROTOCOL_MEMCACHED) {
-        e->status = parse_memcached_status(buf, ctx->ret);
+        e->status = parse_memcached_status(args->buf, ret);
     } else if (e->protocol == PROTOCOL_MYSQL) {
-        e->status = parse_mysql_response(buf, ctx->ret, request_type, &e->statement_id);
+        e->status = parse_mysql_response(args->buf, ret, request_type, &e->statement_id);
         if (request_type == MYSQL_COM_STMT_PREPARE) {
             e->method = METHOD_STATEMENT_PREPARE;
         }
     } else if (e->protocol == PROTOCOL_MONGO) {
-        e->status = parse_mongo_status(buf, ctx->ret, partial);
+        e->status = parse_mongo_status(args->buf, ret, partial);
         if (e->status == 1) {
             struct l7_request *r = bpf_map_lookup_elem(&l7_request_heap, &zero);
             if (!r) {
@@ -331,7 +328,7 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
             return 0;
         }
     } else if (e->protocol == PROTOCOL_KAFKA) {
-        e->status = parse_kafka_status(request_id, buf, ctx->ret, partial);
+        e->status = parse_kafka_status(request_id, args->buf, ret, partial);
     } else if (e->protocol == PROTOCOL_CASSANDRA) {
         e->status = cassandra_status(cassandra_response);
     }
@@ -346,58 +343,62 @@ int trace_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
 
 SEC("tracepoint/syscalls/sys_enter_writev")
 int sys_enter_writev(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    struct iov iov0 = {};
-    if (bpf_probe_read(&iov0, sizeof(struct iov), (void *)ctx->buf) < 0) {
+    struct iovec iovec0 = {};
+    if (bpf_probe_read(&iovec0, sizeof(struct iovec), (void *)ctx->buf) < 0) {
         return 0;
     }
-    return trace_enter_write(ctx, ctx->fd, iov0.buf, iov0.size);
+    return trace_enter_write(ctx, ctx->fd, 0, iovec0.buf, iovec0.size);
 }
 
 SEC("tracepoint/syscalls/sys_enter_write")
 int sys_enter_write(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    return trace_enter_write(ctx, ctx->fd, ctx->buf, ctx->size);
+    return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size);
 }
 
 SEC("tracepoint/syscalls/sys_enter_sendto")
 int sys_enter_sendto(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    return trace_enter_write(ctx, ctx->fd, ctx->buf, ctx->size);
+    return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size);
 }
 
 SEC("tracepoint/syscalls/sys_enter_read")
 int sys_enter_read(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    return trace_enter_read(ctx);
+    __u64 id = bpf_get_current_pid_tgid();
+    return trace_enter_read(id, ctx->fd, ctx->buf);
 }
 
 SEC("tracepoint/syscalls/sys_enter_readv")
 int sys_enter_readv(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();
-    void *vec;
-    if (bpf_probe_read(&vec, sizeof(void*), (void *)ctx->buf) < 0) {
+    struct iovec iovec0 = {};
+    if (bpf_probe_read(&iovec0, sizeof(struct iovec), (void *)ctx->buf) < 0) {
         return 0;
     }
-    struct rw_args_t args = {};
-    args.fd = ctx->fd;
-    args.buf = vec;
-    bpf_map_update_elem(&active_reads, &id, &args, BPF_ANY);
-    return 0;
+    return trace_enter_read(id, ctx->fd, iovec0.buf);
 }
 
 SEC("tracepoint/syscalls/sys_enter_recvfrom")
 int sys_enter_recvfrom(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    return trace_enter_read(ctx);
+    __u64 id = bpf_get_current_pid_tgid();
+    return trace_enter_read(id, ctx->fd, ctx->buf);
 }
 
 SEC("tracepoint/syscalls/sys_exit_read")
 int sys_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
-    return trace_exit_read(ctx);
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 pid = pid_tgid >> 32;
+    return trace_exit_read(ctx, pid_tgid, pid, 0, ctx->ret);
 }
 
 SEC("tracepoint/syscalls/sys_exit_readv")
 int sys_exit_readv(struct trace_event_raw_sys_exit_rw__stub* ctx) {
-    return trace_exit_read(ctx);
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 pid = pid_tgid >> 32;
+    return trace_exit_read(ctx, pid_tgid, pid, 0, ctx->ret);
 }
 
 SEC("tracepoint/syscalls/sys_exit_recvfrom")
 int sys_exit_recvfrom(struct trace_event_raw_sys_exit_rw__stub* ctx) {
-    return trace_exit_read(ctx);
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 pid = pid_tgid >> 32;
+    return trace_exit_read(ctx, pid_tgid, pid, 0, ctx->ret);
 }

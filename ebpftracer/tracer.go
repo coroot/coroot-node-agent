@@ -134,31 +134,47 @@ type Event struct {
 }
 
 type Tracer struct {
+	kernelVersion    string
+	disableL7Tracing bool
+
 	collection *ebpf.Collection
 	readers    map[string]*perf.Reader
 	links      []link.Link
+	uprobes    map[string]*ebpf.Program
 }
 
-func NewTracer(events chan<- Event, kernelVersion string, disableL7Tracing bool) (*Tracer, error) {
-	t := &Tracer{readers: map[string]*perf.Reader{}}
-	if err := t.ebpf(events, kernelVersion, disableL7Tracing); err != nil {
-		return nil, err
-	}
+func NewTracer(kernelVersion string, disableL7Tracing bool) *Tracer {
 	if disableL7Tracing {
 		klog.Infoln("L7 tracing is disabled")
 	}
-	if err := t.init(events); err != nil {
-		return nil, err
+	return &Tracer{
+		kernelVersion:    kernelVersion,
+		disableL7Tracing: disableL7Tracing,
+
+		readers: map[string]*perf.Reader{},
+		uprobes: map[string]*ebpf.Program{},
 	}
-	return t, nil
+}
+
+func (t *Tracer) Run(events chan<- Event) error {
+	if err := t.ebpf(events); err != nil {
+		return err
+	}
+	if err := t.init(events); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (t *Tracer) Close() {
+	for _, p := range t.uprobes {
+		_ = p.Close()
+	}
 	for _, l := range t.links {
-		l.Close()
+		_ = l.Close()
 	}
 	for _, r := range t.readers {
-		r.Close()
+		_ = r.Close()
 	}
 	t.collection.Close()
 }
@@ -208,29 +224,32 @@ type perfMap struct {
 	event                 rawEvent
 }
 
-func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bool) error {
-	kv := "v" + common.KernelMajorMinor(kernelVersion)
+func (t *Tracer) ebpf(ch chan<- Event) error {
+	if _, ok := ebpfProg[runtime.GOARCH]; !ok {
+		return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
+	}
+	kv := "v" + common.KernelMajorMinor(t.kernelVersion)
 	var prg []byte
-	for _, p := range ebpfProg {
+	for _, p := range ebpfProg[runtime.GOARCH] {
 		if semver.Compare(kv, p.v) >= 0 {
 			prg = p.p
 			break
 		}
 	}
 	if len(prg) == 0 {
-		return fmt.Errorf("unsupported kernel version: %s", kernelVersion)
+		return fmt.Errorf("unsupported kernel version: %s", t.kernelVersion)
 	}
 
 	if _, err := os.Stat("/sys/kernel/debug/tracing"); err != nil {
 		return fmt.Errorf("kernel tracing is not available: %w", err)
 	}
 
-	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(prg))
+	collectionSpec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(prg))
 	if err != nil {
-		return fmt.Errorf("failed to load spec: %w", err)
+		return fmt.Errorf("failed to load collection spec: %w", err)
 	}
 	_ = unix.Setrlimit(unix.RLIMIT_MEMLOCK, &unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY})
-	c, err := ebpf.NewCollection(spec)
+	c, err := ebpf.NewCollection(collectionSpec)
 	if err != nil {
 		return fmt.Errorf("failed to load collection: %w", err)
 	}
@@ -244,7 +263,7 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bo
 		{name: "file_events", event: &fileEvent{}, perCPUBufferSizePages: 4},
 	}
 
-	if !disableL7Tracing {
+	if !t.disableL7Tracing {
 		perfMaps = append(perfMaps, perfMap{name: "l7_events", event: &l7Event{}, perCPUBufferSizePages: 16})
 	}
 
@@ -258,13 +277,10 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bo
 		go runEventsReader(pm.name, r, ch, pm.event)
 	}
 
-	for name, spec := range spec.Programs {
-		p := t.collection.Programs[name]
-		if runtime.GOARCH == "arm64" && (spec.Name == "sys_enter_open" || spec.Name == "sys_exit_open") {
-			continue
-		}
-		if disableL7Tracing {
-			switch spec.Name {
+	for _, programSpec := range collectionSpec.Programs {
+		program := t.collection.Programs[programSpec.Name]
+		if t.disableL7Tracing {
+			switch programSpec.Name {
 			case "sys_enter_writev", "sys_enter_write", "sys_enter_sendto":
 				continue
 			case "sys_enter_read", "sys_enter_readv", "sys_enter_recvfrom":
@@ -273,14 +289,17 @@ func (t *Tracer) ebpf(ch chan<- Event, kernelVersion string, disableL7Tracing bo
 				continue
 			}
 		}
-		var err error
 		var l link.Link
-		switch spec.Type {
+		switch programSpec.Type {
 		case ebpf.TracePoint:
-			parts := strings.SplitN(spec.AttachTo, "/", 2)
-			l, err = link.Tracepoint(parts[0], parts[1], p, nil)
+			parts := strings.SplitN(programSpec.AttachTo, "/", 2)
+			l, err = link.Tracepoint(parts[0], parts[1], program, nil)
 		case ebpf.Kprobe:
-			l, err = link.Kprobe(spec.AttachTo, p, nil)
+			if strings.HasPrefix(programSpec.SectionName, "uprobe/") {
+				t.uprobes[programSpec.Name] = program
+				continue
+			}
+			l, err = link.Kprobe(programSpec.AttachTo, program, nil)
 		}
 		if err != nil {
 			t.Close()

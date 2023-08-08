@@ -107,11 +107,11 @@ func main() {
 		klog.Exitln(err)
 	}
 
-	cs, err := containers.NewRegistry(registerer, kv)
+	cr, err := containers.NewRegistry(registerer, kv)
 	if err != nil {
 		klog.Exitln(err)
 	}
-	defer cs.Close()
+	defer cr.Close()
 
 	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{ErrorLog: logger{}, Registry: registerer}))
 	klog.Infoln("listening on:", *flags.ListenAddress)

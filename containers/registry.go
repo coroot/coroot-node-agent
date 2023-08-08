@@ -79,7 +79,7 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, er
 		return nil, err
 	}
 
-	cs := &Registry{
+	r := &Registry{
 		reg:    reg,
 		events: make(chan ebpftracer.Event, 10000),
 
@@ -88,17 +88,17 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, er
 		containersById:       map[ContainerID]*Container{},
 		containersByCgroupId: map[string]*Container{},
 		containersByPid:      map[uint32]*Container{},
+
+		tracer: ebpftracer.NewTracer(kernelVersion, *flags.DisableL7Tracing),
 	}
 
-	go cs.handleEvents(cs.events)
-	t, err := ebpftracer.NewTracer(cs.events, kernelVersion, *flags.DisableL7Tracing)
-	if err != nil {
-		close(cs.events)
+	go r.handleEvents(r.events)
+	if err = r.tracer.Run(r.events); err != nil {
+		close(r.events)
 		return nil, err
 	}
-	cs.tracer = t
 
-	return cs, nil
+	return r, nil
 }
 
 func (r *Registry) Close() {
@@ -167,7 +167,8 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					}
 				}
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onProcessStart(e.Pid)
+					uprobes := r.tracer.AttachGoTlsUprobes(e.Pid)
+					c.onProcessStart(e.Pid, uprobes)
 				}
 			case ebpftracer.EventTypeProcessExit:
 				if c := r.containersByPid[e.Pid]; c != nil {

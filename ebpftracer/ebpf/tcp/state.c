@@ -31,7 +31,7 @@ struct trace_event_raw_inet_sock_set_state__stub {
     __u16 sport;
     __u16 dport;
     __u16 family;
-#if __KERNEL >= 506
+#if __KERNEL_FROM >= 506
     __u16 protocol;
 #else
     __u8 protocol;

@@ -323,7 +323,8 @@ func runTracer(t *testing.T, verbose bool) (func() *Event, func()) {
 	assert.NoError(t, unix.Uname(&uname))
 
 	go func() {
-		tt, err := NewTracer(events, string(bytes.Split(uname.Release[:], []byte{0})[0]), false)
+		tt := NewTracer(string(bytes.Split(uname.Release[:], []byte{0})[0]), false)
+		err := tt.Run(events)
 		require.NoError(t, err)
 		<-done
 		tt.Close()

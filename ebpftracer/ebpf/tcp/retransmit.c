@@ -8,12 +8,12 @@ struct trace_event_raw_tcp_event_sk_skb__stub {
     __u64 unused;
     void *sbkaddr;
     void *skaddr;
-#if __KERNEL >= 420
+#if __KERNEL_FROM >= 420
     int state;
 #endif
     __u16 sport;
     __u16 dport;
-#if __KERNEL >= 512
+#if __KERNEL_FROM >= 512
     __u16 family;
 #endif
     __u8 saddr[4];
