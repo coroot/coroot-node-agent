@@ -90,7 +90,9 @@ type Process struct {
 	Pid       uint32
 	StartedAt time.Time
 	NetNsId   string
-	uprobes   []link.Link
+
+	uprobes             []link.Link
+	goTlsUprobesChecked bool
 }
 
 func (p *Process) isHostNs() bool {
@@ -358,7 +360,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (c *Container) onProcessStart(pid uint32, uprobes []link.Link) {
+func (c *Container) onProcessStart(pid uint32) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	stats, err := TaskstatsPID(pid)
@@ -371,7 +373,7 @@ func (c *Container) onProcessStart(pid uint32, uprobes []link.Link) {
 	}
 	defer ns.Close()
 	c.zombieAt = time.Time{}
-	c.processes[pid] = &Process{Pid: pid, StartedAt: stats.BeginTime, NetNsId: ns.UniqueId(), uprobes: uprobes}
+	c.processes[pid] = &Process{Pid: pid, StartedAt: stats.BeginTime, NetNsId: ns.UniqueId()}
 
 	if c.startedAt.IsZero() {
 		c.startedAt = stats.BeginTime
@@ -989,6 +991,17 @@ func (c *Container) revalidateListens(now time.Time, actualListens map[netaddr.I
 		if len(c.listens[addr]) == 0 {
 			delete(c.listens, addr)
 		}
+	}
+}
+
+func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
+	p := c.processes[pid]
+	if p == nil {
+		return
+	}
+	if !p.goTlsUprobesChecked {
+		p.uprobes = append(p.uprobes, tracer.AttachGoTlsUprobes(pid)...)
+		p.goTlsUprobesChecked = true
 	}
 }
 
