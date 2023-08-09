@@ -38,6 +38,7 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) []link.Link {
 				}
 			}
 			klog.ErrorfDepth(1, "pid=%d golang_app=%s golang_version=%s: %s: %s", pid, name, version, msg, err)
+			return
 		}
 		klog.InfofDepth(1, "pid=%d golang_app=%s golang_version=%s: %s", pid, name, version, msg)
 	}
