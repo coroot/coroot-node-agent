@@ -56,6 +56,7 @@ struct {
 struct read_args {
     __u64 fd;
     char* buf;
+    __u64* ret;
 };
 
 struct {
@@ -229,10 +230,11 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size) 
 }
 
 static inline __attribute__((__always_inline__))
-int trace_enter_read(__u64 id, __u64 fd, char *buf) {
+int trace_enter_read(__u64 id, __u64 fd, char *buf, __u64 *ret) {
     struct read_args args = {};
     args.fd = fd;
     args.buf = buf;
+    args.ret = ret;
     bpf_map_update_elem(&active_reads, &id, &args, BPF_ANY);
     return 0;
 }
@@ -253,6 +255,14 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
 
     if (ret <= 0) {
         return 0;
+    }
+    if (args->ret) {
+        if (bpf_probe_read(&ret, sizeof(ret), (void*)args->ret)) {
+            return 0;
+        };
+        if (ret <= 0) {
+            return 0;
+        }
     }
 
     int zero = 0;
@@ -363,7 +373,7 @@ int sys_enter_sendto(struct trace_event_raw_sys_enter_rw__stub* ctx) {
 SEC("tracepoint/syscalls/sys_enter_read")
 int sys_enter_read(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();
-    return trace_enter_read(id, ctx->fd, ctx->buf);
+    return trace_enter_read(id, ctx->fd, ctx->buf, 0);
 }
 
 SEC("tracepoint/syscalls/sys_enter_readv")
@@ -373,13 +383,13 @@ int sys_enter_readv(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     if (bpf_probe_read(&iovec0, sizeof(struct iovec), (void *)ctx->buf) < 0) {
         return 0;
     }
-    return trace_enter_read(id, ctx->fd, iovec0.buf);
+    return trace_enter_read(id, ctx->fd, iovec0.buf, 0);
 }
 
 SEC("tracepoint/syscalls/sys_enter_recvfrom")
 int sys_enter_recvfrom(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();
-    return trace_enter_read(id, ctx->fd, ctx->buf);
+    return trace_enter_read(id, ctx->fd, ctx->buf, 0);
 }
 
 SEC("tracepoint/syscalls/sys_exit_read")

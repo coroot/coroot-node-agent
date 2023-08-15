@@ -14,7 +14,10 @@ RUN clang -g -O2 -target bpf -D__KERNEL_FROM=420 -D__TARGET_ARCH_arm64 -c ebpf.c
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=506 -D__TARGET_ARCH_arm64 -c ebpf.c -o ebpf506arm64.o && llvm-strip --strip-debug ebpf506arm64.o
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=512 -D__TARGET_ARCH_arm64 -c ebpf.c -o ebpf512arm64.o && llvm-strip --strip-debug ebpf512arm64.o
 
-RUN echo -en '// generated - do not edit\npackage ebpftracer\nvar ebpfProg = map[string][]struct{v string; p []byte}{\n' > ebpf.go \
+RUN echo -en '// generated - do not edit\npackage ebpftracer\n\nvar ebpfProg = map[string][]struct {\n' > ebpf.go \
+	&& echo -en '\tv string\n' >> ebpf.go \
+	&& echo -en '\tp []byte\n' >> ebpf.go \
+	&& echo -en '}{\n' >> ebpf.go \
 	&& echo -en '\t"amd64": {\n' >> ebpf.go \
 	&& echo -en '\t\t{"v5.12", []byte("' >> ebpf.go && hexdump -v -e '"\x" 1/1 "%02x"' ebpf512x86.o >> ebpf.go && echo '")},' >> ebpf.go \
 	&& echo -en '\t\t{"v5.6", []byte("' >> ebpf.go && hexdump -v -e '"\x" 1/1 "%02x"' ebpf506x86.o >> ebpf.go && echo '")},' >> ebpf.go \
