@@ -35,6 +35,7 @@
 #include "tcp/state.c"
 #include "tcp/retransmit.c"
 #include "l7/l7.c"
-#include "l7/tls.c"
+#include "l7/gotls.c"
+#include "l7/openssl.c"
 
 char _license[] SEC("license") = "GPL";

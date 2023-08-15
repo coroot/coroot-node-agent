@@ -91,8 +91,9 @@ type Process struct {
 	StartedAt time.Time
 	NetNsId   string
 
-	uprobes             []link.Link
-	goTlsUprobesChecked bool
+	uprobes               []link.Link
+	goTlsUprobesChecked   bool
+	openSslUprobesChecked bool
 }
 
 func (p *Process) isHostNs() bool {
@@ -998,6 +999,10 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 	p := c.processes[pid]
 	if p == nil {
 		return
+	}
+	if !p.openSslUprobesChecked {
+		p.uprobes = append(p.uprobes, tracer.AttachOpenSslUprobes(pid)...)
+		p.openSslUprobesChecked = true
 	}
 	if !p.goTlsUprobesChecked {
 		p.uprobes = append(p.uprobes, tracer.AttachGoTlsUprobes(pid)...)
