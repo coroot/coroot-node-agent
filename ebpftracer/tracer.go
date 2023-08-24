@@ -54,6 +54,7 @@ const (
 	L7ProtocolKafka     L7Protocol = 7
 	L7ProtocolCassandra L7Protocol = 8
 	L7ProtocolRabbitmq  L7Protocol = 9
+	L7ProtocolNats      L7Protocol = 10
 )
 
 func (p L7Protocol) String() string {
@@ -74,6 +75,10 @@ func (p L7Protocol) String() string {
 		return "Kafka"
 	case L7ProtocolCassandra:
 		return "Cassandra"
+	case L7ProtocolRabbitmq:
+		return "Rabbitmq"
+	case L7ProtocolNats:
+		return "NATS"
 	}
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }
@@ -113,7 +118,7 @@ func (r *L7Request) StatusString() string {
 	switch r.Protocol {
 	case L7ProtocolHTTP:
 		return strconv.Itoa(r.Status)
-	case L7ProtocolMongo, L7ProtocolKafka, L7ProtocolRabbitmq:
+	case L7ProtocolMongo, L7ProtocolKafka, L7ProtocolRabbitmq, L7ProtocolNats:
 		return "unknown"
 	}
 	if r.Status == 500 {

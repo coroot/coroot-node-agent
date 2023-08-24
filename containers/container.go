@@ -594,7 +594,7 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *ebpf
 				}
 				if cOpts.Name != "" {
 					labels := []string{"status"}
-					if r.Protocol == ebpftracer.L7ProtocolRabbitmq {
+					if r.Protocol == ebpftracer.L7ProtocolRabbitmq || r.Protocol == ebpftracer.L7ProtocolNats {
 						labels = append(labels, "method")
 					}
 					s.Requests = prometheus.NewCounterVec(
@@ -614,7 +614,7 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *ebpf
 				stats[key] = s
 			}
 			if s.Requests != nil {
-				if r.Protocol == ebpftracer.L7ProtocolRabbitmq {
+				if r.Protocol == ebpftracer.L7ProtocolRabbitmq || r.Protocol == ebpftracer.L7ProtocolNats {
 					s.Requests.WithLabelValues(r.StatusString(), r.Method.String()).Inc()
 				} else {
 					s.Requests.WithLabelValues(r.StatusString()).Inc()

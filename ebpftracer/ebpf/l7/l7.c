@@ -1,13 +1,3 @@
-#include "http.c"
-#include "postgres.c"
-#include "redis.c"
-#include "memcached.c"
-#include "mysql.c"
-#include "mongo.c"
-#include "kafka.c"
-#include "cassandra.c"
-#include "rabbitmq.c"
-
 #define PROTOCOL_UNKNOWN    0
 #define PROTOCOL_HTTP	    1
 #define PROTOCOL_POSTGRES	2
@@ -18,12 +8,24 @@
 #define PROTOCOL_KAFKA      7
 #define PROTOCOL_CASSANDRA  8
 #define PROTOCOL_RABBITMQ   9
+#define PROTOCOL_NATS      10
 
 #define METHOD_UNKNOWN           0
 #define METHOD_PRODUCE           1
 #define METHOD_CONSUME           2
 #define METHOD_STATEMENT_PREPARE 3
 #define METHOD_STATEMENT_CLOSE   4
+
+#include "http.c"
+#include "postgres.c"
+#include "redis.c"
+#include "memcached.c"
+#include "mysql.c"
+#include "mongo.c"
+#include "kafka.c"
+#include "cassandra.c"
+#include "rabbitmq.c"
+#include "nats.c"
 
 #define MAX_PAYLOAD_SIZE 512
 
@@ -198,7 +200,19 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size) 
         e->status = 200;
         e->method = METHOD_PRODUCE;
         e->connection_timestamp = get_connection_timestamp(k.pid, k.fd);
-        bpf_probe_read(e->payload, MAX_PAYLOAD_SIZE, (void *)buf);
+        bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
+        return 0;
+    } else if (nats_method(buf, size) == METHOD_PRODUCE) {
+        struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
+        if (!e) {
+            return 0;
+        }
+        e->protocol = PROTOCOL_NATS;
+        e->fd = k.fd;
+        e->pid = k.pid;
+        e->status = 200;
+        e->method = METHOD_PRODUCE;
+        e->connection_timestamp = get_connection_timestamp(k.pid, k.fd);
         bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
         return 0;
     } else {
@@ -285,6 +299,15 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
         return 0;
     }
+    if (nats_method(args->buf, ret) == METHOD_CONSUME) {
+        e->protocol = PROTOCOL_NATS;
+        e->status = 200;
+        e->method = METHOD_CONSUME;
+        e->connection_timestamp = get_connection_timestamp(k.pid, k.fd);
+        bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
+        return 0;
+    }
+
 
     struct cassandra_header cassandra_response = {};
     cassandra_response.stream_id = -1;
