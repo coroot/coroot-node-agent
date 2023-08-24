@@ -85,6 +85,8 @@ func guessApplicationType(cmdline []byte) string {
 		return "ceph"
 	case bytes.HasSuffix(cmd, []byte("rook")):
 		return "rook"
+	case bytes.HasSuffix(cmd, []byte("nats-server")):
+		return "nats"
 	}
 	//todo: php-fpm, python, nodejs, java
 	return ""
