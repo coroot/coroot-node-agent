@@ -74,6 +74,25 @@ func machineID() string {
 	return ""
 }
 
+func whitelistNodeExternalNetworks() {
+	netdevs, err := node.NetDevices()
+	if err != nil {
+		klog.Warningln("failed to get network interfaces:", err)
+		return
+	}
+	seenPrefixes := map[string]bool{}
+	for _, iface := range netdevs {
+		for _, p := range iface.IPPrefixes {
+			if p.IP().IsLoopback() || common.IsIpPrivate(p.IP()) || seenPrefixes[p.String()] {
+				continue
+			}
+			// if the node has an external network IP, whitelist that network
+			flags.ExternalNetworksWhitelist = append(flags.ExternalNetworksWhitelist, p)
+			seenPrefixes[p.String()] = true
+		}
+	}
+}
+
 func main() {
 	klog.LogToStderr(false)
 	klog.SetOutput(&RateLimitedLogOutput{limiter: rate.NewLimiter(10, 100)})
@@ -94,6 +113,8 @@ func main() {
 	if semver.Compare("v"+ver, "v"+minSupportedKernelVersion) == -1 {
 		klog.Exitf("the minimum Linux kernel version required is %s or later", minSupportedKernelVersion)
 	}
+
+	whitelistNodeExternalNetworks()
 
 	machineId := machineID()
 	tracing.Init(machineId, hostname, version)
