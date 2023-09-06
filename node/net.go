@@ -4,22 +4,23 @@ import (
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
+	"inet.af/netaddr"
 	"regexp"
 )
 
 var includeNetDev = regexp.MustCompile(`^(enp\d+s\d+(f\d+)?|eth\d+|eno\d+|ens\d+)`)
 
 type NetDeviceInfo struct {
-	Name      string
-	Up        float64
-	Addresses []string
-	RxBytes   float64
-	TxBytes   float64
-	RxPackets float64
-	TxPackets float64
+	Name       string
+	Up         float64
+	IPPrefixes []netaddr.IPPrefix
+	RxBytes    float64
+	TxBytes    float64
+	RxPackets  float64
+	TxPackets  float64
 }
 
-func netDevices() ([]NetDeviceInfo, error) {
+func NetDevices() ([]NetDeviceInfo, error) {
 	hostNs, err := proc.GetHostNetNs()
 	if err != nil {
 		return nil, err
@@ -60,7 +61,9 @@ func netDevices() ([]NetDeviceInfo, error) {
 			if ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsLinkLocalMulticast() {
 				continue
 			}
-			info.Addresses = append(info.Addresses, addr.IP.String())
+			if prefix, ok := netaddr.FromStdIPNet(addr.IPNet); ok {
+				info.IPPrefixes = append(info.IPPrefixes, prefix)
+			}
 		}
 		res = append(res, info)
 	}

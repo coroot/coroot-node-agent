@@ -216,7 +216,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
-	netdev, err := netDevices()
+	netdev, err := NetDevices()
 	if err != nil {
 		klog.Errorln(err)
 	} else {
@@ -226,8 +226,8 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 			ch <- counter(netRxPacketsDesc, dev.RxPackets, dev.Name)
 			ch <- counter(netTxPacketsDesc, dev.TxPackets, dev.Name)
 			ch <- gauge(netIfaceUpDesc, dev.Up, dev.Name)
-			for _, ip := range dev.Addresses {
-				ch <- gauge(ipDesc, 1, dev.Name, ip)
+			for _, p := range dev.IPPrefixes {
+				ch <- gauge(ipDesc, 1, dev.Name, p.IP().String())
 			}
 		}
 	}
