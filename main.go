@@ -80,15 +80,13 @@ func whitelistNodeExternalNetworks() {
 		klog.Warningln("failed to get network interfaces:", err)
 		return
 	}
-	seenPrefixes := map[string]bool{}
 	for _, iface := range netdevs {
 		for _, p := range iface.IPPrefixes {
-			if p.IP().IsLoopback() || common.IsIpPrivate(p.IP()) || seenPrefixes[p.String()] {
+			if p.IP().IsLoopback() || common.IsIpPrivate(p.IP()) {
 				continue
 			}
 			// if the node has an external network IP, whitelist that network
-			flags.ExternalNetworksWhitelist = append(flags.ExternalNetworksWhitelist, p)
-			seenPrefixes[p.String()] = true
+			common.ConnectionFilter.WhitelistPrefix(p)
 		}
 	}
 }
