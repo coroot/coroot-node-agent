@@ -2,8 +2,6 @@ package flags
 
 import (
 	"gopkg.in/alecthomas/kingpin.v2"
-	"inet.af/netaddr"
-	"k8s.io/klog/v2"
 	"os"
 	"strings"
 )
@@ -15,8 +13,7 @@ var (
 	DisablePinger     = kingpin.Flag("disable-pinger", "Don't ping upstreams").Default("false").Bool()
 	DisableL7Tracing  = kingpin.Flag("disable-l7-tracing", "Disable L7 tracing").Default("false").Bool()
 
-	externalNetworksWhitelist = kingpin.Flag("track-public-network", "Allow track connections to the specified IP networks, all private networks are allowed by default (e.g., Y.Y.Y.Y/mask)").Strings()
-	ExternalNetworksWhitelist []netaddr.IPPrefix
+	ExternalNetworksWhitelist = kingpin.Flag("track-public-network", "Allow track connections to the specified IP networks, all private networks are allowed by default (e.g., Y.Y.Y.Y/mask)").Strings()
 
 	Provider          = kingpin.Flag("provider", "`provider` label for `node_cloud_info` metric").Envar("PROVIDER").String()
 	Region            = kingpin.Flag("region", "`region` label for `node_cloud_info` metric").Envar("REGION").String()
@@ -38,13 +35,4 @@ func init() {
 	}
 	kingpin.HelpFlag.Short('h').Hidden()
 	kingpin.Parse()
-	if externalNetworksWhitelist != nil {
-		for _, prefix := range *externalNetworksWhitelist {
-			p, err := netaddr.ParseIPPrefix(prefix)
-			if err != nil {
-				klog.Fatalf("invalid network %s: %s", prefix, err)
-			}
-			ExternalNetworksWhitelist = append(ExternalNetworksWhitelist, p)
-		}
-	}
 }

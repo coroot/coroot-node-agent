@@ -487,14 +487,20 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 	if dst.IP().IsLoopback() && !p.isHostNs() {
 		return
 	}
-	whitelisted := false
-	for _, prefix := range flags.ExternalNetworksWhitelist {
-		if prefix.Contains(dst.IP()) {
-			whitelisted = true
-			break
+	actualDst, err := c.getActualDestination(p, src, dst)
+	if err != nil {
+		if !common.IsNotExist(err) {
+			klog.Warningf("cannot open NetNs for pid %d: %s", pid, err)
 		}
+		return
 	}
-	if !whitelisted && !common.IsIpPrivate(dst.IP()) && !dst.IP().IsLoopback() {
+	switch {
+	case actualDst == nil:
+		actualDst = &dst
+	case actualDst.IP().IsLoopback() && !p.isHostNs():
+		return
+	}
+	if common.ConnectionFilter.ShouldBeSkipped(dst.IP(), actualDst.IP()) {
 		return
 	}
 	c.lock.Lock()
@@ -502,19 +508,6 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 	if failed {
 		c.connectsFailed[dst]++
 	} else {
-		actualDst, err := c.getActualDestination(p, src, dst)
-		if err != nil {
-			if !common.IsNotExist(err) {
-				klog.Warningf("cannot open NetNs for pid %d: %s", pid, err)
-			}
-			return
-		}
-		switch {
-		case actualDst == nil:
-			actualDst = &dst
-		case actualDst.IP().IsLoopback() && !p.isHostNs():
-			return
-		}
 		c.connectsSuccessful[AddrPair{src: dst, dst: *actualDst}]++
 		c.connectionsActive[AddrPair{src: src, dst: dst}] = &ActiveConnection{
 			ActualDest:         *actualDst,
