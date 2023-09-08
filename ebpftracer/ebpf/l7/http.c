@@ -33,7 +33,7 @@ int is_http_request(char *buf) {
 }
 
 static __always_inline
-__u32 parse_http_status(char *buf) {
+int is_http_response(char *buf, __u32 *status) {
     char b[16];
     if (bpf_probe_read_str(&b, sizeof(b), (void *)buf) < 16) {
         return 0;
@@ -56,5 +56,6 @@ __u32 parse_http_status(char *buf) {
     if (b[9] < '0' || b[9] > '9' || b[10] < '0' || b[10] > '9' || b[11] < '0' || b[11] > '9') {
         return 0;
     }
-    return (b[9]-'0')*100 + (b[10]-'0')*10 + (b[11]-'0');
+    *status = (b[9]-'0')*100 + (b[10]-'0')*10 + (b[11]-'0');
+    return 1;
 }

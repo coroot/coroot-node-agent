@@ -26,6 +26,7 @@ int rabbitmq_method_is(char *buf, __u64 buf_size, __u16 expected_method) {
         return 0;
     }
     __u8 end = 0;
+    TRUNCATE_PAYLOAD_SIZE(size);
     bpf_read(buf+7+size, end);
     if (end != RABBITMQ_FRAME_END) {
         return 0;

@@ -13,36 +13,33 @@ struct kafka_response_header {
 };
 
 static __always_inline
-__s32 is_kafka_request(char *buf, int buf_size) {
-    if (buf_size < 1) {
-        return 0;
-    }
+int is_kafka_request(char *buf, __u64 buf_size, __s32 *request_id) {
     struct kafka_request_header h = {};
-    if (bpf_probe_read(&h, sizeof(h), (void *)((char *)buf)) < 0) {
+    if (buf_size < sizeof(h)) {
         return 0;
     }
-    h.length = bpf_htonl(h.length);
-    h.api_key = bpf_htons(h.api_key);
-    h.api_version = bpf_htons(h.api_version);
-    h.correlation_id = bpf_htonl(h.correlation_id);
+    bpf_read(buf, h);
 
+    h.length = bpf_htonl(h.length);
     if (h.length+4 != buf_size) {
         return 0;
     }
+    h.api_key = bpf_htons(h.api_key);
+//    h.api_version = bpf_htons(h.api_version);
+    h.correlation_id = bpf_htonl(h.correlation_id);
     if (h.correlation_id > 0 && (h.api_key >= 0 && h.api_key <= 67)) {
-        return h.correlation_id;
+        *request_id = h.correlation_id;
+        return 1;
     }
     return 0;
 }
 
 static __always_inline
-__u32 parse_kafka_status(__s32 request_id, char *buf, int buf_size, __u8 partial) {
+int is_kafka_response(char *buf, __s32 request_id) {
     struct kafka_response_header h = {};
-    if (bpf_probe_read(&h, sizeof(h), (void *)((char *)buf)) < 0) {
-        return 0;
-    }
+    bpf_read(buf, h);
     if (bpf_htonl(h.correlation_id) == request_id) {
-        return 200;
+        return 1;
     }
     return 0;
 }

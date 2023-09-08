@@ -2,9 +2,11 @@ package tracing
 
 import (
 	"context"
-	"github.com/coroot/coroot-node-agent/ebpftracer"
+	"fmt"
+	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -17,10 +19,12 @@ import (
 	"time"
 )
 
+const (
+	MemcacheDBItemKeyName attribute.Key = "db.memcached.item"
+)
+
 var (
 	tracer trace.Tracer
-	space  = []byte{' '}
-	crlf   = []byte{'\r', '\n'}
 )
 
 func Init(machineId, hostname, version string) {
@@ -49,32 +53,123 @@ func Init(machineId, hostname, version string) {
 	tracer = tracerProvider.Tracer("coroot-node-agent", trace.WithInstrumentationVersion(version))
 }
 
-func HandleL7Request(containerId string, dest netaddr.IPPort, r *ebpftracer.L7Request, preparedStatements map[string]string) {
-	if tracer == nil {
-		return
-	}
-	end := time.Now()
-	start := end.Add(-r.Duration)
+type Trace struct {
+	containerId string
+	destination netaddr.IPPort
+	commonAttrs []attribute.KeyValue
+}
 
-	attrs := []attribute.KeyValue{
-		semconv.ContainerID(containerId),
-		semconv.NetPeerName(dest.IP().String()),
-		semconv.NetPeerPort(int(dest.Port())),
+func NewTrace(containerId string, destination netaddr.IPPort) *Trace {
+	if tracer == nil {
+		return nil
 	}
-	switch r.Protocol {
-	case ebpftracer.L7ProtocolHTTP:
-		handleHttpRequest(start, end, r, dest, attrs)
-	case ebpftracer.L7ProtocolMemcached:
-		handleMemcachedQuery(start, end, r, attrs)
-	case ebpftracer.L7ProtocolRedis:
-		handleRedisQuery(start, end, r, attrs)
-	case ebpftracer.L7ProtocolPostgres:
-		handlePostgresQuery(start, end, r, attrs, preparedStatements)
-	case ebpftracer.L7ProtocolMysql:
-		handleMysqlQuery(start, end, r, attrs, preparedStatements)
-	case ebpftracer.L7ProtocolMongo:
-		handleMongoQuery(start, end, r, attrs)
-	default:
+	return &Trace{containerId: containerId, destination: destination, commonAttrs: []attribute.KeyValue{
+		semconv.ContainerID(containerId),
+		semconv.NetPeerName(destination.IP().String()),
+		semconv.NetPeerPort(int(destination.Port())),
+	}}
+}
+
+func (t *Trace) createSpan(name string, duration time.Duration, error bool, attrs ...attribute.KeyValue) {
+	end := time.Now()
+	start := end.Add(-duration)
+	_, span := tracer.Start(nil, name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
+	span.SetAttributes(attrs...)
+	span.SetAttributes(t.commonAttrs...)
+	if error {
+		span.SetStatus(codes.Error, "")
+	}
+	span.End(trace.WithTimestamp(end))
+}
+
+func (t *Trace) HttpRequest(method, path string, status l7.Status, duration time.Duration) {
+	if t == nil || method == "" {
 		return
 	}
+	t.createSpan(method, duration, status >= 400,
+		semconv.HTTPURL(fmt.Sprintf("http://%s%s", t.destination.String(), path)),
+		semconv.HTTPMethod(method),
+		semconv.HTTPStatusCode(int(status)),
+	)
+}
+
+func (t *Trace) Http2Request(method, path, scheme string, status l7.Status, duration time.Duration) {
+	if t == nil {
+		return
+	}
+	if method == "" {
+		method = "unknown"
+	}
+	if path == "" {
+		path = "/unknown"
+	}
+	if scheme == "" {
+		scheme = "unknown"
+	}
+	t.createSpan(method, duration, status > 400,
+		semconv.HTTPURL(fmt.Sprintf("%s://%s%s", scheme, t.destination.String(), path)),
+		semconv.HTTPMethod(method),
+		semconv.HTTPStatusCode(int(status)),
+	)
+}
+
+func (t *Trace) PostgresQuery(query string, error bool, duration time.Duration) {
+	if t == nil || query == "" {
+		return
+	}
+	t.createSpan("query", duration, error,
+		semconv.DBSystemPostgreSQL,
+		semconv.DBStatement(query),
+	)
+}
+
+func (t *Trace) MysqlQuery(query string, error bool, duration time.Duration) {
+	if t == nil || query == "" {
+		return
+	}
+	t.createSpan("query", duration, error,
+		semconv.DBSystemMySQL,
+		semconv.DBStatement(query),
+	)
+}
+
+func (t *Trace) MongoQuery(query string, error bool, duration time.Duration) {
+	if t == nil || query == "" {
+		return
+	}
+	t.createSpan("query", duration, error,
+		semconv.DBSystemMongoDB,
+		semconv.DBStatement(query),
+	)
+}
+
+func (t *Trace) MemcachedQuery(cmd string, items []string, error bool, duration time.Duration) {
+	if t == nil || cmd == "" {
+		return
+	}
+	attrs := []attribute.KeyValue{
+		semconv.DBSystemMemcached,
+		semconv.DBOperation(cmd),
+	}
+	if len(items) == 1 {
+		attrs = append(attrs, MemcacheDBItemKeyName.String(items[0]))
+	} else if len(items) > 1 {
+		attrs = append(attrs, MemcacheDBItemKeyName.StringSlice(items))
+	}
+	t.createSpan(cmd, duration, error, attrs...)
+}
+
+func (t *Trace) RedisQuery(cmd, args string, error bool, duration time.Duration) {
+	if t == nil || cmd == "" {
+		return
+	}
+	statement := cmd
+	if args != "" {
+		statement += " " + args
+	}
+	t.createSpan(cmd, duration, error,
+		semconv.DBSystemRedis,
+		semconv.DBOperation(cmd),
+		semconv.DBStatement(statement),
+	)
 }

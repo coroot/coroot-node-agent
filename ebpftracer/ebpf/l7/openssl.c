@@ -61,31 +61,31 @@ struct ssl_st {
     fd;                                                                 \
 })
 
-#define WRITE_ENTER(ctx, bio_t)                              \
-({                                                           \
-    __u32 fd = GET_FD(ctx, bio_t, wbio);                     \
-    char* buf_ptr = (char*)PT_REGS_PARM2(ctx);               \
-    __u64 buf_size = PT_REGS_PARM3(ctx);                     \
-    return trace_enter_write(ctx, fd, 1, buf_ptr, buf_size); \
+#define WRITE_ENTER(ctx, bio_t)                                 \
+({                                                              \
+    __u32 fd = GET_FD(ctx, bio_t, wbio);                        \
+    char* buf_ptr = (char*)PT_REGS_PARM2(ctx);                  \
+    __u64 buf_size = PT_REGS_PARM3(ctx);                        \
+    return trace_enter_write(ctx, fd, 1, buf_ptr, buf_size, 0); \
 })
 
-#define READ_ENTER(ctx, bio_t)                   \
-({                                               \
-    __u32 fd = GET_FD(ctx, bio_t, rbio);         \
-    char* buf_ptr = (char*)PT_REGS_PARM2(ctx);   \
-    __u64 pid_tgid = bpf_get_current_pid_tgid(); \
-    __u64 id = pid_tgid | IS_TLS_READ_ID;        \
-    return trace_enter_read(id, fd, buf_ptr, 0); \
+#define READ_ENTER(ctx, bio_t)                      \
+({                                                  \
+    __u32 fd = GET_FD(ctx, bio_t, rbio);            \
+    char* buf_ptr = (char*)PT_REGS_PARM2(ctx);      \
+    __u64 pid_tgid = bpf_get_current_pid_tgid();    \
+    __u64 id = pid_tgid | IS_TLS_READ_ID;           \
+    return trace_enter_read(id, fd, buf_ptr, 0, 0); \
 })
 
-#define READ_EX_ENTER(ctx, bio_t)                      \
-({                                                     \
-    __u32 fd = GET_FD(ctx, bio_t, rbio);               \
-    char* buf_ptr = (char*)PT_REGS_PARM2(ctx);         \
-    __u64 pid_tgid = bpf_get_current_pid_tgid();       \
-    __u64 id = pid_tgid | IS_TLS_READ_ID;              \
-    __u64* ret_ptr = (__u64*)PT_REGS_PARM4(ctx);       \
-    return trace_enter_read(id, fd, buf_ptr, ret_ptr); \
+#define READ_EX_ENTER(ctx, bio_t)                           \
+({                                                          \
+    __u32 fd = GET_FD(ctx, bio_t, rbio);                    \
+    char* buf_ptr = (char*)PT_REGS_PARM2(ctx);              \
+    __u64 pid_tgid = bpf_get_current_pid_tgid();            \
+    __u64 id = pid_tgid | IS_TLS_READ_ID;                   \
+    __u64* ret_ptr = (__u64*)PT_REGS_PARM4(ctx);            \
+    return trace_enter_read(id, fd, buf_ptr, ret_ptr, 0);   \
 })
 
 SEC("uprobe/openssl_SSL_write_enter")

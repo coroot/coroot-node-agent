@@ -7,18 +7,14 @@
 #define POSTGRES_FRAME_CLOSE 'C'
 
 static __always_inline
-int is_postgres_query(char *buf, int buf_size, __u8 *request_type) {
-    if (buf_size < 1) {
-        return 0;
-    }
+int is_postgres_query(char *buf, __u64 buf_size, __u8 *request_type) {
     char f_cmd;
     int f_length;
-    if (bpf_probe_read(&f_cmd, sizeof(f_cmd), (void *)((char *)buf)) < 0) {
+    if (buf_size < sizeof(f_cmd)+sizeof(f_length)) {
         return 0;
     }
-    if (bpf_probe_read(&f_length, sizeof(f_length), (void *)((char *)buf+1)) < 0) {
-        return 0;
-    }
+    bpf_read(buf, f_cmd);
+    bpf_read(buf+1, f_length);
     f_length = bpf_htonl(f_length);
 
     *request_type = f_cmd;
@@ -26,9 +22,8 @@ int is_postgres_query(char *buf, int buf_size, __u8 *request_type) {
         return 1;
     }
     char sync[5];
-    if (bpf_probe_read(&sync, sizeof(sync), (void *)((char *)buf+buf_size-5)) < 0) {
-        return 0;
-    }
+    TRUNCATE_PAYLOAD_SIZE(buf_size);
+    bpf_read(buf+buf_size-5, sync);
     if (sync[0] == 'S' && sync[1] == 0 && sync[2] == 0 && sync[3] == 0 && sync[4] == 4) {
         return 1;
     }
@@ -36,33 +31,27 @@ int is_postgres_query(char *buf, int buf_size, __u8 *request_type) {
 }
 
 static __always_inline
-__u32 parse_postgres_status(char *buf, int buf_size) {
+int is_postgres_response(char *buf, __u64 buf_size, __u32 *status) {
     char cmd;
     int length;
-    if (bpf_probe_read(&cmd, sizeof(cmd), (void *)((char *)buf)) < 0) {
-        return 0;
-    }
-    if (bpf_probe_read(&length, sizeof(length), (void *)((char *)buf+1)) < 0) {
-        return 0;
-    }
+    bpf_read(buf, cmd);
+    bpf_read(buf+1, length);
     length = bpf_htonl(length);
 
     if (length+1 > buf_size) {
         return 0;
     }
     if ((cmd == '1' || cmd == '2') && length == 4 && buf_size >= 10) {
-        if (bpf_probe_read(&cmd, sizeof(cmd), (void *)((char *)buf+5)) < 0) {
-            return 0;
-        }
-        if (bpf_probe_read(&length, sizeof(length), (void *)((char *)buf+5+1)) < 0) {
-            return 0;
-        }
+        bpf_read(buf+5, cmd);
+        bpf_read(buf+5+1, length);
     }
     if (cmd == 'E') {
-        return 500;
+        *status = STATUS_FAILED;
+        return 1;
     }
     if (cmd == 't' || cmd == 'T' || cmd == 'D' || cmd == 'C') {
-        return 200;
+        *status = STATUS_OK;
+        return 1;
     }
     return 0;
 }

@@ -11,14 +11,12 @@ struct mongo_header {
 };
 
 static __always_inline
-int is_mongo_query(char *buf, int buf_size) {
-    if (buf_size < 1) {
-        return 0;
-    }
+int is_mongo_query(char *buf, __u64 buf_size) {
     struct mongo_header h = {};
-    if (bpf_probe_read(&h, sizeof(h), (void *)((char *)buf)) < 0) {
+    if (buf_size < sizeof(h)) {
         return 0;
     }
+    bpf_read(buf, h);
     if (h.response_to == 0 && (h.op_code == MONGO_OP_MSG || h.op_code == MONGO_OP_COMPRESSED)) {
         return 1;
     }
@@ -26,28 +24,22 @@ int is_mongo_query(char *buf, int buf_size) {
 }
 
 static __always_inline
-__u32 parse_mongo_status(char *buf, int buf_size, __u8 partial) {
+int is_mongo_response(char *buf, __u64 buf_size, __u8 partial) {
     if (partial == 0 && buf_size == 4) { //partial read
-        return 1;
+        return 2;
     }
     struct mongo_header h = {};
     if (partial) {
-        if (bpf_probe_read(&h.response_to, sizeof(h.response_to), (void *)((char *)buf+4)) < 0) {
-            return 0;
-        }
-        if (bpf_probe_read(&h.op_code, sizeof(h.op_code), (void *)((char *)buf+8)) < 0) {
-            return 0;
-        }
+        bpf_read(buf+4, h.response_to);
+        bpf_read(buf+8, h.op_code);
     } else {
-        if (bpf_probe_read(&h, sizeof(h), (void *)((char *)buf)) < 0) {
-            return 0;
-        }
+        bpf_read(buf, h);
     }
     if (h.response_to == 0) {
         return 0;
     }
     if (h.op_code == MONGO_OP_MSG || h.op_code == MONGO_OP_COMPRESSED) {
-        return 200;
+        return 1;
     }
     return 0;
 }

@@ -3,8 +3,11 @@
 #define CASSANDRA_REQUEST_FRAME  0x04
 #define CASSANDRA_RESPONSE_FRAME 0x84
 
-#define CASSANDRA_OPCODE_ERROR  0x00
-#define CASSANDRA_OPCODE_RESULT 0x08
+#define CASSANDRA_OPCODE_ERROR      0x00
+#define CASSANDRA_OPCODE_QUERY      0x07
+#define CASSANDRA_OPCODE_RESULT     0x08
+#define CASSANDRA_OPCODE_EXECUTE    0x0A
+#define CASSANDRA_OPCODE_BATCH      0x0D
 
 struct cassandra_header {
     __u8 version;
@@ -14,30 +17,41 @@ struct cassandra_header {
 };
 
 static __always_inline
-__s16 is_cassandra_request(char *buf, int buf_size) {
-    if (buf_size < 1) {
-        return -1;
-    }
+int is_cassandra_request(char *buf, __u64 buf_size, __s16 *stream_id) {
     struct cassandra_header h = {};
-    if (bpf_probe_read(&h, sizeof(h), (void *)buf) < 0) {
-        return -1;
+    if (buf_size < sizeof(h)) {
+        return 0;
     }
-    if (h.version == CASSANDRA_REQUEST_FRAME && h.stream_id >= 0) {
-        return h.stream_id;
+    bpf_read(buf, h);
+    if (h.version != CASSANDRA_REQUEST_FRAME) {
+        return 0;
     }
-    return -1;
+    if (h.opcode == CASSANDRA_OPCODE_QUERY || h.opcode == CASSANDRA_OPCODE_EXECUTE || h.opcode == CASSANDRA_OPCODE_BATCH) {
+        *stream_id = h.stream_id;
+        return 1;
+    }
+    return 0;
 }
 
 static __always_inline
-__u32 cassandra_status(struct cassandra_header h) {
-    if (h.version != CASSANDRA_RESPONSE_FRAME || h.stream_id == -1) {
+int is_cassandra_response(char *buf, __u64 buf_size, __s16 *stream_id, __u32 *status) {
+    struct cassandra_header h = {};
+    if (buf_size < sizeof(h)) {
+        return 0;
+    }
+    bpf_read(buf, h);
+    if (h.version != CASSANDRA_RESPONSE_FRAME) {
         return 0;
     }
     if (h.opcode == CASSANDRA_OPCODE_RESULT) {
-        return 200;
+        *stream_id = h.stream_id;
+        *status = STATUS_OK;
+        return 1;
     }
     if (h.opcode == CASSANDRA_OPCODE_ERROR) {
-        return 500;
+        *stream_id = h.stream_id;
+        *status = STATUS_FAILED;
+        return 1;
     }
     return 0;
 }

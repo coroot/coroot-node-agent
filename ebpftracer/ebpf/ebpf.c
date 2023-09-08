@@ -17,6 +17,8 @@
 
 #define EVENT_REASON_OOM_KILL		1
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+
 #define bpf_read(src, dst)                            \
 ({                                                    \
     if (bpf_probe_read(&dst, sizeof(dst), src) < 0) { \
