@@ -9,6 +9,7 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 	"github.com/coroot/coroot-node-agent/common"
+	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"github.com/coroot/coroot-node-agent/proc"
 	"golang.org/x/mod/semver"
 	"golang.org/x/sys/unix"
@@ -21,7 +22,7 @@ import (
 	"time"
 )
 
-const PayloadSize = 512
+const MaxPayloadSize = 1024
 
 type EventType uint32
 type EventReason uint32
@@ -42,91 +43,6 @@ const (
 	EventReasonOOMKill EventReason = 1
 )
 
-type L7Protocol uint8
-
-const (
-	L7ProtocolHTTP      L7Protocol = 1
-	L7ProtocolPostgres  L7Protocol = 2
-	L7ProtocolRedis     L7Protocol = 3
-	L7ProtocolMemcached L7Protocol = 4
-	L7ProtocolMysql     L7Protocol = 5
-	L7ProtocolMongo     L7Protocol = 6
-	L7ProtocolKafka     L7Protocol = 7
-	L7ProtocolCassandra L7Protocol = 8
-	L7ProtocolRabbitmq  L7Protocol = 9
-	L7ProtocolNats      L7Protocol = 10
-)
-
-func (p L7Protocol) String() string {
-	switch p {
-	case L7ProtocolHTTP:
-		return "HTTP"
-	case L7ProtocolPostgres:
-		return "Postgres"
-	case L7ProtocolRedis:
-		return "Redis"
-	case L7ProtocolMemcached:
-		return "Memcached"
-	case L7ProtocolMysql:
-		return "Mysql"
-	case L7ProtocolMongo:
-		return "Mongo"
-	case L7ProtocolKafka:
-		return "Kafka"
-	case L7ProtocolCassandra:
-		return "Cassandra"
-	case L7ProtocolRabbitmq:
-		return "Rabbitmq"
-	case L7ProtocolNats:
-		return "NATS"
-	}
-	return "UNKNOWN:" + strconv.Itoa(int(p))
-}
-
-type L7Method uint8
-
-const (
-	L7MethodUnknown          L7Method = 0
-	L7MethodProduce          L7Method = 1
-	L7MethodConsume          L7Method = 2
-	L7MethodStatementPrepare L7Method = 3
-	L7MethodStatementClose   L7Method = 4
-)
-
-func (m L7Method) String() string {
-	switch m {
-	case L7MethodUnknown:
-		return "unknown"
-	case L7MethodProduce:
-		return "produce"
-	case L7MethodConsume:
-		return "consume"
-	}
-	return "UNKNOWN:" + strconv.Itoa(int(m))
-}
-
-type L7Request struct {
-	Protocol    L7Protocol
-	Status      int
-	Duration    time.Duration
-	Method      L7Method
-	StatementId uint32
-	Payload     [PayloadSize]byte
-}
-
-func (r *L7Request) StatusString() string {
-	switch r.Protocol {
-	case L7ProtocolHTTP:
-		return strconv.Itoa(r.Status)
-	case L7ProtocolMongo, L7ProtocolKafka, L7ProtocolRabbitmq, L7ProtocolNats:
-		return "unknown"
-	}
-	if r.Status == 500 {
-		return "failed"
-	}
-	return "ok"
-}
-
 type Event struct {
 	Type      EventType
 	Reason    EventReason
@@ -135,7 +51,7 @@ type Event struct {
 	DstAddr   netaddr.IPPort
 	Fd        uint64
 	Timestamp uint64
-	L7Request *L7Request
+	L7Request *l7.RequestData
 }
 
 type Tracer struct {
@@ -254,8 +170,14 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		return fmt.Errorf("failed to load collection spec: %w", err)
 	}
 	_ = unix.Setrlimit(unix.RLIMIT_MEMLOCK, &unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY})
-	c, err := ebpf.NewCollection(collectionSpec)
+	c, err := ebpf.NewCollectionWithOptions(collectionSpec, ebpf.CollectionOptions{
+		//Programs: ebpf.ProgramOptions{LogLevel: 2, LogSize: 20 * 1024 * 1024},
+	})
 	if err != nil {
+		var verr *ebpf.VerifierError
+		if errors.As(err, &verr) {
+			klog.Errorf("%+v", verr)
+		}
 		return fmt.Errorf("failed to load collection: %w", err)
 	}
 	t.collection = c
@@ -269,7 +191,7 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	}
 
 	if !t.disableL7Tracing {
-		perfMaps = append(perfMaps, perfMap{name: "l7_events", event: &l7Event{}, perCPUBufferSizePages: 16})
+		perfMaps = append(perfMaps, perfMap{name: "l7_events", event: &l7Event{}, perCPUBufferSizePages: 32})
 	}
 
 	for _, pm := range perfMaps {
@@ -286,11 +208,11 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		program := t.collection.Programs[programSpec.Name]
 		if t.disableL7Tracing {
 			switch programSpec.Name {
-			case "sys_enter_writev", "sys_enter_write", "sys_enter_sendto":
+			case "sys_enter_writev", "sys_enter_write", "sys_enter_sendto", "sys_enter_sendmsg":
 				continue
-			case "sys_enter_read", "sys_enter_readv", "sys_enter_recvfrom":
+			case "sys_enter_read", "sys_enter_readv", "sys_enter_recvfrom", "sys_enter_recvmsg":
 				continue
-			case "sys_exit_read", "sys_exit_readv", "sys_exit_recvfrom":
+			case "sys_exit_read", "sys_exit_readv", "sys_exit_recvfrom", "sys_exit_recvmsg":
 				continue
 			}
 		}
@@ -408,18 +330,26 @@ type l7Event struct {
 	Method              uint8
 	Padding             uint16
 	StatementId         uint32
-	Payload             [PayloadSize]byte
+	PayloadSize         uint64
+	Payload             [MaxPayloadSize]byte
 }
 
 func (e l7Event) Event() Event {
-	return Event{Type: EventTypeL7Request, Pid: e.Pid, Fd: e.Fd, Timestamp: e.ConnectionTimestamp, L7Request: &L7Request{
-		Protocol:    L7Protocol(e.Protocol),
-		Status:      int(e.Status),
+	r := &l7.RequestData{
+		Protocol:    l7.Protocol(e.Protocol),
+		Status:      l7.Status(e.Status),
 		Duration:    time.Duration(e.Duration),
-		Method:      L7Method(e.Method),
+		Method:      l7.Method(e.Method),
 		StatementId: e.StatementId,
-		Payload:     e.Payload,
-	}}
+	}
+	switch {
+	case e.PayloadSize == 0:
+	case e.PayloadSize > MaxPayloadSize:
+		r.Payload = e.Payload[:MaxPayloadSize]
+	default:
+		r.Payload = e.Payload[:e.PayloadSize]
+	}
+	return Event{Type: EventTypeL7Request, Pid: e.Pid, Fd: e.Fd, Timestamp: e.ConnectionTimestamp, L7Request: r}
 }
 
 func runEventsReader(name string, r *perf.Reader, ch chan<- Event, e rawEvent) {

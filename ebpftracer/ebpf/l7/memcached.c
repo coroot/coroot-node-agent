@@ -1,17 +1,14 @@
 // https://github.com/memcached/memcached/blob/master/doc/protocol.txt
 static __always_inline
-int is_memcached_query(char *buf, int buf_size) {
-    if (buf_size < 1) {
+int is_memcached_query(char *buf, __u64 buf_size) {
+    if (buf_size < 9) {
         return 0;
     }
     char b[7];
+    bpf_read(buf, b);
     char end[2];
-    if (bpf_probe_read(&b, sizeof(b), (void *)((char *)buf)) < 0) {
-        return 0;
-    }
-    if (bpf_probe_read(&end, sizeof(end), (void *)((char *)buf+buf_size-2)) < 0) {
-        return 0;
-    }
+    TRUNCATE_PAYLOAD_SIZE(buf_size);
+    bpf_read(buf+buf_size-2, end);
     if (end[0] != '\r' || end[1] != '\n') {
         return 0;
     }
@@ -52,47 +49,54 @@ int is_memcached_query(char *buf, int buf_size) {
 }
 
 static __always_inline
-__u32 parse_memcached_status(char *buf, int buf_size) {
+int is_memcached_response(char *buf, __u64 buf_size, __u32 *status) {
     char r[3];
+    bpf_read(buf, r);
     char end[2];
-    if (bpf_probe_read(&r, sizeof(r), (void *)((char *)buf)) < 0) {
-        return 0;
-    }
-    if (bpf_probe_read(&end, sizeof(end), (void *)((char *)buf+buf_size-2)) < 0) {
-        return 0;
-    }
+    TRUNCATE_PAYLOAD_SIZE(buf_size);
+    bpf_read(buf+buf_size-2, end);
     if (end[0] != '\r' || end[1] != '\n') {
         return 0;
     }
     if (r[0] == 'V' && r[1] == 'A' && r[2] == 'L') { //VALUE
-        return 200;
+        *status = STATUS_OK;
+        return 1;
     }
     if (r[0] == 'S' && r[1] == 'T' && r[2] == 'O') { //STORED
-        return 200;
+        *status = STATUS_OK;
+        return 1;
     }
     if (r[0] == 'D' && r[1] == 'E' && r[2] == 'L') { //DELETED
-        return 200;
+        *status = STATUS_OK;
+        return 1;
     }
     if (r[0] == 'T' && r[1] == 'O' && r[2] == 'C') { //TOUCHED
-        return 200;
+        *status = STATUS_OK;
+        return 1;
     }
     if (r[0] == 'N' && r[1] == 'O' && r[2] == 'T') { //NOT_STORED || NOT_FOUND
-        return 200;
+        *status = STATUS_OK;
+        return 1;
     }
     if (r[0] == 'E' && r[1] == 'X' && r[2] == 'I') { //EXISTS
-        return 200;
+        *status = STATUS_OK;
+        return 1;
     }
     if (r[0] == 'E' && r[1] == 'R' && r[2] == 'R') { //ERROR
-        return 500;
+        *status = STATUS_FAILED;
+        return 1;
     }
     if (r[0] == 'C' && r[1] == 'L' && r[2] == 'I') { //CLIENT_ERROR
-        return 500;
+        *status = STATUS_FAILED;
+        return 1;
     }
     if (r[0] == 'S' && r[1] == 'E' && r[2] == 'R') { //SERVER_ERROR
-        return 500;
+        *status = STATUS_FAILED;
+        return 1;
     }
     if (r[0] >= '0' && r[0] <= '9') { // incr/decr response: <value>\r\n
-        return 200;
+        *status = STATUS_OK;
+        return 1;
     }
     return 0;
 }

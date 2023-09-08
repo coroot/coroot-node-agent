@@ -1,6 +1,6 @@
 $script = <<-SCRIPT
 sudo apt update && sudo apt -y install gcc cgroup-tools
-sudo snap install go --classic
+sudo snap install go --channel=1.19/stable --classic
 
 # prevent unexpected `systemd-udevd` processes from appearing
 systemctl stop systemd-udevd.service systemd-udevd-control.socket systemd-udevd-kernel.socket
@@ -30,5 +30,8 @@ Vagrant.configure("2") do |config|
     end
     config.vm.define "ubuntu2110" do |c|
         c.vm.box = "generic/ubuntu2110"
+    end
+    config.vm.define "ubuntu2204" do |c|
+        c.vm.box = "generic/ubuntu2204"
     end
 end

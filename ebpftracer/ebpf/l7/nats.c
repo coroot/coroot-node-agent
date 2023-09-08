@@ -6,13 +6,10 @@ int nats_method(char *buf, __u64 buf_size) {
         return 0;
     }
     char b[5];
+    bpf_read(buf, b);
     char end[2];
-    if (bpf_probe_read(&b, sizeof(b), (void *)buf) < 0) {
-        return 0;
-    }
-    if (bpf_probe_read(&end, sizeof(end), (void *)(buf+buf_size-2)) < 0) {
-        return 0;
-    }
+    TRUNCATE_PAYLOAD_SIZE(buf_size);
+    bpf_read(buf+buf_size-2, end);
     if (end[0] != '\r' || end[1] != '\n') {
         return 0;
     }

@@ -5,6 +5,7 @@ import (
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
+	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
@@ -73,12 +74,9 @@ type ActiveConnection struct {
 	Timestamp  uint64
 	Closed     time.Time
 
-	PreparedStatements map[string]string
-}
-
-type L7Stats struct {
-	Requests *prometheus.CounterVec
-	Latency  prometheus.Histogram
+	http2Parser    *l7.Http2Parser
+	postgresParser *l7.PostgresParser
+	mysqlParser    *l7.MysqlParser
 }
 
 type ListenDetails struct {
@@ -123,7 +121,7 @@ type Container struct {
 	connectionsActive  map[AddrPair]*ActiveConnection
 	retransmits        map[AddrPair]int64 // dst:actual_dst -> count
 
-	l7Stats map[ebpftracer.L7Protocol]map[AddrPair]*L7Stats // protocol -> dst:actual_dst -> stats
+	l7Stats L7Stats
 
 	oomKills int
 
@@ -162,7 +160,7 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 		connectLastAttempt: map[netaddr.IPPort]time.Time{},
 		connectionsActive:  map[AddrPair]*ActiveConnection{},
 		retransmits:        map[AddrPair]int64{},
-		l7Stats:            map[ebpftracer.L7Protocol]map[AddrPair]*L7Stats{},
+		l7Stats:            L7Stats{},
 
 		mounts: map[string]proc.MountInfo{},
 
@@ -343,16 +341,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		ch <- gauge(metrics.ApplicationType, 1, appType)
 	}
 
-	for _, protoStats := range c.l7Stats {
-		for _, s := range protoStats {
-			if s.Requests != nil {
-				s.Requests.Collect(ch)
-			}
-			if s.Latency != nil {
-				s.Latency.Collect(ch)
-			}
-		}
-	}
+	c.l7Stats.collect(ch)
 
 	if !*flags.DisablePinger {
 		for ip, rtt := range c.ping() {
@@ -510,11 +499,10 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 	} else {
 		c.connectsSuccessful[AddrPair{src: dst, dst: *actualDst}]++
 		c.connectionsActive[AddrPair{src: src, dst: dst}] = &ActiveConnection{
-			ActualDest:         *actualDst,
-			Pid:                pid,
-			Fd:                 fd,
-			Timestamp:          timestamp,
-			PreparedStatements: map[string]string{},
+			ActualDest: *actualDst,
+			Pid:        pid,
+			Fd:         fd,
+			Timestamp:  timestamp,
 		}
 	}
 	c.connectLastAttempt[dst] = time.Now()
@@ -561,63 +549,73 @@ func (c *Container) onConnectionClose(srcDst AddrPair) bool {
 	return true
 }
 
-func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *ebpftracer.L7Request) {
+func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	for dest, conn := range c.connectionsActive {
+
+	var dest AddrPair
+	var conn *ActiveConnection
+	var found bool
+	for dest, conn = range c.connectionsActive {
 		if conn.Pid == pid && conn.Fd == fd && (timestamp == 0 || conn.Timestamp == timestamp) {
-			key := AddrPair{src: dest.dst, dst: conn.ActualDest}
-			stats := c.l7Stats[r.Protocol]
-			if stats == nil {
-				stats = map[AddrPair]*L7Stats{}
-				c.l7Stats[r.Protocol] = stats
-			}
-			tracing.HandleL7Request(string(c.id), conn.ActualDest, r, conn.PreparedStatements)
-			if r.Method == ebpftracer.L7MethodStatementClose {
-				return
-			}
-			s := stats[key]
-			if s == nil {
-				constLabels := map[string]string{"destination": key.src.String(), "actual_destination": key.dst.String()}
-				s = &L7Stats{}
-				cOpts, ok := L7Requests[r.Protocol]
-				if !ok {
-					klog.Warningln("cannot find metric description for L7 protocol: %s", r.Protocol.String())
-					return
-				}
-				if cOpts.Name != "" {
-					labels := []string{"status"}
-					if r.Protocol == ebpftracer.L7ProtocolRabbitmq || r.Protocol == ebpftracer.L7ProtocolNats {
-						labels = append(labels, "method")
-					}
-					s.Requests = prometheus.NewCounterVec(
-						prometheus.CounterOpts{Name: cOpts.Name, Help: cOpts.Help, ConstLabels: constLabels}, labels,
-					)
-				}
-				hOpts, ok := L7Latency[r.Protocol]
-				if !ok {
-					klog.Warningln("cannot find metric description for L7 protocol: %s", r.Protocol.String())
-					return
-				}
-				if hOpts.Name != "" {
-					s.Latency = prometheus.NewHistogram(
-						prometheus.HistogramOpts{Name: hOpts.Name, Help: hOpts.Help, ConstLabels: constLabels},
-					)
-				}
-				stats[key] = s
-			}
-			if s.Requests != nil {
-				if r.Protocol == ebpftracer.L7ProtocolRabbitmq || r.Protocol == ebpftracer.L7ProtocolNats {
-					s.Requests.WithLabelValues(r.StatusString(), r.Method.String()).Inc()
-				} else {
-					s.Requests.WithLabelValues(r.StatusString()).Inc()
-				}
-			}
-			if s.Latency != nil {
-				s.Latency.Observe(r.Duration.Seconds())
-			}
-			return
+			found = true
+			break
 		}
+	}
+	if !found {
+		return
+	}
+
+	stats := c.l7Stats.get(r.Protocol, dest.dst, conn.ActualDest)
+	trace := tracing.NewTrace(string(c.id), conn.ActualDest)
+	switch r.Protocol {
+	case l7.ProtocolHTTP:
+		stats.observe(r.Status.Http(), "", r.Duration)
+		method, path := l7.ParseHttp(r.Payload)
+		trace.HttpRequest(method, path, r.Status, r.Duration)
+	case l7.ProtocolHTTP2:
+		if conn.http2Parser == nil {
+			conn.http2Parser = l7.NewHttp2Parser()
+		}
+		requests := conn.http2Parser.Parse(r.Method, r.Payload, uint64(r.Duration))
+		for _, req := range requests {
+			stats.observe(req.Status.Http(), "", req.Duration)
+			trace.Http2Request(req.Method, req.Path, req.Scheme, req.Status, req.Duration)
+		}
+	case l7.ProtocolPostgres:
+		if r.Method != l7.MethodStatementClose {
+			stats.observe(r.Status.String(), "", r.Duration)
+		}
+		if conn.postgresParser == nil {
+			conn.postgresParser = l7.NewPostgresParser()
+		}
+		query := conn.postgresParser.Parse(r.Payload)
+		trace.PostgresQuery(query, r.Status.Error(), r.Duration)
+	case l7.ProtocolMysql:
+		if r.Method != l7.MethodStatementClose {
+			stats.observe(r.Status.String(), "", r.Duration)
+		}
+		if conn.mysqlParser == nil {
+			conn.mysqlParser = l7.NewMysqlParser()
+		}
+		query := conn.mysqlParser.Parse(r.Payload, r.StatementId)
+		trace.MysqlQuery(query, r.Status.Error(), r.Duration)
+	case l7.ProtocolMemcached:
+		stats.observe(r.Status.String(), "", r.Duration)
+		cmd, items := l7.ParseMemcached(r.Payload)
+		trace.MemcachedQuery(cmd, items, r.Status.Error(), r.Duration)
+	case l7.ProtocolRedis:
+		stats.observe(r.Status.String(), "", r.Duration)
+		cmd, args := l7.ParseRedis(r.Payload)
+		trace.RedisQuery(cmd, args, r.Status.Error(), r.Duration)
+	case l7.ProtocolMongo:
+		stats.observe(r.Status.String(), "", r.Duration)
+		query := l7.ParseMongo(r.Payload)
+		trace.MongoQuery(query, r.Status.Error(), r.Duration)
+	case l7.ProtocolKafka, l7.ProtocolCassandra:
+		stats.observe(r.Status.String(), "", r.Duration)
+	case l7.ProtocolRabbitmq, l7.ProtocolNats:
+		stats.observe(r.Status.String(), r.Method.String(), 0)
 	}
 }
 
@@ -910,13 +908,7 @@ func (c *Container) gc(now time.Time) {
 					delete(c.retransmits, d)
 				}
 			}
-			for _, protoStats := range c.l7Stats {
-				for d := range protoStats {
-					if d.src == dst {
-						delete(protoStats, d)
-					}
-				}
-			}
+			c.l7Stats.delete(dst)
 		}
 	}
 }

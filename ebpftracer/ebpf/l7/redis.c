@@ -2,11 +2,12 @@
 // https://redis.io/docs/reference/protocol-spec/
 
 static __always_inline
-int is_redis_query(char *buf) {
-    char b[5];
-    if (bpf_probe_read(&b, sizeof(b), (void *)((char *)buf)) < 0) {
+int is_redis_query(char *buf, __u64 buf_size) {
+    if (buf_size < 5) {
         return 0;
     }
+    char b[5];
+    bpf_read(buf, b);
     if (b[0] != '*' || b[1] < '0' || b[1] > '9') {
         return 0;
     }
@@ -22,23 +23,22 @@ int is_redis_query(char *buf) {
 }
 
 static __always_inline
-__u32 parse_redis_status(char *buf, int buf_size) {
+int is_redis_response(char *buf, __u64 buf_size, __u32 *status) {
     char type;
+    bpf_read(buf, type);
     char end[2];
-    if (bpf_probe_read(&type, sizeof(type), (void *)((char *)buf)) < 0) {
-        return 0;
-    }
-    if (bpf_probe_read(&end, sizeof(end), (void *)((char *)buf+buf_size-2)) < 0) {
-        return 0;
-    }
+    TRUNCATE_PAYLOAD_SIZE(buf_size);
+    bpf_read(buf+buf_size-2, end);
     if (end[0] != '\r' || end[1] != '\n') {
         return 0;
     }
     if (type == '*' || type == ':' || type == '$' || type == '+') {
-        return 200;
+        *status = STATUS_OK;
+        return 1;
     }
     if (type == '-') {
-        return 500;
+        *status = STATUS_FAILED;
+        return 1;
     }
     return 0;
 }
