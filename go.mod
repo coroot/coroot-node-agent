@@ -4,12 +4,13 @@ go 1.19
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
+	github.com/agoda-com/opentelemetry-logs-go v0.3.0
 	github.com/cilium/cilium v1.13.2
 	github.com/cilium/ebpf v0.11.0
 	github.com/containerd/cgroups v1.0.3
 	github.com/containerd/containerd v1.5.17
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/coroot/logparser v1.0.6
+	github.com/coroot/logparser v1.0.7
 	github.com/docker/docker v20.10.21+incompatible
 	github.com/florianl/go-conntrack v0.3.0
 	github.com/mdlayher/taskstats v0.0.0-20230712191918-387b3d561d14
@@ -131,7 +132,7 @@ require (
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/text v0.12.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230711160842-782d3b101e98 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230711160842-782d3b101e98 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230911183012-2d3300fd4832 // indirect
 	google.golang.org/grpc v1.58.2 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect

@@ -30,10 +30,10 @@ var (
 func Init(machineId, hostname, version string) {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
 	if endpoint == "" {
-		klog.Infoln("no OpenTelemetry collector endpoint configured")
+		klog.Infoln("no OpenTelemetry traces collector endpoint configured")
 		return
 	}
-	klog.Infoln("OpenTelemetry collector endpoint:", endpoint)
+	klog.Infoln("OpenTelemetry traces collector endpoint:", endpoint)
 
 	client := otlptracehttp.NewClient()
 	exporter, err := otlptrace.New(context.Background(), client)
