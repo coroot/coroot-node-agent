@@ -65,7 +65,11 @@ func NewTailReader(fileName string, ch chan<- logparser.LogEntry) (*TailReader, 
 					line = prefix + line
 					prefix = ""
 				}
-				r.ch <- logparser.LogEntry{Content: strings.TrimSuffix(line, "\n"), Level: logparser.LevelUnknown}
+				r.ch <- logparser.LogEntry{
+					Timestamp: time.Now(),
+					Content:   strings.TrimSuffix(line, "\n"),
+					Level:     logparser.LevelUnknown,
+				}
 			}
 		}
 	}()

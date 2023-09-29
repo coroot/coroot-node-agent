@@ -803,12 +803,14 @@ func (c *Container) runLogParser(logPath string) {
 		return
 	}
 
+	containerId := string(c.id)
+
 	if logPath != "" {
 		if c.logParsers[logPath] != nil {
 			return
 		}
 		ch := make(chan logparser.LogEntry)
-		parser := logparser.NewParser(ch, nil)
+		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId))
 		reader, err := logs.NewTailReader(proc.HostPath(logPath), ch)
 		if err != nil {
 			klog.Warningln(err)
@@ -827,7 +829,7 @@ func (c *Container) runLogParser(logPath string) {
 			klog.Warningln(err)
 			return
 		}
-		parser := logparser.NewParser(ch, nil)
+		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId))
 		stop := func() {
 			JournaldUnsubscribe(c.cgroup)
 		}
@@ -843,7 +845,7 @@ func (c *Container) runLogParser(logPath string) {
 			delete(c.logParsers, "stdout/stderr")
 		}
 		ch := make(chan logparser.LogEntry)
-		parser := logparser.NewParser(ch, c.metadata.logDecoder)
+		parser := logparser.NewParser(ch, c.metadata.logDecoder, logs.OtelLogEmitter(containerId))
 		reader, err := logs.NewTailReader(proc.HostPath(c.metadata.logPath), ch)
 		if err != nil {
 			klog.Warningln(err)

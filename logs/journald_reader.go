@@ -69,8 +69,9 @@ func (r *JournaldReader) follow() {
 			continue
 		}
 		le := logparser.LogEntry{
-			Content: msg,
-			Level:   logparser.LevelByPriority(e.Fields[sdjournal.SD_JOURNAL_FIELD_PRIORITY]),
+			Timestamp: time.UnixMicro(int64(e.RealtimeTimestamp)),
+			Content:   msg,
+			Level:     logparser.LevelByPriority(e.Fields[sdjournal.SD_JOURNAL_FIELD_PRIORITY]),
 		}
 		r.lock.Lock()
 		ch, ok := r.subscribers[e.Fields[sdjournal.SD_JOURNAL_FIELD_SYSTEMD_CGROUP]]

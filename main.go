@@ -5,6 +5,7 @@ import (
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/coroot/coroot-node-agent/flags"
+	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -116,6 +117,7 @@ func main() {
 
 	machineId := machineID()
 	tracing.Init(machineId, hostname, version)
+	logs.Init(machineId, hostname, version)
 
 	registry := prometheus.NewRegistry()
 	registerer := prometheus.WrapRegistererWith(prometheus.Labels{"machine_id": machineId}, registry)
