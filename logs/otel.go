@@ -7,6 +7,7 @@ import (
 	"github.com/agoda-com/opentelemetry-logs-go/exporters/otlp/otlplogs/otlplogshttp"
 	otelLogs "github.com/agoda-com/opentelemetry-logs-go/logs"
 	sdk "github.com/agoda-com/opentelemetry-logs-go/sdk/logs"
+	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/logparser"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -27,6 +28,7 @@ func Init(machineId, hostname, version string) {
 	klog.Infoln("OpenTelemetry logs collector endpoint:", endpoint)
 
 	exporter, _ := otlplogs.NewExporter(context.Background(), otlplogs.WithClient(otlplogshttp.NewClient()))
+
 	loggerProvider := sdk.NewLoggerProvider(
 		sdk.WithBatcher(exporter),
 		sdk.WithResource(
@@ -61,14 +63,18 @@ func OtelLogEmitter(containerId string) logparser.OnMsgCallbackF {
 		case logparser.LevelDebug:
 			severityNumber = otelLogs.DEBUG
 		}
+
 		otelLogger.Emit(
 			otelLogs.NewLogRecord(otelLogs.LogRecordConfig{
 				ObservedTimestamp: ts,
 				SeverityText:      &severityText,
 				SeverityNumber:    &severityNumber,
 				Body:              &msg,
-				Attributes: &[]attribute.KeyValue{
+				Resource: resource.NewSchemaless(
+					semconv.ServiceName(common.ContainerIdToOtelServiceName(containerId)),
 					semconv.ContainerID(containerId),
+				),
+				Attributes: &[]attribute.KeyValue{
 					attribute.Key("pattern.hash").String(patternHash),
 				},
 			}),
