@@ -124,8 +124,8 @@ github.com/coreos/go-systemd/v22 v22.3.2/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSV
 github.com/coreos/go-systemd/v22 v22.5.0 h1:RrqgGjYQKalulkV8NGVIfkXQf6YYmOyiJKk8iXXhfZs=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f/go.mod h1:E3G3o1h8I7cfcXa63jLwjI0eiQQMgzzUDFVpN/nH/eA=
-github.com/coroot/logparser v1.0.9 h1:EQRFzTtVMnqpYPJx6dRUFN5Ax2qrHF/ATJJyspSZgBo=
-github.com/coroot/logparser v1.0.9/go.mod h1:GHsVO1xE8pR5mmu9Eiop9IXHwN/QzNRx1s0fuzVxq7I=
+github.com/coroot/logparser v1.0.10 h1:I48pAKR9kyJbAi+sGeo9Tqmf3SlC83W8IzWEq4bGFw0=
+github.com/coroot/logparser v1.0.10/go.mod h1:GHsVO1xE8pR5mmu9Eiop9IXHwN/QzNRx1s0fuzVxq7I=
 github.com/coroot/opentelemetry-logs-go v0.0.0-20231011124644-be9c59fab4e6 h1:Txhbk1d5QxzmECGvQSs+Z4nQlvA/dY4V5ELwUuegDIQ=
 github.com/coroot/opentelemetry-logs-go v0.0.0-20231011124644-be9c59fab4e6/go.mod h1:CeDuVaK9yCWN+8UjOW8AciYJE0rl7K/mw4ejBntGYkc=
 github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d/go.mod h1:maD7wRr/U5Z6m/iR4s+kqSMx2CaBsrgA7czyZG/E6dU=
