@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
-	github.com/agoda-com/opentelemetry-logs-go v0.3.0
+	github.com/agoda-com/opentelemetry-logs-go v0.4.1
 	github.com/cilium/cilium v1.13.2
 	github.com/cilium/ebpf v0.11.0
 	github.com/containerd/cgroups v1.0.3
@@ -140,7 +140,4 @@ require (
 	k8s.io/client-go v0.26.4 // indirect
 )
 
-replace (
-	github.com/agoda-com/opentelemetry-logs-go => github.com/coroot/opentelemetry-logs-go v0.0.0-20231011124644-be9c59fab4e6
-	github.com/optiopay/kafka => github.com/cilium/kafka v0.0.0-20180809090225-01ce283b732b
-)
+replace github.com/optiopay/kafka => github.com/cilium/kafka v0.0.0-20180809090225-01ce283b732b
