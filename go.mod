@@ -10,7 +10,7 @@ require (
 	github.com/containerd/cgroups v1.0.3
 	github.com/containerd/containerd v1.5.17
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/coroot/logparser v1.0.11
+	github.com/coroot/logparser v1.0.12
 	github.com/docker/docker v20.10.21+incompatible
 	github.com/florianl/go-conntrack v0.3.0
 	github.com/mdlayher/taskstats v0.0.0-20230712191918-387b3d561d14
