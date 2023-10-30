@@ -68,6 +68,7 @@ type AddrPair struct {
 }
 
 type ActiveConnection struct {
+	Dest       netaddr.IPPort
 	ActualDest netaddr.IPPort
 	Pid        uint32
 	Fd         uint64
@@ -98,6 +99,11 @@ func (p *Process) isHostNs() bool {
 	return p.NetNsId == hostNetNsId
 }
 
+type PidFd struct {
+	Pid uint32
+	Fd  uint64
+}
+
 type Container struct {
 	id       ContainerID
 	cgroup   *cgroup.Cgroup
@@ -119,6 +125,7 @@ type Container struct {
 	connectsFailed     map[netaddr.IPPort]int64     // dst -> count
 	connectLastAttempt map[netaddr.IPPort]time.Time // dst -> time
 	connectionsActive  map[AddrPair]*ActiveConnection
+	connectionsByPidFd map[PidFd]*ActiveConnection
 	retransmits        map[AddrPair]int64 // dst:actual_dst -> count
 
 	l7Stats L7Stats
@@ -159,6 +166,7 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 		connectsFailed:     map[netaddr.IPPort]int64{},
 		connectLastAttempt: map[netaddr.IPPort]time.Time{},
 		connectionsActive:  map[AddrPair]*ActiveConnection{},
+		connectionsByPidFd: map[PidFd]*ActiveConnection{},
 		retransmits:        map[AddrPair]int64{},
 		l7Stats:            L7Stats{},
 
@@ -300,11 +308,11 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	connections := map[AddrPair]int{}
-	for c, conn := range c.connectionsActive {
+	for addrPair, conn := range c.connectionsActive {
 		if !conn.Closed.IsZero() {
 			continue
 		}
-		connections[AddrPair{src: c.dst, dst: conn.ActualDest}]++
+		connections[AddrPair{src: addrPair.dst, dst: conn.ActualDest}]++
 	}
 	for d, count := range connections {
 		ch <- gauge(metrics.NetConnectionsActive, float64(count), d.src.String(), d.dst.String())
@@ -498,12 +506,15 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 		c.connectsFailed[dst]++
 	} else {
 		c.connectsSuccessful[AddrPair{src: dst, dst: *actualDst}]++
-		c.connectionsActive[AddrPair{src: src, dst: dst}] = &ActiveConnection{
+		connection := &ActiveConnection{
+			Dest:       dst,
 			ActualDest: *actualDst,
 			Pid:        pid,
 			Fd:         fd,
 			Timestamp:  timestamp,
 		}
+		c.connectionsActive[AddrPair{src: src, dst: dst}] = connection
+		c.connectionsByPidFd[PidFd{Pid: pid, Fd: fd}] = connection
 	}
 	c.connectLastAttempt[dst] = time.Now()
 }
@@ -553,20 +564,14 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	var dest AddrPair
-	var conn *ActiveConnection
-	var found bool
-	for dest, conn = range c.connectionsActive {
-		if conn.Pid == pid && conn.Fd == fd && (timestamp == 0 || conn.Timestamp == timestamp) {
-			found = true
-			break
-		}
-	}
-	if !found {
+	conn := c.connectionsByPidFd[PidFd{Pid: pid, Fd: fd}]
+	if conn == nil {
 		return
 	}
-
-	stats := c.l7Stats.get(r.Protocol, dest.dst, conn.ActualDest)
+	if timestamp != 0 && conn.Timestamp != timestamp {
+		return
+	}
+	stats := c.l7Stats.get(r.Protocol, conn.Dest, conn.ActualDest)
 	trace := tracing.NewTrace(string(c.id), conn.ActualDest)
 	switch r.Protocol {
 	case l7.ProtocolHTTP:
@@ -889,10 +894,12 @@ func (c *Container) gc(now time.Time) {
 	for srcDst, conn := range c.connectionsActive {
 		if _, ok := established[srcDst]; !ok {
 			delete(c.connectionsActive, srcDst)
+			delete(c.connectionsByPidFd, PidFd{Pid: conn.Pid, Fd: conn.Fd})
 			continue
 		}
 		if !conn.Closed.IsZero() && now.Sub(conn.Closed) > gcInterval {
 			delete(c.connectionsActive, srcDst)
+			delete(c.connectionsByPidFd, PidFd{Pid: conn.Pid, Fd: conn.Fd})
 		}
 	}
 	for dst, at := range c.connectLastAttempt {
