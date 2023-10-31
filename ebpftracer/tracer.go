@@ -337,11 +337,12 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 		switch typ {
 		case perfMapTypeL7Events:
 			v := &l7Event{}
-			if err := binary.Read(bytes.NewBuffer(rec.RawSample), binary.LittleEndian, v); err != nil {
+			reader := bytes.NewBuffer(rec.RawSample)
+			if err := binary.Read(reader, binary.LittleEndian, v); err != nil {
 				klog.Warningln("failed to read msg:", err)
 				continue
 			}
-			payload := rec.RawSample[len(rec.RawSample)-MaxPayloadSize:]
+			payload := reader.Bytes()
 			req := &l7.RequestData{
 				Protocol:    l7.Protocol(v.Protocol),
 				Status:      l7.Status(v.Status),
