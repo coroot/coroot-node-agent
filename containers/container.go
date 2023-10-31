@@ -120,6 +120,7 @@ type Container struct {
 	delaysLock  sync.Mutex
 
 	listens map[netaddr.IPPort]map[uint32]*ListenDetails
+	ipsByNs map[string][]netaddr.IP
 
 	connectsSuccessful map[AddrPair]int64           // dst:actual_dst -> count
 	connectsFailed     map[netaddr.IPPort]int64     // dst -> count
@@ -161,6 +162,7 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 		delaysByPid: map[uint32]Delays{},
 
 		listens: map[netaddr.IPPort]map[uint32]*ListenDetails{},
+		ipsByNs: map[string][]netaddr.IP{},
 
 		connectsSuccessful: map[AddrPair]int64{},
 		connectsFailed:     map[netaddr.IPPort]int64{},
@@ -456,11 +458,16 @@ func (c *Container) onListenOpen(pid uint32, addr netaddr.IPPort, safe bool) {
 			return
 		}
 		defer ns.Close()
-		if ips, err := proc.GetNsIps(ns); err != nil {
-			klog.Warningln(err)
-		} else {
-			details.NsIPs = ips
+		nsId := ns.UniqueId()
+		ips, ok := c.ipsByNs[nsId]
+		if !ok {
+			if ips, err = proc.GetNsIps(ns); err != nil {
+				klog.Warningln(err)
+			} else {
+				c.ipsByNs[nsId] = ips
+			}
 		}
+		details.NsIPs = ips
 	}
 }
 
@@ -887,6 +894,12 @@ func (c *Container) gc(now time.Time) {
 			}
 		}
 		seenNamespaces[p.NetNsId] = true
+	}
+
+	for ns := range c.ipsByNs {
+		if !seenNamespaces[ns] {
+			delete(c.ipsByNs, ns)
+		}
 	}
 
 	c.revalidateListens(now, listens)
