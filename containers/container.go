@@ -439,6 +439,9 @@ func (c *Container) onFileOpen(pid uint32, fd uint64) {
 }
 
 func (c *Container) onListenOpen(pid uint32, addr netaddr.IPPort, safe bool) {
+	if common.PortFilter.ShouldBeSkipped(addr.Port()) {
+		return
+	}
 	if !safe {
 		c.lock.Lock()
 		defer c.lock.Unlock()
@@ -484,6 +487,9 @@ func (c *Container) onListenClose(pid uint32, addr netaddr.IPPort) {
 }
 
 func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPPort, timestamp uint64, failed bool) {
+	if common.PortFilter.ShouldBeSkipped(dst.Port()) {
+		return
+	}
 	p := c.processes[pid]
 	if p == nil {
 		return
