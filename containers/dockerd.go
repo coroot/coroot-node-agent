@@ -78,6 +78,9 @@ func DockerdInspect(containerID string) (*ContainerMetadata, error) {
 		if len(addrs) > 0 {
 			s := make([]netaddr.IPPort, 0, len(addrs))
 			for addr := range addrs {
+				if common.PortFilter.ShouldBeSkipped(addr.Port()) {
+					continue
+				}
 				s = append(s, addr)
 			}
 			res.hostListens["dockerd"] = s

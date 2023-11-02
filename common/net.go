@@ -4,12 +4,15 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
+	"strconv"
+	"strings"
 )
 
 var (
 	ConnectionFilter = connectionFilter{
 		whitelist: map[string]netaddr.IPPrefix{},
 	}
+	PortFilter *portFilter
 )
 
 func init() {
@@ -20,6 +23,28 @@ func init() {
 				klog.Fatalf("invalid network %s: %s", prefix, err)
 			}
 			ConnectionFilter.WhitelistPrefix(p)
+		}
+	}
+	if r := flags.EphemeralPortRange; r != nil && *r != "" {
+		klog.Infoln("ephemeral-port-range:", *r)
+		parts := strings.Split(*r, "-")
+		if len(parts) != 2 {
+			klog.Fatalf("invalid port range: %s", *r)
+		}
+		from, err := strconv.ParseUint(parts[0], 10, 16)
+		if err != nil {
+			klog.Fatalf("invalid port range: %s", *r)
+		}
+		to, err := strconv.ParseUint(parts[1], 10, 16)
+		if err != nil {
+			klog.Fatalf("invalid port range: %s", *r)
+		}
+		if from > to {
+			klog.Fatalf("invalid port range: %s", *r)
+		}
+		PortFilter = &portFilter{
+			from: uint16(from),
+			to:   uint16(to),
 		}
 	}
 }
@@ -74,4 +99,16 @@ func (f connectionFilter) ShouldBeSkipped(dst, actualDst netaddr.IP) bool {
 		}
 	}
 	return true
+}
+
+type portFilter struct {
+	from uint16
+	to   uint16
+}
+
+func (f *portFilter) ShouldBeSkipped(port uint16) bool {
+	if f == nil {
+		return false
+	}
+	return port >= f.from && port <= f.to
 }
