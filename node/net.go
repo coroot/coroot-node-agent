@@ -8,7 +8,11 @@ import (
 	"regexp"
 )
 
-var includeNetDev = regexp.MustCompile(`^(enp\d+s\d+(f\d+)?|eth\d+|eno\d+|ens\d+)`)
+var netDeviceFilterRe = regexp.MustCompile(`^(enp\d+s\d+(f\d+)?|eth\d+|eno\d+|ens\d+|em\d+|bond\d+|p\d+p\d+|enx[0-9a-f]{12})`)
+
+func netDeviceFilter(name string) bool {
+	return netDeviceFilterRe.MatchString(name)
+}
 
 type NetDeviceInfo struct {
 	Name       string
@@ -38,7 +42,7 @@ func NetDevices() ([]NetDeviceInfo, error) {
 	var res []NetDeviceInfo
 	for _, link := range links {
 		attrs := link.Attrs()
-		if !includeNetDev.MatchString(attrs.Name) {
+		if !netDeviceFilter(attrs.Name) {
 			continue
 		}
 		info := NetDeviceInfo{
@@ -68,5 +72,4 @@ func NetDevices() ([]NetDeviceInfo, error) {
 		res = append(res, info)
 	}
 	return res, nil
-
 }
