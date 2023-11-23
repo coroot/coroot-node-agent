@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	k8sVolumeDir = regexp.MustCompile(`.+/(volumes/kubernetes.io~([^/]+)|volume-subpaths)/([^/]+)`)
+	k8sVolumeDir = regexp.MustCompile(`.+/(volumes/kubernetes.io~([^/]+)|volume-subpaths|k3s/storage)/(pvc-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})`)
 )
 
 func ParseKubernetesVolumeSource(source string) string {
