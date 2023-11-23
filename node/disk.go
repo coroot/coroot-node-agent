@@ -1,8 +1,8 @@
 package node
 
 import (
-	"io/ioutil"
 	"k8s.io/klog/v2"
+	"os"
 	"path"
 	"regexp"
 	"strconv"
@@ -60,7 +60,7 @@ func (disks *Disks) GetParentBlockDevice(majorMinor string) *DevStat {
 }
 
 func GetDisks() (*Disks, error) {
-	data, err := ioutil.ReadFile(path.Join(procRoot, "diskstats"))
+	data, err := os.ReadFile(path.Join(procRoot, "diskstats"))
 	if err != nil {
 		return nil, err
 	}
