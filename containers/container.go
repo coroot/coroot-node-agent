@@ -360,20 +360,21 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (c *Container) onProcessStart(pid uint32) {
+func (c *Container) onProcessStart(pid uint32) *Process {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	stats, err := TaskstatsPID(pid)
 	if err != nil {
-		return
+		return nil
 	}
 	ns, err := proc.GetNetNs(pid)
 	if err != nil {
-		return
+		return nil
 	}
 	defer ns.Close()
 	c.zombieAt = time.Time{}
-	c.processes[pid] = &Process{Pid: pid, StartedAt: stats.BeginTime, NetNsId: ns.UniqueId()}
+	p := &Process{Pid: pid, StartedAt: stats.BeginTime, NetNsId: ns.UniqueId()}
+	c.processes[pid] = p
 
 	if c.startedAt.IsZero() {
 		c.startedAt = stats.BeginTime
@@ -389,6 +390,7 @@ func (c *Container) onProcessStart(pid uint32) {
 			c.startedAt = min
 		}
 	}
+	return p
 }
 
 func (c *Container) onProcessExit(pid uint32, oomKill bool) {
