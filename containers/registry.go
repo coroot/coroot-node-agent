@@ -24,6 +24,12 @@ var (
 	containerIdRegexp = regexp.MustCompile(`[a-z0-9]{64}`)
 )
 
+type ProcessInfo struct {
+	Pid         uint32
+	ContainerId ContainerID
+	StartedAt   time.Time
+}
+
 type Registry struct {
 	reg prometheus.Registerer
 
@@ -35,9 +41,11 @@ type Registry struct {
 	containersById       map[ContainerID]*Container
 	containersByCgroupId map[string]*Container
 	containersByPid      map[uint32]*Container
+
+	processInfoCh chan<- ProcessInfo
 }
 
-func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, error) {
+func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh chan<- ProcessInfo) (*Registry, error) {
 	ns, err := proc.GetSelfNetNs()
 	if err != nil {
 		return nil, err
@@ -88,6 +96,8 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string) (*Registry, er
 		containersById:       map[ContainerID]*Container{},
 		containersByCgroupId: map[string]*Container{},
 		containersByPid:      map[uint32]*Container{},
+
+		processInfoCh: processInfoCh,
 
 		tracer: ebpftracer.NewTracer(kernelVersion, *flags.DisableL7Tracing),
 	}
@@ -167,7 +177,10 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					}
 				}
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onProcessStart(e.Pid)
+					p := c.onProcessStart(e.Pid)
+					if r.processInfoCh != nil && p != nil {
+						r.processInfoCh <- ProcessInfo{Pid: p.Pid, ContainerId: c.id, StartedAt: p.StartedAt}
+					}
 				}
 			case ebpftracer.EventTypeProcessExit:
 				if c := r.containersByPid[e.Pid]; c != nil {

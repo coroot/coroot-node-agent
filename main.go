@@ -7,6 +7,7 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
+	"github.com/coroot/coroot-node-agent/profiling"
 	"github.com/coroot/coroot-node-agent/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -128,11 +129,17 @@ func main() {
 		klog.Exitln(err)
 	}
 
-	cr, err := containers.NewRegistry(registerer, kv)
+	processInfoCh := make(chan containers.ProcessInfo)
+	profiling.Init(processInfoCh)
+
+	cr, err := containers.NewRegistry(registerer, kv, processInfoCh)
 	if err != nil {
 		klog.Exitln(err)
 	}
 	defer cr.Close()
+
+	profiling.Start()
+	defer profiling.Stop()
 
 	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{ErrorLog: logger{}, Registry: registerer}))
 	klog.Infoln("listening on:", *flags.ListenAddress)
