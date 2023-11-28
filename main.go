@@ -129,8 +129,7 @@ func main() {
 		klog.Exitln(err)
 	}
 
-	processInfoCh := make(chan containers.ProcessInfo)
-	profiling.Init(processInfoCh)
+	processInfoCh := profiling.Init()
 
 	cr, err := containers.NewRegistry(registerer, kv, processInfoCh)
 	if err != nil {
