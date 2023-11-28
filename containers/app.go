@@ -18,6 +18,8 @@ func guessApplicationType(cmdline []byte) string {
 		return "kafka"
 	case bytes.HasSuffix(cmd, []byte("mongod")):
 		return "mongodb"
+	case bytes.HasSuffix(cmd, []byte("mongos")):
+		return "mongos"
 	case bytes.HasSuffix(cmd, []byte("mysqld")):
 		return "mysql"
 	case bytes.Contains(cmdline, []byte("org.apache.zookeeper.server.quorum.QuorumPeerMain")):
