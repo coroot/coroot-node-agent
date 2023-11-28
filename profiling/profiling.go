@@ -42,11 +42,11 @@ var (
 	}
 )
 
-func Init(processInfoCh <-chan containers.ProcessInfo) {
+func Init() chan<- containers.ProcessInfo {
 	endpoint := os.Getenv("PROFILES_ENDPOINT")
 	if endpoint == "" {
 		klog.Infoln("no profiles endpoint configured")
-		return
+		return nil
 	}
 	klog.Infoln("profiles endpoint:", endpoint)
 
@@ -92,10 +92,19 @@ func Init(processInfoCh <-chan containers.ProcessInfo) {
 	if err != nil {
 		klog.Errorln(err)
 		session = nil
-		return
+		return nil
 	}
+	err = session.Start()
+	if err != nil {
+		klog.Errorln(err)
+		session = nil
+		return nil
+	}
+	go collect()
 
+	processInfoCh := make(chan containers.ProcessInfo)
 	targetFinder.start(processInfoCh)
+	return processInfoCh
 }
 
 func Start() {
@@ -103,13 +112,7 @@ func Start() {
 		return
 	}
 	targetFinder.now = time.Now()
-	err := session.Start()
-	if err != nil {
-		klog.Errorln(err)
-		session = nil
-		return
-	}
-	go collect()
+	session.UpdateTargets(sd.TargetsOptions{})
 }
 
 func Stop() {
@@ -122,9 +125,8 @@ func collect() {
 	ticker := time.NewTicker(CollectInterval)
 	defer ticker.Stop()
 	tPrev := time.Now()
-	for range ticker.C {
-		now := time.Now()
-		targetFinder.now = now
+	for t := range ticker.C {
+		tCurr := t
 		session.UpdateTargets(sd.TargetsOptions{})
 		bs := pprof.NewProfileBuilders(SampleRate)
 		err := session.CollectProfiles(func(target *sd.Target, stack []string, value uint64, pid uint32) {
@@ -135,14 +137,14 @@ func collect() {
 			b := bs.BuilderForTarget(p.hash, labels.Labels{{Value: p.labels}})
 			b.AddSample(stack, value)
 		})
-		klog.Infof("collected %d profiles in %s", len(bs.Builders), time.Since(now).Truncate(time.Millisecond))
+		klog.Infof("collected %d profiles in %s", len(bs.Builders), time.Since(t).Truncate(time.Millisecond))
 		if err != nil {
 			klog.Errorln(err)
 		}
-		t := time.Now()
+		t = time.Now()
 		var uploaded int
 		for _, b := range bs.Builders {
-			err = upload(b, tPrev, now)
+			err = upload(b, tPrev, tCurr)
 			if err != nil {
 				klog.Errorln(err)
 				break
@@ -150,7 +152,7 @@ func collect() {
 			uploaded++
 		}
 		klog.Infof("uploaded %d profiles in %s", uploaded, time.Since(t).Truncate(time.Millisecond))
-		tPrev = now
+		tPrev = tCurr
 	}
 }
 
@@ -252,6 +254,7 @@ func (tf *TargetFinder) DebugInfo() []string {
 }
 
 func (tf *TargetFinder) Update(_ sd.TargetsOptions) {
+	tf.now = time.Now()
 }
 
 type processInfo struct {
