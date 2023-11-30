@@ -1,12 +1,13 @@
 package node
 
 import (
-	"k8s.io/klog/v2"
 	"os"
 	"path"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"k8s.io/klog/v2"
 )
 
 var blockDevice = regexp.MustCompile(`^(dm-\d+|(s|h|xv|v)d[a-z]|md\d+|nvme\d+n\d+|rbd\d+)`)

@@ -1,8 +1,9 @@
 package node
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNode_memory(t *testing.T) {

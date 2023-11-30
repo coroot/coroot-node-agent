@@ -1,9 +1,10 @@
 package node
 
 import (
-	"github.com/stretchr/testify/assert"
 	"sort"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGetNodeDisks(t *testing.T) {

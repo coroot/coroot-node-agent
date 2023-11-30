@@ -1,0 +1,44 @@
+name: ci
+on:
+  push:
+    branches:
+    - "main"
+    - "release/v*"
+    paths-ignore:
+    - "**/*.png"
+    - "**/*.md"
+  pull_request:
+    branches:
+    - "main"
+    - "release/v*"
+    paths-ignore:
+    - "**/*.png"
+    - "**/*.md"
+jobs:
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v3
+      - name: yaml-lint
+        uses: ibiqlik/action-yamllint@v1
+        with:
+          config_file: .ci/yamllint.yml
+          strict: true
+  style-check:
+    name: style-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.19'
+      - name: Install dependencies
+        run: |
+          go version
+          go install golang.org/x/tools/cmd/goimports@latest
+      - name: gofmt and goimports
+        run: make style-check

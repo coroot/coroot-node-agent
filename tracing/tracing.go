@@ -3,6 +3,9 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,8 +18,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
-	"os"
-	"time"
 )
 
 const (

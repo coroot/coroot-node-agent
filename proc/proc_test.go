@@ -1,10 +1,11 @@
 package proc
 
 import (
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"inet.af/netaddr"
-	"testing"
 )
 
 func init() {

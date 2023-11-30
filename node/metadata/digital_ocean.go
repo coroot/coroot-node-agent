@@ -2,8 +2,9 @@ package metadata
 
 import (
 	"io"
-	"k8s.io/klog/v2"
 	"net/http"
+
+	"k8s.io/klog/v2"
 )
 
 const doInstanceMetadataURL = "http://169.254.169.254/metadata/v1/"

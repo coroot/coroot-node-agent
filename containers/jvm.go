@@ -3,14 +3,15 @@ package containers
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
+	"strconv"
+	"time"
+
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/xin053/hsperfdata"
 	"k8s.io/klog/v2"
-	"path/filepath"
-	"strconv"
-	"time"
 )
 
 func isJvm(cmdline []byte) bool {

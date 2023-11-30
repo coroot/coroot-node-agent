@@ -2,11 +2,12 @@ package proc
 
 import (
 	"bytes"
-	"github.com/coroot/coroot-node-agent/cgroup"
 	"os"
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/coroot/coroot-node-agent/cgroup"
 )
 
 var root = "/proc"

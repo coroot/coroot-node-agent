@@ -1,9 +1,10 @@
 package flags
 
 import (
-	"gopkg.in/alecthomas/kingpin.v2"
 	"os"
 	"strings"
+
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (

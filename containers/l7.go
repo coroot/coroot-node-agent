@@ -1,11 +1,12 @@
 package containers
 
 import (
+	"time"
+
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"github.com/prometheus/client_golang/prometheus"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
-	"time"
 )
 
 type L7Metrics struct {

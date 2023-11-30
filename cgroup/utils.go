@@ -2,9 +2,10 @@ package cgroup
 
 import (
 	"io/ioutil"
-	"k8s.io/klog/v2"
 	"strconv"
 	"strings"
+
+	"k8s.io/klog/v2"
 )
 
 func readVariablesFromFile(filePath string) (map[string]uint64, error) {

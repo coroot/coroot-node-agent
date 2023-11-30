@@ -3,6 +3,11 @@ package containers
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"regexp"
+	"strings"
+	"time"
+
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
@@ -11,10 +16,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
 	"k8s.io/klog/v2"
-	"os"
-	"regexp"
-	"strings"
-	"time"
 )
 
 var (

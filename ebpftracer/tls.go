@@ -7,15 +7,16 @@ import (
 	"debug/elf"
 	"errors"
 	"fmt"
+	"os"
+	"regexp"
+	"strings"
+
 	"github.com/cilium/ebpf/link"
 	"github.com/coroot/coroot-node-agent/proc"
 	"golang.org/x/arch/arm64/arm64asm"
 	"golang.org/x/arch/x86/x86asm"
 	"golang.org/x/mod/semver"
 	"k8s.io/klog/v2"
-	"os"
-	"regexp"
-	"strings"
 )
 
 const (

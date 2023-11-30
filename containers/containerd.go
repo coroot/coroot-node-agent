@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/pkg/cri/constants"
@@ -11,8 +14,6 @@ import (
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/logparser"
 	"k8s.io/klog/v2"
-	"strings"
-	"time"
 )
 
 const containerdTimeout = 30 * time.Second

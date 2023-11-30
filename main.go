@@ -2,6 +2,13 @@ package main
 
 import (
 	"bytes"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"path"
+	"runtime"
+	"strings"
+
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/coroot/coroot-node-agent/flags"
@@ -15,12 +22,6 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/time/rate"
 	"k8s.io/klog/v2"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"path"
-	"runtime"
-	"strings"
 )
 
 var (

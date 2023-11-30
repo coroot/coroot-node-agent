@@ -1,9 +1,10 @@
 package metadata
 
 import (
+	"net/http"
+
 	"gopkg.in/yaml.v2"
 	"k8s.io/klog/v2"
-	"net/http"
 )
 
 const hetznerInstanceMetadataURL = "http://169.254.169.254/hetzner/v1/metadata"

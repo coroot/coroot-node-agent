@@ -2,12 +2,13 @@ package logs
 
 import (
 	"fmt"
-	"github.com/coreos/go-systemd/v22/sdjournal"
-	"github.com/coroot/logparser"
-	"k8s.io/klog/v2"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/coreos/go-systemd/v22/sdjournal"
+	"github.com/coroot/logparser"
+	"k8s.io/klog/v2"
 )
 
 type JournaldReader struct {

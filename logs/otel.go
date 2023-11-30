@@ -2,6 +2,9 @@ package logs
 
 import (
 	"context"
+	"os"
+	"time"
+
 	otel "github.com/agoda-com/opentelemetry-logs-go"
 	"github.com/agoda-com/opentelemetry-logs-go/exporters/otlp/otlplogs"
 	"github.com/agoda-com/opentelemetry-logs-go/exporters/otlp/otlplogs/otlplogshttp"
@@ -13,8 +16,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.18.0"
 	"k8s.io/klog/v2"
-	"os"
-	"time"
 )
 
 var otelLogger otelLogs.Logger

@@ -5,6 +5,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
@@ -15,11 +21,6 @@ import (
 	"golang.org/x/sys/unix"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
-	"os"
-	"runtime"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const MaxPayloadSize = 1024

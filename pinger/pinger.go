@@ -5,6 +5,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
+	"os"
+	"strings"
+	"syscall"
+	"time"
+
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/vishvananda/netns"
 	"golang.org/x/net/icmp"
@@ -12,11 +18,6 @@ import (
 	"golang.org/x/sys/unix"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
-	"net"
-	"os"
-	"strings"
-	"syscall"
-	"time"
 )
 
 const (

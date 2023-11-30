@@ -2,10 +2,11 @@ package cgroup
 
 import (
 	"io/ioutil"
-	"k8s.io/klog/v2"
 	"path"
 	"strconv"
 	"strings"
+
+	"k8s.io/klog/v2"
 )
 
 type IOStat struct {

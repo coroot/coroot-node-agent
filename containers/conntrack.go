@@ -1,12 +1,13 @@
 package containers
 
 import (
+	"syscall"
+
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/florianl/go-conntrack"
 	"github.com/vishvananda/netns"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
-	"syscall"
 )
 
 type Conntrack struct {

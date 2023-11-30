@@ -5,12 +5,6 @@ package ebpftracer
 import (
 	"bytes"
 	"fmt"
-	"github.com/containerd/cgroups"
-	cgroupsV2 "github.com/containerd/cgroups/v2"
-	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
 	"net"
 	"os"
 	"os/exec"
@@ -20,6 +14,13 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/containerd/cgroups"
+	cgroupsV2 "github.com/containerd/cgroups/v2"
+	"github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func skipIfNotVM(t *testing.T) {

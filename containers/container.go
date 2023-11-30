@@ -1,6 +1,11 @@
 package containers
 
 import (
+	"os"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/cilium/ebpf/link"
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
@@ -17,10 +22,6 @@ import (
 	"github.com/vishvananda/netns"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
-	"os"
-	"strings"
-	"sync"
-	"time"
 )
 
 var (

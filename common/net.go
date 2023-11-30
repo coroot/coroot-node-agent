@@ -1,11 +1,12 @@
 package common
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/coroot/coroot-node-agent/flags"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
-	"strconv"
-	"strings"
 )
 
 var (

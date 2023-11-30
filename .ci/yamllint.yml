@@ -1,0 +1,24 @@
+---
+extends: default
+
+ignore: |
+  .github/workflows/docker-publish.yml
+  .github/workflows/ci.yaml
+  .ci/yamllint.yml
+
+yaml-files:
+  - '*.yaml'
+  - '*.yml'
+
+rules:
+  truthy: disable
+  # 80 chars should be enough, but don't fail if a line is longer
+  line-length: disable
+  comments-indentation: disable
+  indentation:
+    spaces: consistent
+    indent-sequences: whatever
+    check-multi-line-strings: false
+  braces:
+    level: warning
+    max-spaces-inside: 1
