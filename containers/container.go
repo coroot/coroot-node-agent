@@ -75,9 +75,10 @@ type ActiveConnection struct {
 	Timestamp  uint64
 	Closed     time.Time
 
-	http2Parser    *l7.Http2Parser
-	postgresParser *l7.PostgresParser
-	mysqlParser    *l7.MysqlParser
+	http2Parser     *l7.Http2Parser
+	postgresParser  *l7.PostgresParser
+	mysqlParser     *l7.MysqlParser
+	cassandraParser *l7.CassandraParser
 }
 
 type ListenDetails struct {
@@ -633,6 +634,13 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		query := l7.ParseMongo(r.Payload)
 		trace.MongoQuery(query, r.Status.Error(), r.Duration)
 	case l7.ProtocolKafka, l7.ProtocolCassandra:
+		if conn.cassandraParser == nil {
+			conn.cassandraParser = l7.NewCassandraParser()
+		}
+		query := conn.cassandraParser.Parse(r.Payload, r.StatementId, uint32(r.Method))
+		if query != "" {
+			trace.CassandraQuery(query, r.Status.Error(), r.Duration)
+		}
 		stats.observe(r.Status.String(), "", r.Duration)
 	case l7.ProtocolRabbitmq, l7.ProtocolNats:
 		stats.observe(r.Status.String(), r.Method.String(), 0)
