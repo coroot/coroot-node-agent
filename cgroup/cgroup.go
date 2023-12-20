@@ -138,6 +138,9 @@ func containerByCgroup(path string) (ContainerType, string, error) {
 		if crioMatches != nil {
 			return ContainerTypeCrio, crioMatches[1], nil
 		}
+		if strings.Contains(path, "crio-conmon-") {
+			return ContainerTypeUnknown, "", nil
+		}
 		containerdMatches := containerdIdRegexp.FindStringSubmatch(path)
 		if containerdMatches != nil {
 			return ContainerTypeContainerd, containerdMatches[1], nil

@@ -856,7 +856,7 @@ func (c *Container) runLogParser(logPath string) {
 		klog.InfoS("started journald logparser", "cg", c.cgroup.Id)
 		c.logParsers["journald"] = &LogParser{parser: parser, stop: stop}
 
-	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd:
+	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeCrio:
 		if c.metadata.logPath == "" {
 			return
 		}
