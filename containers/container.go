@@ -333,6 +333,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 				}
 			}
 		case process.dotNetMonitor != nil:
+			appTypes["dotnet"] = struct{}{}
 			process.dotNetMonitor.Collect(ch)
 		}
 	}

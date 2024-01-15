@@ -2,6 +2,13 @@ package containers
 
 import (
 	"bytes"
+	"regexp"
+)
+
+var (
+	phpCmd    = regexp.MustCompile(`.*php\d*\.?\d*$`)
+	pythonCmd = regexp.MustCompile(`.*python\d*\.?\d*$`)
+	nodejsCmd = regexp.MustCompile(`.*node(js)?\d*\.?\d*$`)
 )
 
 func guessApplicationType(cmdline []byte) string {
@@ -89,7 +96,14 @@ func guessApplicationType(cmdline []byte) string {
 		return "rook"
 	case bytes.HasSuffix(cmd, []byte("nats-server")):
 		return "nats"
+	case bytes.HasSuffix(cmd, []byte("java")):
+		return "java"
+	case phpCmd.Match(cmd):
+		return "php"
+	case pythonCmd.Match(cmd):
+		return "python"
+	case nodejsCmd.Match(cmd):
+		return "nodejs"
 	}
-	//todo: php-fpm, python, nodejs, java
 	return ""
 }
