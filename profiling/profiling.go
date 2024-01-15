@@ -3,6 +3,15 @@ package profiling
 import (
 	"bytes"
 	"fmt"
+	"hash/fnv"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/go-kit/log"
@@ -14,15 +23,7 @@ import (
 	"github.com/grafana/pyroscope/ebpf/symtab/elf"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
-	"hash/fnv"
-	"io"
 	"k8s.io/klog/v2"
-	"net/http"
-	"net/url"
-	"os"
-	"strconv"
-	"sync"
-	"time"
 )
 
 const (

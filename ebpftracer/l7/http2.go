@@ -2,12 +2,13 @@ package l7
 
 import (
 	"encoding/binary"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/hpack"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/hpack"
 )
 
 const (

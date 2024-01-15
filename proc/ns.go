@@ -1,11 +1,12 @@
 package proc
 
 import (
+	"runtime"
+
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
 	"golang.org/x/sys/unix"
 	"inet.af/netaddr"
-	"runtime"
 )
 
 func GetNetNs(pid uint32) (netns.NsHandle, error) {

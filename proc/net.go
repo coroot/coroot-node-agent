@@ -5,9 +5,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
-	"inet.af/netaddr"
 	"net"
 	"os"
+
+	"inet.af/netaddr"
 )
 
 const (

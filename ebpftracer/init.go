@@ -1,9 +1,10 @@
 package ebpftracer
 
 import (
+	"strings"
+
 	"github.com/coroot/coroot-node-agent/proc"
 	"k8s.io/klog/v2"
-	"strings"
 )
 
 type file struct {

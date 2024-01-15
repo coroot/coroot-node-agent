@@ -3,9 +3,10 @@ package l7
 import (
 	"bytes"
 	"encoding/binary"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"go.mongodb.org/mongo-driver/bson"
-	"testing"
 )
 
 func TestParseHttp(t *testing.T) {

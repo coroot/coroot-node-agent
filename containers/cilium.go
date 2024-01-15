@@ -1,6 +1,8 @@
 package containers
 
 import (
+	"path/filepath"
+
 	"github.com/cilium/cilium/pkg/bpf"
 	"github.com/cilium/cilium/pkg/defaults"
 	"github.com/cilium/cilium/pkg/loadbalancer"
@@ -11,7 +13,6 @@ import (
 	"github.com/coroot/coroot-node-agent/proc"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
-	"path/filepath"
 )
 
 var (

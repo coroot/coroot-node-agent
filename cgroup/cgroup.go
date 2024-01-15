@@ -2,14 +2,15 @@ package cgroup
 
 import (
 	"fmt"
-	"github.com/coroot/coroot-node-agent/common"
-	"github.com/coroot/coroot-node-agent/flags"
-	"k8s.io/klog/v2"
 	"os"
 	"path"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/coroot/coroot-node-agent/common"
+	"github.com/coroot/coroot-node-agent/flags"
+	"k8s.io/klog/v2"
 )
 
 var (

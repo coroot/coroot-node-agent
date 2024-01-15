@@ -1,9 +1,10 @@
 package metadata
 
 import (
+	"strings"
+
 	gcp "cloud.google.com/go/compute/metadata"
 	"k8s.io/klog/v2"
-	"strings"
 )
 
 func getGcpMetadata() *CloudMetadata {

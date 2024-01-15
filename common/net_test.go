@@ -1,9 +1,10 @@
 package common
 
 import (
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"inet.af/netaddr"
-	"testing"
 )
 
 func TestConnectionFilter(t *testing.T) {

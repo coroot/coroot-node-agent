@@ -3,12 +3,13 @@ package logs
 import (
 	"bufio"
 	"context"
-	"github.com/coroot/logparser"
 	"io"
-	"k8s.io/klog/v2"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/coroot/logparser"
+	"k8s.io/klog/v2"
 )
 
 var (

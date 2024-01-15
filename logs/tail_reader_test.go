@@ -1,12 +1,13 @@
 package logs
 
 import (
-	"github.com/coroot/logparser"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/coroot/logparser"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTailReader(t *testing.T) {

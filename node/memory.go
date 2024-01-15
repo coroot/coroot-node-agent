@@ -2,10 +2,11 @@ package node
 
 import (
 	"io/ioutil"
-	"k8s.io/klog/v2"
 	"path"
 	"strconv"
 	"strings"
+
+	"k8s.io/klog/v2"
 )
 
 func memoryInfo(procRoot string) (MemoryStat, error) {

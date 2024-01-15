@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/coroot/coroot-node-agent/proc"
 	"io"
-	"k8s.io/klog/v2"
 	"net"
 	"net/http"
+
+	"github.com/coroot/coroot-node-agent/proc"
+	"k8s.io/klog/v2"
 )
 
 const awsInstanceMetadataURL = "http://169.254.169.254/latest"

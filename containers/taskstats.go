@@ -2,8 +2,9 @@ package containers
 
 import (
 	"fmt"
-	"github.com/mdlayher/taskstats"
 	"sync"
+
+	"github.com/mdlayher/taskstats"
 )
 
 var (

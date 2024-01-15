@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/coroot/coroot-node-agent/common"
-	"github.com/coroot/coroot-node-agent/proc"
-	"github.com/coroot/logparser"
-	"k8s.io/klog/v2"
 	"net"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/coroot/coroot-node-agent/common"
+	"github.com/coroot/coroot-node-agent/proc"
+	"github.com/coroot/logparser"
+	"k8s.io/klog/v2"
 )
 
 const crioTimeout = 30 * time.Second

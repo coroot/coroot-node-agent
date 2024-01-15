@@ -3,16 +3,17 @@ package containers
 import (
 	"context"
 	"fmt"
+	"os"
+	"path"
+	"strings"
+	"time"
+
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/logparser"
 	"github.com/docker/docker/client"
 	"github.com/vishvananda/netns"
 	"inet.af/netaddr"
-	"os"
-	"path"
-	"strings"
-	"time"
 )
 
 const dockerdTimeout = 30 * time.Second

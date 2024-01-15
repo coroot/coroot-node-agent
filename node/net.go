@@ -1,11 +1,12 @@
 package node
 
 import (
+	"regexp"
+
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"inet.af/netaddr"
-	"regexp"
 )
 
 var netDeviceFilterRe = regexp.MustCompile(`^(enp\d+s\d+(f\d+)?|eth\d+|eno\d+|ens\d+|em\d+|bond\d+|p\d+p\d+|enx[0-9a-f]{12})`)

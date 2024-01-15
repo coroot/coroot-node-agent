@@ -1,9 +1,10 @@
 package cgroup
 
 import (
+	"runtime"
+
 	"github.com/vishvananda/netns"
 	"golang.org/x/sys/unix"
-	"runtime"
 )
 
 func Init() error {
