@@ -15,10 +15,12 @@ require (
 	github.com/florianl/go-conntrack v0.3.0
 	github.com/go-kit/log v0.2.1
 	github.com/grafana/pyroscope/ebpf v0.3.2
+	github.com/jpillora/backoff v1.0.0
 	github.com/mdlayher/taskstats v0.0.0-20230712191918-387b3d561d14
 	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/prometheus v0.47.2
+	github.com/pyroscope-io/dotnetdiag v1.2.1
 	github.com/stretchr/testify v1.8.4
 	github.com/vishvananda/netlink v1.2.1-beta.2.0.20220608195807-1a118fe229fc
 	github.com/vishvananda/netns v0.0.4
@@ -151,4 +153,7 @@ require (
 	k8s.io/client-go v0.28.2 // indirect
 )
 
-replace github.com/optiopay/kafka => github.com/cilium/kafka v0.0.0-20180809090225-01ce283b732b
+replace (
+	github.com/optiopay/kafka => github.com/cilium/kafka v0.0.0-20180809090225-01ce283b732b
+	github.com/pyroscope-io/dotnetdiag => github.com/coroot/dotnetdiag v1.2.2
+)

@@ -1,7 +1,11 @@
 package containers
 
 import (
-	"github.com/cilium/ebpf/link"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
@@ -17,10 +21,6 @@ import (
 	"github.com/vishvananda/netns"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
-	"os"
-	"strings"
-	"sync"
-	"time"
 )
 
 var (
@@ -83,20 +83,6 @@ type ActiveConnection struct {
 type ListenDetails struct {
 	ClosedAt time.Time
 	NsIPs    []netaddr.IP
-}
-
-type Process struct {
-	Pid       uint32
-	StartedAt time.Time
-	NetNsId   string
-
-	uprobes               []link.Link
-	goTlsUprobesChecked   bool
-	openSslUprobesChecked bool
-}
-
-func (p *Process) isHostNs() bool {
-	return p.NetNsId == hostNetNsId
 }
 
 type PidFd struct {
@@ -328,7 +314,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	appTypes := map[string]struct{}{}
 	seenJvms := map[string]bool{}
-	for pid := range c.processes {
+	for pid, process := range c.processes {
 		cmdline := proc.GetCmdline(pid)
 		if len(cmdline) == 0 {
 			continue
@@ -337,7 +323,8 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		if appType != "" {
 			appTypes[appType] = struct{}{}
 		}
-		if isJvm(cmdline) {
+		switch {
+		case isJvm(cmdline):
 			jvm, jMetrics := jvmMetrics(pid)
 			if len(jMetrics) > 0 && !seenJvms[jvm] {
 				seenJvms[jvm] = true
@@ -345,6 +332,8 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 					ch <- m
 				}
 			}
+		case process.dotNetMonitor != nil:
+			process.dotNetMonitor.Collect(ch)
 		}
 	}
 	for appType := range appTypes {
@@ -367,13 +356,11 @@ func (c *Container) onProcessStart(pid uint32) *Process {
 	if err != nil {
 		return nil
 	}
-	ns, err := proc.GetNetNs(pid)
-	if err != nil {
+	c.zombieAt = time.Time{}
+	p := NewProcess(pid, stats)
+	if p == nil {
 		return nil
 	}
-	defer ns.Close()
-	c.zombieAt = time.Time{}
-	p := &Process{Pid: pid, StartedAt: stats.BeginTime, NetNsId: ns.UniqueId()}
 	c.processes[pid] = p
 
 	if c.startedAt.IsZero() {
@@ -397,9 +384,7 @@ func (c *Container) onProcessExit(pid uint32, oomKill bool) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if p := c.processes[pid]; p != nil {
-		for _, u := range p.uprobes {
-			_ = u.Close()
-		}
+		p.Close()
 	}
 	delete(c.processes, pid)
 	if len(c.processes) == 0 {

@@ -116,3 +116,19 @@ var (
 func metric(name, help string, labels ...string) *prometheus.Desc {
 	return prometheus.NewDesc(name, help, labels, nil)
 }
+
+func newCounter(name, help string, constLabels prometheus.Labels) prometheus.Counter {
+	return prometheus.NewCounter(prometheus.CounterOpts{Name: name, Help: help, ConstLabels: constLabels})
+}
+
+func newCounterVec(name, help string, constLabels prometheus.Labels, labelNames ...string) *prometheus.CounterVec {
+	return prometheus.NewCounterVec(prometheus.CounterOpts{Name: name, Help: help, ConstLabels: constLabels}, labelNames)
+}
+
+func newGauge(name, help string, constLabels prometheus.Labels) prometheus.Gauge {
+	return prometheus.NewGauge(prometheus.GaugeOpts{Name: name, Help: help, ConstLabels: constLabels})
+}
+
+func newGaugeVec(name, help string, constLabels prometheus.Labels, labelNames ...string) *prometheus.GaugeVec {
+	return prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: name, Help: help, ConstLabels: constLabels}, labelNames)
+}
