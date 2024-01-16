@@ -10,6 +10,7 @@
 #define PROTOCOL_RABBITMQ   9
 #define PROTOCOL_NATS      10
 #define PROTOCOL_HTTP2	   11
+#define PROTOCOL_DUBBO2    12
 
 #define STATUS_UNKNOWN  0
 #define STATUS_OK       200
@@ -49,6 +50,7 @@
 #include "rabbitmq.c"
 #include "nats.c"
 #include "http2.c"
+#include "dubbo2.c"
 
 struct l7_event {
     __u64 fd;
@@ -319,6 +321,8 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         COPY_PAYLOAD(e->payload, size, payload);
         bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
         return 0;
+    } else if (is_dubbo2_request(payload, size)) {
+        req->protocol = PROTOCOL_DUBBO2;
     }
 
     if (req->protocol == PROTOCOL_UNKNOWN) {
@@ -472,6 +476,8 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         }
     } else if (e->protocol == PROTOCOL_KAFKA) {
         response = is_kafka_response(payload, req->request_id);
+    } else if (e->protocol == PROTOCOL_DUBBO2) {
+        response = is_dubbo2_response(payload, &e->status);
     }
 
     if (!response) {

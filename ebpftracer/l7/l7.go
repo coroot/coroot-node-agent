@@ -19,6 +19,7 @@ const (
 	ProtocolRabbitmq  Protocol = 9
 	ProtocolNats      Protocol = 10
 	ProtocolHTTP2     Protocol = 11
+	ProtocolDubbo2    Protocol = 12
 )
 
 func (p Protocol) String() string {
@@ -45,6 +46,8 @@ func (p Protocol) String() string {
 		return "NATS"
 	case ProtocolHTTP2:
 		return "HTTP2"
+	case ProtocolDubbo2:
+		return "Dubbo2"
 	}
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }
