@@ -296,7 +296,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         e->connection_timestamp = get_connection_timestamp(k.pid, k.fd);
         bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
         return 0;
-    } else if (is_cassandra_request(payload, size, &k.stream_id)) {
+    } else if (is_cassandra_request(payload, size, &k.stream_id, &req->request_type)) {
         req->protocol = PROTOCOL_CASSANDRA;
     } else if (is_kafka_request(payload, size, &req->request_id)) {
         req->protocol = PROTOCOL_KAFKA;
@@ -414,10 +414,13 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     struct l7_request *req = bpf_map_lookup_elem(&active_l7_requests, &k);
     int response = 0;
     if (!req) {
-        if (is_cassandra_response(payload, ret, &k.stream_id, &e->status)) {
+        if (is_cassandra_response(payload, ret, &k.stream_id, &e->statement_id, &e->status)) {
             req = bpf_map_lookup_elem(&active_l7_requests, &k);
             if (!req) {
                 return 0;
+            }
+            if (req->request_type == CASSANDRA_OPCODE_PREPARE) {
+                e->method = METHOD_STATEMENT_PREPARE;
             }
             response = 1;
         } else if (looks_like_http2_frame(payload, ret, METHOD_HTTP2_SERVER_FRAMES)) {

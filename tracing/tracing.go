@@ -134,6 +134,16 @@ func (t *Trace) MysqlQuery(query string, error bool, duration time.Duration) {
 	)
 }
 
+func (t *Trace) CassandraQuery(query string, error bool, duration time.Duration) {
+	if t == nil || query == "" {
+		return
+	}
+	t.createSpan("query", duration, error,
+		semconv.DBSystemCassandra,
+		semconv.DBStatement(query),
+	)
+}
+
 func (t *Trace) MongoQuery(query string, error bool, duration time.Duration) {
 	if t == nil || query == "" {
 		return
