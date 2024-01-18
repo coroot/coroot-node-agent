@@ -130,7 +130,7 @@ func main() {
 		klog.Exitln(err)
 	}
 
-	processInfoCh := profiling.Init()
+	processInfoCh := profiling.Init(machineId, hostname)
 
 	cr, err := containers.NewRegistry(registerer, kv, processInfoCh)
 	if err != nil {
