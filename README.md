@@ -94,6 +94,9 @@ The best way to turn metrics to answers about app issues is to use [Coroot](http
 
 A live demo of Coroot is available at [community-demo.coroot.com](https://community-demo.coroot.com)
 
+## Contributing
+To start contributing, check out our [Contributing Guide](https://github.com/coroot/coroot-node-agent/blob/main/CONTRIBUTING.md).
+
 ## License
 
 Coroot-node-agent is licensed under the [Apache License, Version 2.0](https://github.com/coroot/coroot-node-agent/blob/main/LICENSE).
