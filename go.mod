@@ -5,7 +5,7 @@ go 1.21
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
 	github.com/agoda-com/opentelemetry-logs-go v0.4.1
-	github.com/cilium/cilium v1.13.2
+	github.com/cilium/cilium v1.13.7
 	github.com/cilium/ebpf v0.11.0
 	github.com/containerd/cgroups v1.0.4
 	github.com/containerd/containerd v1.6.26
