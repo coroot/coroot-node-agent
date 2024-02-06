@@ -1,15 +1,15 @@
-FROM golang:1.19-bullseye AS builder
+FROM golang:1.21-bullseye AS builder
 RUN apt update && apt install -y libsystemd-dev
-COPY go.mod /tmp/src/
-COPY go.sum /tmp/src/
-WORKDIR /tmp/src/
+WORKDIR /tmp/src
+COPY go.mod .
+COPY go.sum .
 RUN go mod download
-COPY . /tmp/src/
+COPY . .
 RUN CGO_ENABLED=1 go test ./...
 ARG VERSION=unknown
-RUN CGO_ENABLED=1 go install -mod=readonly -ldflags "-X main.version=$VERSION" /tmp/src
+RUN CGO_ENABLED=1 go build -mod=readonly -ldflags "-X main.version=$VERSION" -o coroot-node-agent .
 
 FROM debian:bullseye
 RUN apt update && apt install -y ca-certificates && apt clean
-COPY --from=builder /go/bin/coroot-node-agent /usr/bin/coroot-node-agent
+COPY --from=builder /tmp/src/coroot-node-agent /usr/bin/coroot-node-agent
 ENTRYPOINT ["coroot-node-agent"]
