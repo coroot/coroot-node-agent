@@ -173,3 +173,29 @@ int sys_exit_connect(void *ctx) {
     return 0;
 }
 
+static inline __attribute__((__always_inline__))
+int trace_exit_accept(struct trace_event_raw_sys_exit__stub* ctx) {
+    if (ctx->ret < 0) {
+        return 0;
+    }
+    __u64 id = bpf_get_current_pid_tgid();
+    struct sk_info k = {};
+    k.pid = id >> 32;
+    k.fd = ctx->ret;
+    __u64 invalid_timestamp = 0;
+    bpf_map_update_elem(&connection_timestamps, &k, &invalid_timestamp, BPF_ANY);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_accept")
+int sys_exit_accept(struct trace_event_raw_sys_exit__stub* ctx) {
+    return trace_exit_accept(ctx);
+}
+
+SEC("tracepoint/syscalls/sys_exit_accept4")
+int sys_exit_accept4(struct trace_event_raw_sys_exit__stub* ctx) {
+    return trace_exit_accept(ctx);
+}
+
+
+
