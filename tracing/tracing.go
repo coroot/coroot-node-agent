@@ -3,10 +3,11 @@ package tracing
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
+	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
+	"github.com/coroot/coroot-node-agent/flags"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -29,14 +30,25 @@ var (
 )
 
 func Init(machineId, hostname, version string) {
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
-	if endpoint == "" {
+	endpointUrl := *flags.TracesEndpoint
+	if endpointUrl == nil {
 		klog.Infoln("no OpenTelemetry traces collector endpoint configured")
 		return
 	}
-	klog.Infoln("OpenTelemetry traces collector endpoint:", endpoint)
-
-	client := otlptracehttp.NewClient()
+	klog.Infoln("OpenTelemetry traces collector endpoint:", endpointUrl.String())
+	path := endpointUrl.Path
+	if path == "" {
+		path = "/"
+	}
+	opts := []otlptracehttp.Option{
+		otlptracehttp.WithEndpoint(endpointUrl.Host),
+		otlptracehttp.WithURLPath(path),
+		otlptracehttp.WithHeaders(common.AuthHeaders()),
+	}
+	if endpointUrl.Scheme != "https" {
+		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+	client := otlptracehttp.NewClient(opts...)
 	exporter, err := otlptrace.New(context.Background(), client)
 	if err != nil {
 		klog.Exitln(err)
