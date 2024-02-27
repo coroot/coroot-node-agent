@@ -7,12 +7,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
+	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/go-kit/log"
 	ebpfspy "github.com/grafana/pyroscope/ebpf"
 	"github.com/grafana/pyroscope/ebpf/metrics"
@@ -44,23 +44,17 @@ var (
 )
 
 func Init(hostId, hostName string) chan<- containers.ProcessInfo {
-	endpoint := os.Getenv("PROFILES_ENDPOINT")
-	if endpoint == "" {
+	endpointUrl = *flags.ProfilesEndpoint
+	if endpointUrl == nil {
 		klog.Infoln("no profiles endpoint configured")
 		return nil
 	}
-	klog.Infoln("profiles endpoint:", endpoint)
+	klog.Infoln("profiles endpoint:", endpointUrl.String())
 
 	constLabels = labels.Labels{
 		{Name: "host.name", Value: hostName},
 		{Name: "host.id", Value: hostId},
 		{Name: "profile.source", Value: "ebpf"},
-	}
-
-	var err error
-	endpointUrl, err = url.Parse(endpoint)
-	if err != nil {
-		klog.Exitln(err)
 	}
 
 	reg := prometheus.NewRegistry()
@@ -95,6 +89,7 @@ func Init(hostId, hostName string) chan<- containers.ProcessInfo {
 		},
 		SampleRate: SampleRate,
 	}
+	var err error
 	session, err = ebpfspy.NewSession(log.NewNopLogger(), targetFinder, so)
 	if err != nil {
 		klog.Errorln(err)
@@ -134,13 +129,17 @@ func collect() {
 	for t := range ticker.C {
 		session.UpdateTargets(sd.TargetsOptions{})
 		bs := pprof.NewProfileBuilders(SampleRate)
-		err := session.CollectProfiles(func(target *sd.Target, stack []string, value uint64, pid uint32) {
+		err := session.CollectProfiles(func(target *sd.Target, stack []string, value uint64, pid uint32, aggregation ebpfspy.SampleAggregation) {
 			pi := targetFinder.get(pid)
 			if pi == nil {
 				return
 			}
 			b := bs.BuilderForTarget(pi.hash, pi.labels)
-			b.AddSample(stack, value)
+			if aggregation == ebpfspy.SampleAggregated {
+				b.CreateSample(stack, value)
+			} else {
+				b.CreateSampleOrAddValue(stack, value)
+			}
 		})
 		klog.Infof("collected %d profiles in %s", len(bs.Builders), time.Since(t).Truncate(time.Millisecond))
 		if err != nil {
@@ -178,6 +177,9 @@ func upload(b *pprof.ProfileBuilder) error {
 	req, err := http.NewRequest("POST", u.String(), body)
 	if err != nil {
 		return err
+	}
+	for k, v := range common.AuthHeaders() {
+		req.Header.Set(k, v)
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {

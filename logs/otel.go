@@ -2,7 +2,6 @@ package logs
 
 import (
 	"context"
-	"os"
 	"time"
 
 	otel "github.com/agoda-com/opentelemetry-logs-go"
@@ -11,6 +10,7 @@ import (
 	otelLogs "github.com/agoda-com/opentelemetry-logs-go/logs"
 	sdk "github.com/agoda-com/opentelemetry-logs-go/sdk/logs"
 	"github.com/coroot/coroot-node-agent/common"
+	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/logparser"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -21,14 +21,27 @@ import (
 var otelLogger otelLogs.Logger
 
 func Init(machineId, hostname, version string) {
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT")
-	if endpoint == "" {
+	endpointUrl := *flags.LogsEndpoint
+	if endpointUrl == nil {
 		klog.Infoln("no OpenTelemetry logs collector endpoint configured")
 		return
 	}
-	klog.Infoln("OpenTelemetry logs collector endpoint:", endpoint)
+	klog.Infoln("OpenTelemetry logs collector endpoint:", endpointUrl.String())
+	path := endpointUrl.Path
+	if path == "" {
+		path = "/"
+	}
 
-	exporter, _ := otlplogs.NewExporter(context.Background(), otlplogs.WithClient(otlplogshttp.NewClient()))
+	opts := []otlplogshttp.Option{
+		otlplogshttp.WithEndpoint(endpointUrl.Host),
+		otlplogshttp.WithURLPath(path),
+		otlplogshttp.WithHeaders(common.AuthHeaders()),
+	}
+	if endpointUrl.Scheme != "https" {
+		opts = append(opts, otlplogshttp.WithInsecure())
+	}
+	client := otlplogshttp.NewClient(opts...)
+	exporter, _ := otlplogs.NewExporter(context.Background(), otlplogs.WithClient(client))
 
 	loggerProvider := sdk.NewLoggerProvider(
 		sdk.WithBatcher(exporter),

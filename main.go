@@ -15,6 +15,7 @@ import (
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/profiling"
+	"github.com/coroot/coroot-node-agent/prom"
 	"github.com/coroot/coroot-node-agent/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -140,6 +141,10 @@ func main() {
 
 	profiling.Start()
 	defer profiling.Stop()
+
+	if err := prom.StartAgent(machineId); err != nil {
+		klog.Exitln(err)
+	}
 
 	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{ErrorLog: logger{}, Registry: registerer}))
 	klog.Infoln("listening on:", *flags.ListenAddress)
