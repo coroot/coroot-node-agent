@@ -8,7 +8,6 @@ import (
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"github.com/coroot/coroot-node-agent/flags"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -26,7 +25,7 @@ const (
 )
 
 var (
-	tracer trace.Tracer
+	tracer func(containerId string) trace.Tracer
 )
 
 func Init(machineId, hostname, version string) {
@@ -53,17 +52,22 @@ func Init(machineId, hostname, version string) {
 	if err != nil {
 		klog.Exitln(err)
 	}
-	tracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName("coroot-node-agent"),
-			semconv.HostName(hostname),
-			semconv.HostID(machineId),
-		)),
-	)
-	otel.SetTracerProvider(tracerProvider)
-	tracer = tracerProvider.Tracer("coroot-node-agent", trace.WithInstrumentationVersion(version))
+
+	batcher := sdktrace.WithBatcher(exporter)
+
+	tracer = func(containerId string) trace.Tracer {
+		provider := sdktrace.NewTracerProvider(
+			batcher,
+			sdktrace.WithResource(resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.HostName(hostname),
+				semconv.HostID(machineId),
+				semconv.ServiceName(common.ContainerIdToOtelServiceName(containerId)),
+				semconv.ContainerID(containerId),
+			)),
+		)
+		return provider.Tracer("coroot-node-agent", trace.WithInstrumentationVersion(version))
+	}
 }
 
 type Trace struct {
@@ -77,7 +81,6 @@ func NewTrace(containerId string, destination netaddr.IPPort) *Trace {
 		return nil
 	}
 	return &Trace{containerId: containerId, destination: destination, commonAttrs: []attribute.KeyValue{
-		semconv.ContainerID(containerId),
 		semconv.NetPeerName(destination.IP().String()),
 		semconv.NetPeerPort(int(destination.Port())),
 	}}
@@ -86,7 +89,7 @@ func NewTrace(containerId string, destination netaddr.IPPort) *Trace {
 func (t *Trace) createSpan(name string, duration time.Duration, error bool, attrs ...attribute.KeyValue) {
 	end := time.Now()
 	start := end.Add(-duration)
-	_, span := tracer.Start(nil, name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer(t.containerId).Start(nil, name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
 	span.SetAttributes(attrs...)
 	span.SetAttributes(t.commonAttrs...)
 	if error {
