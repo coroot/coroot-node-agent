@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -45,3 +45,49 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
+
+      - name: extract amd64 binary from the image
+        run: | 
+          docker create --platform linux/amd64 --name amd64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} && 
+          docker cp amd64:/usr/bin/coroot-node-agent /tmp/coroot-node-agent-amd64
+
+      - name: extract arm64 binary from the image
+        run: |
+          docker create --platform linux/arm64 --name arm64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} &&
+          docker cp arm64:/usr/bin/coroot-node-agent /tmp/coroot-node-agent-arm64
+
+      - name: upload amd64 binary
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: /tmp/coroot-node-agent-amd64
+          asset_name: coroot-node-agent-amd64
+          asset_content_type: application/octet-stream
+
+      - name: upload arm64 binary
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: /tmp/coroot-node-agent-arm64
+          asset_name: coroot-node-agent-arm64
+          asset_content_type: application/octet-stream
+
+      - uses: actions/github-script@v7
+        env:
+            RELEASE_ID: ${{ github.event.release.id }}
+        with:
+          script: |
+            const { RELEASE_ID } = process.env
+            github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: `${RELEASE_ID}`,
+              prerelease: false,
+              make_latest: true
+            })  
+          
+
