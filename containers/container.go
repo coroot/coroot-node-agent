@@ -901,14 +901,19 @@ func (c *Container) gc(now time.Time) {
 	c.revalidateListens(now, listens)
 
 	for srcDst, conn := range c.connectionsActive {
+		pidFd := PidFd{Pid: conn.Pid, Fd: conn.Fd}
 		if _, ok := established[srcDst]; !ok {
 			delete(c.connectionsActive, srcDst)
-			delete(c.connectionsByPidFd, PidFd{Pid: conn.Pid, Fd: conn.Fd})
+			if conn == c.connectionsByPidFd[pidFd] {
+				delete(c.connectionsByPidFd, pidFd)
+			}
 			continue
 		}
 		if !conn.Closed.IsZero() && now.Sub(conn.Closed) > gcInterval {
 			delete(c.connectionsActive, srcDst)
-			delete(c.connectionsByPidFd, PidFd{Pid: conn.Pid, Fd: conn.Fd})
+			if conn == c.connectionsByPidFd[pidFd] {
+				delete(c.connectionsByPidFd, pidFd)
+			}
 		}
 	}
 	for dst, at := range c.connectLastAttempt {
