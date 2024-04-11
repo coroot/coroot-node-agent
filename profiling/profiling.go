@@ -54,7 +54,6 @@ func Init(hostId, hostName string) chan<- containers.ProcessInfo {
 	constLabels = labels.Labels{
 		{Name: "host.name", Value: hostName},
 		{Name: "host.id", Value: hostId},
-		{Name: "profile.source", Value: "ebpf"},
 	}
 
 	reg := prometheus.NewRegistry()
@@ -167,6 +166,7 @@ func upload(b *pprof.ProfileBuilder) error {
 	}
 	u.RawQuery = q.Encode()
 
+	b.Profile.SampleType[0].Type = "ebpf:cpu:nanoseconds"
 	b.Profile.DurationNanos = CollectInterval.Nanoseconds()
 	body := bytes.NewBuffer(nil)
 	_, err := b.Write(body)
@@ -174,7 +174,7 @@ func upload(b *pprof.ProfileBuilder) error {
 		return err
 	}
 
-	req, err := http.NewRequest("POST", u.String(), body)
+	req, err := http.NewRequest(http.MethodPost, u.String(), body)
 	if err != nil {
 		return err
 	}
