@@ -5,6 +5,7 @@ import (
 
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/flags"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	promConfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -25,12 +26,12 @@ const (
 )
 
 func StartAgent(machineId string) error {
-	l := Logger{}
+	logger := level.NewFilter(Logger{}, level.AllowInfo())
 
 	if *flags.MetricsEndpoint == nil {
 		return nil
 	}
-	klog.Infoln("Metrics remote write endpoint:", (*flags.MetricsEndpoint).String())
+	klog.Infoln("metrics remote write endpoint:", (*flags.MetricsEndpoint).String())
 	cfg := config.DefaultConfig
 	cfg.GlobalConfig.ScrapeInterval = model.Duration(*flags.ScrapeInterval)
 	cfg.GlobalConfig.ScrapeTimeout = model.Duration(*flags.ScrapeInterval)
@@ -54,14 +55,14 @@ func StartAgent(machineId string) error {
 	opts := agent.DefaultOptions()
 	localStorage := &readyStorage{stats: tsdb.NewDBStats()}
 	scraper := &readyScrapeManager{}
-	remoteStorage := remote.NewStorage(l, prometheus.DefaultRegisterer, localStorage.StartTime, *flags.WalDir, RemoteFlushDeadline, scraper)
-	fanoutStorage := storage.NewFanout(l, localStorage, remoteStorage)
+	remoteStorage := remote.NewStorage(logger, prometheus.DefaultRegisterer, localStorage.StartTime, *flags.WalDir, RemoteFlushDeadline, scraper)
+	fanoutStorage := storage.NewFanout(logger, localStorage, remoteStorage)
 
 	if err := remoteStorage.ApplyConfig(&cfg); err != nil {
 		return err
 	}
 
-	scrapeManager, err := scrape.NewManager(nil, l, fanoutStorage, prometheus.DefaultRegisterer)
+	scrapeManager, err := scrape.NewManager(nil, logger, fanoutStorage, prometheus.DefaultRegisterer)
 	if err != nil {
 		return err
 	}
@@ -69,7 +70,7 @@ func StartAgent(machineId string) error {
 		return err
 	}
 	scraper.Set(scrapeManager)
-	db, err := agent.Open(l, prometheus.DefaultRegisterer, remoteStorage, *flags.WalDir, opts)
+	db, err := agent.Open(logger, prometheus.DefaultRegisterer, remoteStorage, *flags.WalDir, opts)
 	if err != nil {
 		return err
 	}
