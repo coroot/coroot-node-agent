@@ -20,6 +20,10 @@ func TestParseKubernetesVolumeSource(t *testing.T) {
 		ParseKubernetesVolumeSource("/var/lib/rancher/k3s/storage/pvc-d0c0cc92-ef36-4b4f-90c0-5c5ed489df0b_default_mongod-data-mongo-psmdb-db-rs0-0"))
 
 	assert.Equal(t,
+		"pvc-4bf620ab-bb10-4cd6-803a-5be8735ccaf6",
+		ParseKubernetesVolumeSource("/var/snap/microk8s/common/default-storage/coroot-coroot-data-pvc-4bf620ab-bb10-4cd6-803a-5be8735ccaf6"))
+
+	assert.Equal(t,
 		"",
 		ParseKubernetesVolumeSource("/var/lib/kubelet/pods/adf669ca-c3f8-49de-9ad4-9dd66721dc0d/volumes/kubernetes.io~projected/kube-api-access-jvvq6"),
 	)
