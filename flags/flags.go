@@ -66,4 +66,8 @@ func init() {
 			*ProfilesEndpoint = u.JoinPath("/v1/profiles")
 		}
 	}
+
+	if *MetricsEndpoint != nil {
+		*ListenAddress = "127.0.0.1:10300"
+	}
 }
