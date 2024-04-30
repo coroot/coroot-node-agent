@@ -170,9 +170,11 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	if len(prg) == 0 {
 		return fmt.Errorf("unsupported kernel version: %s", t.kernelVersion)
 	}
+	_, debugFsErr := os.Stat("/sys/kernel/debug/tracing")
+	_, traceFsErr := os.Stat("/sys/kernel/tracing")
 
-	if _, err := os.Stat("/sys/kernel/debug/tracing"); err != nil {
-		return fmt.Errorf("kernel tracing is not available: %w", err)
+	if debugFsErr != nil && traceFsErr != nil {
+		return fmt.Errorf("kernel tracing is not available: debugfs or tracefs must be mounted")
 	}
 
 	collectionSpec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(prg))
