@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coroot/coroot-node-agent/cgroup"
@@ -15,6 +16,7 @@ import (
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
+	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 )
 
@@ -42,6 +44,8 @@ type Registry struct {
 	containersById       map[ContainerID]*Container
 	containersByCgroupId map[string]*Container
 	containersByPid      map[uint32]*Container
+	ip2fqdn              map[netaddr.IP]string
+	ip2fqdnLock          sync.Mutex
 
 	processInfoCh chan<- ProcessInfo
 }
@@ -97,12 +101,15 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh 
 		containersById:       map[ContainerID]*Container{},
 		containersByCgroupId: map[string]*Container{},
 		containersByPid:      map[uint32]*Container{},
+		ip2fqdn:              map[netaddr.IP]string{},
 
 		processInfoCh: processInfoCh,
 
 		tracer: ebpftracer.NewTracer(kernelVersion, *flags.DisableL7Tracing),
 	}
-
+	if err = reg.Register(r); err != nil {
+		return nil, err
+	}
 	go r.handleEvents(r.events)
 	if err = r.tracer.Run(r.events); err != nil {
 		close(r.events)
@@ -110,6 +117,18 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh 
 	}
 
 	return r, nil
+}
+
+func (r *Registry) Describe(ch chan<- *prometheus.Desc) {
+	ch <- metrics.Ip2Fqdn
+}
+
+func (r *Registry) Collect(ch chan<- prometheus.Metric) {
+	r.ip2fqdnLock.Lock()
+	defer r.ip2fqdnLock.Unlock()
+	for ip, fqdn := range r.ip2fqdn {
+		ch <- gauge(metrics.Ip2Fqdn, 1, ip.String(), fqdn)
+	}
 }
 
 func (r *Registry) Close() {
@@ -137,10 +156,13 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					c.onProcessExit(pid, false)
 				}
 			}
-
+			activeIPs := map[netaddr.IP]struct{}{}
 			for id, c := range r.containersById {
 				if !c.Dead(now) {
 					continue
+				}
+				for dst := range c.connectLastAttempt {
+					activeIPs[dst.IP()] = struct{}{}
 				}
 				klog.Infoln("deleting dead container:", id)
 				for cg, cc := range r.containersByCgroupId {
@@ -159,7 +181,13 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				delete(r.containersById, id)
 				c.Close()
 			}
-
+			r.ip2fqdnLock.Lock()
+			for ip := range r.ip2fqdn {
+				if _, ok := activeIPs[ip]; !ok {
+					delete(r.ip2fqdn, ip)
+				}
+			}
+			r.ip2fqdnLock.Unlock()
 		case e, more := <-ch:
 			if !more {
 				return
@@ -237,7 +265,12 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					continue
 				}
 				if c := r.containersByPid[e.Pid]; c != nil {
-					c.onL7Request(e.Pid, e.Fd, e.Timestamp, e.L7Request)
+					ip2fqdn := c.onL7Request(e.Pid, e.Fd, e.Timestamp, e.L7Request)
+					r.ip2fqdnLock.Lock()
+					for ip, fqdn := range ip2fqdn {
+						r.ip2fqdn[ip] = fqdn
+					}
+					r.ip2fqdnLock.Unlock()
 				}
 			}
 		}
