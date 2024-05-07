@@ -11,6 +11,7 @@
 #define PROTOCOL_NATS      10
 #define PROTOCOL_HTTP2	   11
 #define PROTOCOL_DUBBO2    12
+#define PROTOCOL_DNS       13
 
 #define STATUS_UNKNOWN  0
 #define STATUS_OK       200
@@ -51,6 +52,7 @@
 #include "nats.c"
 #include "http2.c"
 #include "dubbo2.c"
+#include "dns.c"
 
 struct l7_event {
     __u64 fd;
@@ -155,6 +157,9 @@ struct user_msghdr {
 	int msg_namelen;
 	struct iovec *msg_iov;
 	__u64 msg_iovlen;
+	void *msg_control;
+    __u64 msg_controllen;
+    __u32 msg_flags;
 };
 
 static inline __attribute__((__always_inline__))
@@ -315,6 +320,8 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         return 0;
     } else if (is_dubbo2_request(payload, size)) {
         req->protocol = PROTOCOL_DUBBO2;
+    } else if (is_dns_request(payload, size, &k.stream_id)) {
+        req->protocol = PROTOCOL_DNS;
     }
 
     if (req->protocol == PROTOCOL_UNKNOWN) {
@@ -405,7 +412,18 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     struct l7_request *req = bpf_map_lookup_elem(&active_l7_requests, &k);
     int response = 0;
     if (!req) {
-        if (is_cassandra_response(payload, ret, &k.stream_id, &e->status)) {
+        if (is_dns_response(payload, ret, &k.stream_id, &e->status)) {
+            req = bpf_map_lookup_elem(&active_l7_requests, &k);
+            if (!req) {
+                return 0;
+            }
+            e->protocol = PROTOCOL_DNS;
+            e->duration = bpf_ktime_get_ns() - req->ns;
+            e->payload_size = ret;
+            COPY_PAYLOAD(e->payload, ret, payload);
+            send_event(ctx, e, k.pid, k.fd);
+            return 0;
+        } else if (is_cassandra_response(payload, ret, &k.stream_id, &e->status)) {
             req = bpf_map_lookup_elem(&active_l7_requests, &k);
             if (!req) {
                 return 0;
@@ -491,6 +509,29 @@ int sys_enter_sendmsg(struct trace_event_raw_sys_enter_rw__stub* ctx) {
         return 0;
     }
     return trace_enter_write(ctx, ctx->fd, 0, (char*)msghdr.msg_iov, 0, msghdr.msg_iovlen);
+}
+
+struct mmsghdr {
+	struct user_msghdr msg_hdr;
+	__u32 msg_len;
+};
+
+SEC("tracepoint/syscalls/sys_enter_sendmmsg")
+int sys_enter_sendmmsg(struct trace_event_raw_sys_enter_rw__stub* ctx) {
+    __u64 offset = 0;
+    #pragma unroll
+    for (int i = 0; i <= 1; i++) {
+        if (i >= ctx->size) {
+            break;
+        }
+        struct mmsghdr h = {};
+        if (bpf_probe_read(&h , sizeof(h), (void *)(ctx->buf + offset))) {
+            return 0;
+        }
+        offset += sizeof(h);
+        trace_enter_write(ctx, ctx->fd, 0, (char*)h.msg_hdr.msg_iov, 0, h.msg_hdr.msg_iovlen);
+    }
+    return 0;
 }
 
 SEC("tracepoint/syscalls/sys_enter_sendto")

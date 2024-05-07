@@ -20,6 +20,7 @@ const (
 	ProtocolNats      Protocol = 10
 	ProtocolHTTP2     Protocol = 11
 	ProtocolDubbo2    Protocol = 12
+	ProtocolDNS       Protocol = 13
 )
 
 func (p Protocol) String() string {
@@ -48,6 +49,8 @@ func (p Protocol) String() string {
 		return "HTTP2"
 	case ProtocolDubbo2:
 		return "Dubbo2"
+	case ProtocolDNS:
+		return "DNS"
 	}
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }
@@ -106,6 +109,24 @@ func (s Status) String() string {
 
 func (s Status) Http() string {
 	return strconv.Itoa(int(s))
+}
+
+func (s Status) DNS() string {
+	switch s {
+	case 0:
+		return "ok"
+	case 1:
+		return "format_error"
+	case 2:
+		return "servfail"
+	case 3:
+		return "nxdomain"
+	case 4:
+		return "not_implemented"
+	case 5:
+		return "refused"
+	}
+	return ""
 }
 
 func (s Status) Error() bool {

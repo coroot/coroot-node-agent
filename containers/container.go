@@ -115,7 +115,8 @@ type Container struct {
 	connectionsByPidFd map[PidFd]*ActiveConnection
 	retransmits        map[AddrPair]int64 // dst:actual_dst -> count
 
-	l7Stats L7Stats
+	l7Stats  L7Stats
+	dnsStats *L7Metrics
 
 	oomKills int
 
@@ -157,6 +158,7 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 		connectionsByPidFd: map[PidFd]*ActiveConnection{},
 		retransmits:        map[AddrPair]int64{},
 		l7Stats:            L7Stats{},
+		dnsStats:           &L7Metrics{},
 
 		mounts: map[string]proc.MountInfo{},
 
@@ -340,7 +342,12 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	for appType := range appTypes {
 		ch <- gauge(metrics.ApplicationType, 1, appType)
 	}
-
+	if c.dnsStats.Requests != nil {
+		c.dnsStats.Requests.Collect(ch)
+	}
+	if c.dnsStats.Latency != nil {
+		c.dnsStats.Latency.Collect(ch)
+	}
 	c.l7Stats.collect(ch)
 
 	if !*flags.DisablePinger {
@@ -561,16 +568,55 @@ func (c *Container) onConnectionClose(srcDst AddrPair) bool {
 	return true
 }
 
-func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) {
+func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]string {
+	status := r.Status.DNS()
+	if status == "" {
+		return nil
+	}
+	t, fqdn, ips := l7.ParseDns(r.Payload)
+	if t == "" {
+		return nil
+	}
+	if c.dnsStats.Requests == nil {
+		dnsReq := L7Requests[l7.ProtocolDNS]
+		c.dnsStats.Requests = prometheus.NewCounterVec(
+			prometheus.CounterOpts{Name: dnsReq.Name, Help: dnsReq.Help},
+			[]string{"request_type", "status"},
+		)
+	}
+	if m, _ := c.dnsStats.Requests.GetMetricWithLabelValues(t, status); m != nil {
+		m.Inc()
+	}
+	if r.Duration != 0 {
+		if c.dnsStats.Latency == nil {
+			dnsLatency := L7Latency[l7.ProtocolDNS]
+			c.dnsStats.Latency = prometheus.NewHistogram(prometheus.HistogramOpts{Name: dnsLatency.Name, Help: dnsLatency.Help})
+		}
+		c.dnsStats.Latency.Observe(r.Duration.Seconds())
+	}
+	ip2fqdn := map[netaddr.IP]string{}
+	if fqdn != "" {
+		for _, ip := range ips {
+			ip2fqdn[ip] = fqdn
+		}
+	}
+	return ip2fqdn
+}
+
+func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) map[netaddr.IP]string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	if r.Protocol == l7.ProtocolDNS {
+		return c.onDNSRequest(r)
+	}
+
 	conn := c.connectionsByPidFd[PidFd{Pid: pid, Fd: fd}]
 	if conn == nil {
-		return
+		return nil
 	}
 	if timestamp != 0 && conn.Timestamp != timestamp {
-		return
+		return nil
 	}
 	stats := c.l7Stats.get(r.Protocol, conn.Dest, conn.ActualDest)
 	trace := tracing.NewTrace(string(c.id), conn.ActualDest)
@@ -625,6 +671,7 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	case l7.ProtocolDubbo2:
 		stats.observe(r.Status.String(), "", r.Duration)
 	}
+	return nil
 }
 
 func (c *Container) onRetransmit(srcDst AddrPair) bool {
