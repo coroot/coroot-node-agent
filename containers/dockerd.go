@@ -56,6 +56,7 @@ func DockerdInspect(containerID string) (*ContainerMetadata, error) {
 		volumes:     map[string]string{},
 		hostListens: map[string][]netaddr.IPPort{},
 		networks:    map[string]ContainerNetwork{},
+		env:         map[string]string{},
 	}
 	for _, m := range c.Mounts {
 		res.volumes[m.Destination] = common.ParseKubernetesVolumeSource(m.Source)
@@ -90,6 +91,17 @@ func DockerdInspect(containerID string) (*ContainerMetadata, error) {
 			res.networks[name] = ContainerNetwork{
 				NetworkID: network.NetworkID,
 			}
+		}
+	}
+	if c.Config != nil {
+		for _, value := range c.Config.Env {
+			idx := strings.Index(value, "=")
+			if idx < 0 {
+				continue
+			}
+			k := value[:idx]
+			v := value[idx+1:]
+			res.env[k] = v
 		}
 	}
 	return res, nil

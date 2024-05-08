@@ -391,6 +391,16 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 		}
 		return ContainerID(fmt.Sprintf("/swarm/%s/%s/%s", namespace, service, taskNameParts[1]))
 	}
+	if md.env != nil {
+		allocId := md.env["NOMAD_ALLOC_ID"]
+		group := md.env["NOMAD_GROUP_NAME"]
+		job := md.env["NOMAD_JOB_NAME"]
+		namespace := md.env["NOMAD_NAMESPACE"]
+		task := md.env["NOMAD_TASK_NAME"]
+		if allocId != "" && group != "" && job != "" && namespace != "" && task != "" {
+			return ContainerID(fmt.Sprintf("/nomad/%s/%s/%s/%s/%s", namespace, job, group, allocId, task))
+		}
+	}
 	if md.name == "" { // should be "pure" dockerd container here
 		klog.Warningln("empty dockerd container name for:", cg.ContainerId)
 		return ""

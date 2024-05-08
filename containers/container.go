@@ -43,6 +43,7 @@ type ContainerMetadata struct {
 	logDecoder  logparser.Decoder
 	hostListens map[string][]netaddr.IPPort
 	networks    map[string]ContainerNetwork
+	env         map[string]string
 }
 
 type Delays struct {
