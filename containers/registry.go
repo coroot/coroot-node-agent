@@ -158,11 +158,11 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			}
 			activeIPs := map[netaddr.IP]struct{}{}
 			for id, c := range r.containersById {
-				if !c.Dead(now) {
-					continue
-				}
 				for dst := range c.connectLastAttempt {
 					activeIPs[dst.IP()] = struct{}{}
+				}
+				if !c.Dead(now) {
+					continue
 				}
 				klog.Infoln("deleting dead container:", id)
 				for cg, cc := range r.containersByCgroupId {
