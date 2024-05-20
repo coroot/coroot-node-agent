@@ -65,7 +65,7 @@ func uname() (string, string, error) {
 }
 
 func machineID() string {
-	for _, p := range []string{"sys/devices/virtual/dmi/id/product_uuid", "etc/machine-id", "var/lib/dbus/machine-id"} {
+	for _, p := range []string{"etc/machine-id", "var/lib/dbus/machine-id", "sys/devices/virtual/dmi/id/product_uuid"} {
 		payload, err := os.ReadFile(path.Join("/proc/1/root", p))
 		if err != nil {
 			klog.Warningln("failed to read machine-id:", err)
