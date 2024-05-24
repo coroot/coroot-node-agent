@@ -15,7 +15,8 @@ import (
 type Process struct {
 	Pid       uint32
 	StartedAt time.Time
-	NetNsId   string
+
+	netNsId string
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -28,19 +29,26 @@ type Process struct {
 }
 
 func NewProcess(pid uint32, stats *taskstats.Stats) *Process {
-	ns, err := proc.GetNetNs(pid)
-	if err != nil {
-		return nil
-	}
-	defer ns.Close()
-	p := &Process{Pid: pid, StartedAt: stats.BeginTime, NetNsId: ns.UniqueId()}
+	p := &Process{Pid: pid, StartedAt: stats.BeginTime}
 	p.ctx, p.cancelFunc = context.WithCancel(context.Background())
 	go p.instrument()
 	return p
 }
 
+func (p *Process) NetNsId() string {
+	if p.netNsId == "" {
+		ns, err := proc.GetNetNs(p.Pid)
+		if err != nil {
+			return ""
+		}
+		p.netNsId = ns.UniqueId()
+		_ = ns.Close()
+	}
+	return p.netNsId
+}
+
 func (p *Process) isHostNs() bool {
-	return p.NetNsId == hostNetNsId
+	return p.NetNsId() == hostNetNsId
 }
 
 func (p *Process) instrument() {
