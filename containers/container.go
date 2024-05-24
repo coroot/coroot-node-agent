@@ -922,7 +922,7 @@ func (c *Container) gc(now time.Time) {
 	listens := map[netaddr.IPPort]string{}
 	seenNamespaces := map[string]bool{}
 	for _, p := range c.processes {
-		if seenNamespaces[p.NetNsId] {
+		if seenNamespaces[p.NetNsId()] {
 			continue
 		}
 		sockets, err := proc.GetSockets(p.Pid)
@@ -937,7 +937,7 @@ func (c *Container) gc(now time.Time) {
 				establishedDst[s.DAddr] = struct{}{}
 			}
 		}
-		seenNamespaces[p.NetNsId] = true
+		seenNamespaces[p.NetNsId()] = true
 	}
 
 	for ns := range c.ipsByNs {
