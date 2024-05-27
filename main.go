@@ -5,7 +5,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"path"
 	"runtime"
 	"strings"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
+	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/coroot-node-agent/profiling"
 	"github.com/coroot/coroot-node-agent/prom"
 	"github.com/coroot/coroot-node-agent/tracing"
@@ -65,8 +65,8 @@ func uname() (string, string, error) {
 }
 
 func machineID() string {
-	for _, p := range []string{"etc/machine-id", "var/lib/dbus/machine-id", "sys/devices/virtual/dmi/id/product_uuid"} {
-		payload, err := os.ReadFile(path.Join("/proc/1/root", p))
+	for _, p := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id", "/sys/devices/virtual/dmi/id/product_uuid"} {
+		payload, err := os.ReadFile(proc.HostPath(p))
 		if err != nil {
 			klog.Warningln("failed to read machine-id:", err)
 			continue
@@ -76,6 +76,15 @@ func machineID() string {
 		return id
 	}
 	return ""
+}
+
+func systemUUID() string {
+	payload, err := os.ReadFile(proc.HostPath("/sys/devices/virtual/dmi/id/product_uuid"))
+	if err != nil {
+		klog.Warningln("failed to read system-uuid:", err)
+		return ""
+	}
+	return strings.TrimSpace(string(payload))
 }
 
 func whitelistNodeExternalNetworks() {
@@ -119,11 +128,13 @@ func main() {
 	whitelistNodeExternalNetworks()
 
 	machineId := machineID()
+	systemUuid := systemUUID()
+
 	tracing.Init(machineId, hostname, version)
 	logs.Init(machineId, hostname, version)
 
 	registry := prometheus.NewRegistry()
-	registerer := prometheus.WrapRegistererWith(prometheus.Labels{"machine_id": machineId}, registry)
+	registerer := prometheus.WrapRegistererWith(prometheus.Labels{"machine_id": machineId, "system_uuid": systemUuid}, registry)
 
 	registerer.MustRegister(info("node_agent_info", version))
 
