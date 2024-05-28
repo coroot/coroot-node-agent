@@ -582,10 +582,10 @@ func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]string {
 		dnsReq := L7Requests[l7.ProtocolDNS]
 		c.dnsStats.Requests = prometheus.NewCounterVec(
 			prometheus.CounterOpts{Name: dnsReq.Name, Help: dnsReq.Help},
-			[]string{"request_type", "status"},
+			[]string{"request_type", "domain", "status"},
 		)
 	}
-	if m, _ := c.dnsStats.Requests.GetMetricWithLabelValues(t, status); m != nil {
+	if m, _ := c.dnsStats.Requests.GetMetricWithLabelValues(t, fqdn, status); m != nil {
 		m.Inc()
 	}
 	if r.Duration != 0 {
