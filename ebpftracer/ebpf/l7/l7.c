@@ -422,6 +422,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
             e->payload_size = ret;
             COPY_PAYLOAD(e->payload, ret, payload);
             send_event(ctx, e, k.pid, k.fd);
+            bpf_map_delete_elem(&active_l7_requests, &k);
             return 0;
         } else if (is_cassandra_response(payload, ret, &k.stream_id, &e->status)) {
             req = bpf_map_lookup_elem(&active_l7_requests, &k);
