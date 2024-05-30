@@ -45,9 +45,6 @@ int is_dns_response(char *buf, __u64 buf_size, __s16 *stream_id, __u32 *status) 
     if (h.bits0 & DNS_OPCODE) {
        return 0;
     }
-    if ((h.bits1 & DNS_Z)) {
-        return 0;
-    }
     h.qdcount = bpf_ntohs(h.qdcount);
     if (h.qdcount != 1) {
         return 0;
