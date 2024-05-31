@@ -435,6 +435,7 @@ func (c *Container) onFileOpen(pid uint32, fd uint64) {
 }
 
 func (c *Container) onListenOpen(pid uint32, addr netaddr.IPPort, safe bool) {
+	klog.Infof("TCP listen open pid=%d id=%s addr=%s", pid, c.id, addr)
 	if common.PortFilter.ShouldBeSkipped(addr.Port()) {
 		return
 	}
@@ -463,6 +464,7 @@ func (c *Container) onListenOpen(pid uint32, addr netaddr.IPPort, safe bool) {
 			if ips, err = proc.GetNsIps(ns); err != nil {
 				klog.Warningln(err)
 			} else {
+				klog.Infof("got IPs %s for %s", ips, nsId)
 				c.ipsByNs[nsId] = ips
 			}
 		}
@@ -471,6 +473,7 @@ func (c *Container) onListenOpen(pid uint32, addr netaddr.IPPort, safe bool) {
 }
 
 func (c *Container) onListenClose(pid uint32, addr netaddr.IPPort) {
+	klog.Infof("TCP listen close pid=%d id=%s addr=%s", pid, c.id, addr)
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if _, byAddr := c.listens[addr]; byAddr {
