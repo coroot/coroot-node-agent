@@ -39,6 +39,9 @@ func GetSockets(pid uint32) ([]Sock, error) {
 func readSockets(src string) ([]Sock, error) {
 	f, err := os.Open(src)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	defer f.Close()
