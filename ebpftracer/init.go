@@ -23,17 +23,18 @@ func readFds(pids []uint32) (files []file, socks []sock) {
 	for _, pid := range pids {
 		ns, err := proc.GetNetNs(pid)
 		if err != nil {
+			klog.Warningf("failed to get net ns for %d: %s", pid, err)
 			continue
 		}
 		nsId := ns.UniqueId()
 		sockets, ok := nss[nsId]
 		_ = ns.Close()
 		if !ok {
-			sockets = map[string]sock{}
-			nss[nsId] = sockets
 			if ss, err := proc.GetSockets(pid); err != nil {
-				klog.Warningln(err)
+				klog.Warningf("failed to get sockets for %d: %s", pid, err)
 			} else {
+				sockets = map[string]sock{}
+				nss[nsId] = sockets
 				for _, s := range ss {
 					sockets[s.Inode] = sock{Sock: s}
 				}
@@ -42,6 +43,7 @@ func readFds(pids []uint32) (files []file, socks []sock) {
 
 		fds, err := proc.ReadFds(pid)
 		if err != nil {
+			klog.Warningf("failed to read fds for %d: %s", pid, err)
 			continue
 		}
 		for _, fd := range fds {

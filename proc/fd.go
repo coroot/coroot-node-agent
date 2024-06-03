@@ -5,6 +5,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"k8s.io/klog/v2"
 )
 
 type Fd struct {
@@ -18,16 +20,23 @@ func ReadFds(pid uint32) ([]Fd, error) {
 	fdDir := Path(pid, "fd")
 	entries, err := os.ReadDir(fdDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	res := make([]Fd, 0, len(entries))
 	for _, entry := range entries {
 		fd, err := strconv.ParseUint(entry.Name(), 10, 64)
 		if err != nil {
+			klog.Warningf("failed to parse fd '%s': %s", entry.Name(), err)
 			continue
 		}
 		dest, err := os.Readlink(path.Join(fdDir, entry.Name()))
 		if err != nil {
+			if os.IsNotExist(err) {
+				klog.Warningf("failed to read link '%s': %s", entry.Name(), err)
+			}
 			continue
 		}
 		var socketInode string

@@ -1024,6 +1024,7 @@ func (c *Container) revalidateListens(now time.Time, actualListens map[netaddr.I
 		for pid := range c.processes {
 			fds, err := proc.ReadFds(pid)
 			if err != nil {
+				klog.Warningln(err)
 				continue
 			}
 			for _, fd := range fds {
