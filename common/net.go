@@ -17,14 +17,16 @@ var (
 )
 
 func init() {
-	if flags.ExternalNetworksWhitelist != nil {
-		for _, prefix := range *flags.ExternalNetworksWhitelist {
-			p, err := netaddr.ParseIPPrefix(prefix)
-			if err != nil {
-				klog.Fatalf("invalid network %s: %s", prefix, err)
-			}
-			ConnectionFilter.WhitelistPrefix(p)
+	klog.Infoln("whitelisted public IPs:", *flags.ExternalNetworksWhitelist)
+	for _, prefix := range *flags.ExternalNetworksWhitelist {
+		if prefix == "" {
+			continue
 		}
+		p, err := netaddr.ParseIPPrefix(prefix)
+		if err != nil {
+			klog.Fatalf("invalid network %s: %s", prefix, err)
+		}
+		ConnectionFilter.WhitelistPrefix(p)
 	}
 	if r := flags.EphemeralPortRange; r != nil && *r != "" {
 		klog.Infoln("ephemeral-port-range:", *r)
