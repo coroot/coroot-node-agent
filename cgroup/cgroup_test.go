@@ -55,6 +55,13 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 	assert.Equal(t, "73051af271105c07e1f493b34856a77e665e3b0b4fc72f76c807dfbffeb881bd", cg.ContainerId)
 	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
 
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/600/cgroup"))
+	assert.Nil(t, err)
+	assert.Equal(t, V1, cg.Version)
+	assert.Equal(t, "/system.slice/springboot.service", cg.Id)
+	assert.Equal(t, "/system.slice/springboot.service", cg.ContainerId)
+	assert.Equal(t, ContainerTypeSystemdService, cg.ContainerType)
+
 	baseCgroupPath = "/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podc83d0428_58af_41eb_8dba_b9e6eddffe7b.slice/docker-0e612005fd07e7f47e2cd07df99a2b4e909446814d71d0b5e4efc7159dd51252.scope"
 	defer func() {
 		baseCgroupPath = ""
