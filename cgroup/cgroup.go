@@ -105,7 +105,10 @@ func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
 			cg.subsystems[cgType] = path.Join(baseCgroupPath, parts[2])
 		}
 	}
-	if p := cg.subsystems["cpu"]; p != "" {
+	if p := cg.subsystems["name=systemd"]; p != "" {
+		cg.Id = p
+		cg.Version = V1
+	} else if p = cg.subsystems["cpu"]; p != "" {
 		cg.Id = p
 		cg.Version = V1
 	} else {

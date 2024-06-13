@@ -1,0 +1,11 @@
+11:freezer:/
+10:blkio:/init.scope
+9:hugetlb:/
+8:memory:/init.scope
+7:pids:/init.scope
+6:devices:/init.scope
+5:rdma:/
+4:cpuset:/
+3:net_cls,net_prio:/
+2:cpu,cpuacct:/
+1:name=systemd:/system.slice/springboot.service
