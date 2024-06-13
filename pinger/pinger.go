@@ -176,14 +176,15 @@ func receive(conn *net.IPConn) (*net.IPAddr, *icmp.Echo, time.Time, error) {
 		}
 		return nil, nil, ts, err
 	}
-
-	if ts, err = getTimestampFromOutOfBandData(oob, oobn); err != nil {
-		return nil, nil, ts, fmt.Errorf("failed to get RX timestamp: %s", err)
-	}
-
 	echo, err := extractEchoFromPacket(pktBuf, n)
 	if err != nil {
 		return nil, nil, ts, fmt.Errorf("failed to extract ICMP Echo from IPv4 packet %s: %s", ra, err)
+	}
+	if echo == nil {
+		return nil, nil, ts, nil
+	}
+	if ts, err = getTimestampFromOutOfBandData(oob, oobn); err != nil {
+		return nil, nil, ts, fmt.Errorf("failed to get RX timestamp: %s", err)
 	}
 	return ra, echo, ts, nil
 }
