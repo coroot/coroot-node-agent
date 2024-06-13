@@ -847,6 +847,12 @@ func (c *Container) ping() map[netaddr.IP]float64 {
 	}
 	targets := make([]netaddr.IP, 0, len(ips))
 	for ip := range ips {
+		if ip.IsLoopback() {
+			continue
+		}
+		if !ip.Is4() { // pinger doesn't support IPv6 yet
+			continue
+		}
 		targets = append(targets, ip)
 	}
 	rtt, err := pinger.Ping(netNs, selfNetNs, targets, pingTimeout)
