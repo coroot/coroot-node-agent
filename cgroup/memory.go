@@ -47,17 +47,13 @@ func (cg *Cgroup) memoryStatV1() (*MemoryStat, error) {
 }
 
 func (cg *Cgroup) memoryStatV2() (*MemoryStat, error) {
-	current, err := readUintFromFile(path.Join(cgRoot, cg.subsystems[""], "memory.current"))
-	if err != nil {
-		return nil, err
-	}
 	vars, err := readVariablesFromFile(path.Join(cgRoot, cg.subsystems[""], "memory.stat"))
 	if err != nil {
 		return nil, err
 	}
 	limit, _ := readUintFromFile(path.Join(cgRoot, cg.subsystems[""], "memory.max"))
 	return &MemoryStat{
-		RSS:   current - vars["file"],
+		RSS:   vars["anon"] + vars["file_mapped"],
 		Cache: vars["file"],
 		Limit: limit,
 	}, nil

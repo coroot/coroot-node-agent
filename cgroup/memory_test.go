@@ -25,14 +25,14 @@ func TestCgroup_MemoryStat(t *testing.T) {
 	cg, _ = NewFromProcessCgroupFile(path.Join("fixtures/proc/400/cgroup"))
 	stat, err = cg.MemoryStat()
 	assert.Nil(t, err)
-	assert.Equal(t, uint64(48648192-1044480), stat.RSS)
+	assert.Equal(t, uint64(44892160+0), stat.RSS)
 	assert.Equal(t, uint64(1044480), stat.Cache)
 	assert.Equal(t, uint64(0), stat.Limit)
 
 	cg, _ = NewFromProcessCgroupFile(path.Join("fixtures/proc/500/cgroup"))
 	stat, err = cg.MemoryStat()
 	assert.Nil(t, err)
-	assert.Equal(t, uint64(131047424-50835456), stat.RSS)
+	assert.Equal(t, uint64(75247616+4038656), stat.RSS)
 	assert.Equal(t, uint64(50835456), stat.Cache)
 	assert.Equal(t, uint64(4294967296), stat.Limit)
 
