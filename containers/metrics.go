@@ -47,7 +47,7 @@ var metrics = struct {
 	JvmSafepointSyncTime *prometheus.Desc
 	Ip2Fqdn              *prometheus.Desc
 }{
-	ContainerInfo: metric("container_info", "Meta information about the container", "image"),
+	ContainerInfo: metric("container_info", "Meta information about the container", "image", "systemd_triggered_by"),
 
 	Restarts: metric("container_restarts_total", "Number of times the container was restarted"),
 

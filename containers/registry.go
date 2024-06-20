@@ -410,6 +410,10 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 
 func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 	switch cg.ContainerType {
+	case cgroup.ContainerTypeSystemdService:
+		md := &ContainerMetadata{}
+		md.systemdTriggeredBy = SystemdTriggeredBy(cg.ContainerId)
+		return md, nil
 	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
 	default:
 		return &ContainerMetadata{}, nil
