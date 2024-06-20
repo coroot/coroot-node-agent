@@ -35,15 +35,16 @@ type ContainerNetwork struct {
 }
 
 type ContainerMetadata struct {
-	name        string
-	labels      map[string]string
-	volumes     map[string]string
-	logPath     string
-	image       string
-	logDecoder  logparser.Decoder
-	hostListens map[string][]netaddr.IPPort
-	networks    map[string]ContainerNetwork
-	env         map[string]string
+	name               string
+	labels             map[string]string
+	volumes            map[string]string
+	logPath            string
+	image              string
+	logDecoder         logparser.Decoder
+	hostListens        map[string][]netaddr.IPPort
+	networks           map[string]ContainerNetwork
+	env                map[string]string
+	systemdTriggeredBy string
 }
 
 type Delays struct {
@@ -225,8 +226,8 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
-	if c.metadata.image != "" {
-		ch <- gauge(metrics.ContainerInfo, 1, c.metadata.image)
+	if c.metadata.image != "" || c.metadata.systemdTriggeredBy != "" {
+		ch <- gauge(metrics.ContainerInfo, 1, c.metadata.image, c.metadata.systemdTriggeredBy)
 	}
 
 	ch <- counter(metrics.Restarts, float64(c.restarts))
