@@ -22,6 +22,7 @@ type Process struct {
 	cancelFunc context.CancelFunc
 
 	dotNetMonitor *DotNetMonitor
+	isGolangApp   bool
 
 	uprobes               []link.Link
 	goTlsUprobesChecked   bool

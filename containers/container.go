@@ -327,6 +327,9 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		if appType != "" {
 			appTypes[appType] = struct{}{}
 		}
+		if process.isGolangApp {
+			appTypes["golang"] = struct{}{}
+		}
 		switch {
 		case isJvm(cmdline):
 			jvm, jMetrics := jvmMetrics(pid)
@@ -1072,7 +1075,9 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 		p.openSslUprobesChecked = true
 	}
 	if !p.goTlsUprobesChecked {
-		p.uprobes = append(p.uprobes, tracer.AttachGoTlsUprobes(pid)...)
+		uprobes, isGolangApp := tracer.AttachGoTlsUprobes(pid)
+		p.isGolangApp = isGolangApp
+		p.uprobes = append(p.uprobes, uprobes...)
 		p.goTlsUprobesChecked = true
 	}
 }
