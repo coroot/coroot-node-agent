@@ -108,9 +108,10 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) []link.Link {
 	return links
 }
 
-func (t *Tracer) AttachGoTlsUprobes(pid uint32) []link.Link {
+func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
+	isGolangApp := false
 	if t.disableL7Tracing {
-		return nil
+		return nil, isGolangApp
 	}
 
 	path := proc.Path(pid, "exe")
@@ -133,24 +134,25 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) []link.Link {
 	bi, err := buildinfo.ReadFile(path)
 	if err != nil {
 		log("failed to read build info", err)
-		return nil
+		return nil, isGolangApp
 	}
+	isGolangApp = true
 
 	name, err = os.Readlink(path)
 	if err != nil {
 		log("failed to read name", err)
-		return nil
+		return nil, isGolangApp
 	}
 	version = strings.Replace(bi.GoVersion, "go", "v", 1)
 	if semver.Compare(version, minSupportedGoVersion) < 0 {
 		log(fmt.Sprintf("go_versions below %s are not supported", minSupportedGoVersion), nil)
-		return nil
+		return nil, isGolangApp
 	}
 
 	ef, err := elf.Open(path)
 	if err != nil {
 		log("failed to open as elf binary", err)
-		return nil
+		return nil, isGolangApp
 	}
 	defer ef.Close()
 
@@ -158,28 +160,28 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) []link.Link {
 	if err != nil {
 		if errors.Is(err, elf.ErrNoSymbols) {
 			log("no symbol section", nil)
-			return nil
+			return nil, isGolangApp
 		}
 		log("failed to read symbols", err)
-		return nil
+		return nil, isGolangApp
 	}
 
 	textSection := ef.Section(".text")
 	if textSection == nil {
 		log("no text section", nil)
-		return nil
+		return nil, isGolangApp
 	}
 	textSectionData, err := textSection.Data()
 	if err != nil {
 		log("failed to read text section", err)
-		return nil
+		return nil, isGolangApp
 	}
 	textSectionLen := uint64(len(textSectionData) - 1)
 
 	exe, err := link.OpenExecutable(path)
 	if err != nil {
 		log("failed to open executable", err)
-		return nil
+		return nil, isGolangApp
 	}
 
 	var links []link.Link
@@ -208,14 +210,14 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) []link.Link {
 			l, err := exe.Uprobe(s.Name, t.uprobes["go_crypto_tls_write_enter"], &link.UprobeOptions{Address: address})
 			if err != nil {
 				log("failed to attach write_enter uprobe", err)
-				return nil
+				return nil, isGolangApp
 			}
 			links = append(links, l)
 		case goTlsReadSymbol:
 			l, err := exe.Uprobe(s.Name, t.uprobes["go_crypto_tls_read_enter"], &link.UprobeOptions{Address: address})
 			if err != nil {
 				log("failed to attach read_enter uprobe", err)
-				return nil
+				return nil, isGolangApp
 			}
 			links = append(links, l)
 			sStart := s.Value - textSection.Addr
@@ -227,23 +229,23 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) []link.Link {
 			returnOffsets := getReturnOffsets(ef.Machine, sBytes)
 			if len(returnOffsets) == 0 {
 				log("failed to attach read_exit uprobe", fmt.Errorf("no return offsets found"))
-				return nil
+				return nil, isGolangApp
 			}
 			for _, offset := range returnOffsets {
 				l, err := exe.Uprobe(s.Name, t.uprobes["go_crypto_tls_read_exit"], &link.UprobeOptions{Address: address, Offset: uint64(offset)})
 				if err != nil {
 					log("failed to attach read_exit uprobe", err)
-					return nil
+					return nil, isGolangApp
 				}
 				links = append(links, l)
 			}
 		}
 	}
 	if len(links) == 0 {
-		return nil
+		return nil, isGolangApp
 	}
 	log("crypto/tls uprobes attached", nil)
-	return links
+	return links, isGolangApp
 }
 
 func getSslLibPathAndVersion(pid uint32) (string, string) {
