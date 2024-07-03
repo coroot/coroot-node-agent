@@ -23,6 +23,7 @@ const (
 	RemoteFlushDeadline = time.Minute
 	jobName             = "coroot-node-agent"
 	RemoteWriteTimeout  = 30 * time.Second
+	ProjectIdLabel      = "ProjectId"
 )
 
 func StartAgent(machineId string) error {
@@ -87,7 +88,10 @@ func StartAgent(machineId string) error {
 						model.AddressLabel:  model.LabelValue(*flags.ListenAddress),
 					},
 				},
-				Labels: model.LabelSet{model.JobLabel: jobName},
+				Labels: model.LabelSet{
+					model.JobLabel: jobName,
+					ProjectIdLabel: model.LabelValue(*flags.ApiKey),
+				},
 			},
 		},
 	}
