@@ -52,6 +52,7 @@ type Event struct {
 	DstAddr   netaddr.IPPort
 	Fd        uint64
 	Timestamp uint64
+	Duration  time.Duration
 	L7Request *l7.RequestData
 }
 
@@ -295,6 +296,7 @@ type procEvent struct {
 type tcpEvent struct {
 	Fd        uint64
 	Timestamp uint64
+	Duration  uint64
 	Type      EventType
 	Pid       uint32
 	SPort     uint16
@@ -388,6 +390,7 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 				DstAddr:   ipPort(v.DAddr, v.DPort),
 				Fd:        v.Fd,
 				Timestamp: v.Timestamp,
+				Duration:  time.Duration(v.Duration),
 			}
 		default:
 			continue
