@@ -92,6 +92,12 @@ type PidFd struct {
 	Fd  uint64
 }
 
+type ConnectionStats struct {
+	Count           int64
+	TotalTime       time.Duration
+	Retransmissions int64
+}
+
 type Container struct {
 	id       ContainerID
 	cgroup   *cgroup.Cgroup
@@ -110,12 +116,11 @@ type Container struct {
 	listens map[netaddr.IPPort]map[uint32]*ListenDetails
 	ipsByNs map[string][]netaddr.IP
 
-	connectsSuccessful map[AddrPair]int64           // dst:actual_dst -> count
-	connectsFailed     map[netaddr.IPPort]int64     // dst -> count
-	connectLastAttempt map[netaddr.IPPort]time.Time // dst -> time
+	connectsSuccessful map[AddrPair]*ConnectionStats // dst:actual_dst -> count
+	connectsFailed     map[netaddr.IPPort]int64      // dst -> count
+	connectLastAttempt map[netaddr.IPPort]time.Time  // dst -> time
 	connectionsActive  map[AddrPair]*ActiveConnection
 	connectionsByPidFd map[PidFd]*ActiveConnection
-	retransmits        map[AddrPair]int64 // dst:actual_dst -> count
 
 	l7Stats  L7Stats
 	dnsStats *L7Metrics
@@ -153,12 +158,11 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 		listens: map[netaddr.IPPort]map[uint32]*ListenDetails{},
 		ipsByNs: map[string][]netaddr.IP{},
 
-		connectsSuccessful: map[AddrPair]int64{},
+		connectsSuccessful: map[AddrPair]*ConnectionStats{},
 		connectsFailed:     map[netaddr.IPPort]int64{},
 		connectLastAttempt: map[netaddr.IPPort]time.Time{},
 		connectionsActive:  map[AddrPair]*ActiveConnection{},
 		connectionsByPidFd: map[PidFd]*ActiveConnection{},
-		retransmits:        map[AddrPair]int64{},
 		l7Stats:            L7Stats{},
 		dnsStats:           &L7Metrics{},
 
@@ -289,14 +293,15 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
-	for d, count := range c.connectsSuccessful {
-		ch <- counter(metrics.NetConnectsSuccessful, float64(count), d.src.String(), d.dst.String())
+	for d, stats := range c.connectsSuccessful {
+		ch <- counter(metrics.NetConnectionsSuccessful, float64(stats.Count), d.src.String(), d.dst.String())
+		ch <- counter(metrics.NetConnectionsTotalTime, stats.TotalTime.Seconds(), d.src.String(), d.dst.String())
+		if stats.Retransmissions > 0 {
+			ch <- counter(metrics.NetRetransmits, float64(stats.Retransmissions), d.src.String(), d.dst.String())
+		}
 	}
 	for dst, count := range c.connectsFailed {
-		ch <- counter(metrics.NetConnectsFailed, float64(count), dst.String())
-	}
-	for d, count := range c.retransmits {
-		ch <- counter(metrics.NetRetransmits, float64(count), d.src.String(), d.dst.String())
+		ch <- counter(metrics.NetConnectionsFailed, float64(count), dst.String())
 	}
 
 	connections := map[AddrPair]int{}
@@ -489,7 +494,7 @@ func (c *Container) onListenClose(pid uint32, addr netaddr.IPPort) {
 	}
 }
 
-func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPPort, timestamp uint64, failed bool) {
+func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPPort, timestamp uint64, failed bool, duration time.Duration) {
 	if common.PortFilter.ShouldBeSkipped(dst.Port()) {
 		return
 	}
@@ -521,7 +526,14 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 	if failed {
 		c.connectsFailed[dst]++
 	} else {
-		c.connectsSuccessful[AddrPair{src: dst, dst: *actualDst}]++
+		key := AddrPair{src: dst, dst: *actualDst}
+		stats := c.connectsSuccessful[key]
+		if stats == nil {
+			stats = &ConnectionStats{}
+			c.connectsSuccessful[key] = stats
+		}
+		stats.Count++
+		stats.TotalTime += duration
 		connection := &ActiveConnection{
 			Dest:       dst,
 			ActualDest: *actualDst,
@@ -682,14 +694,20 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	return nil
 }
 
-func (c *Container) onRetransmit(srcDst AddrPair) bool {
+func (c *Container) onRetransmission(srcDst AddrPair) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	conn, ok := c.connectionsActive[srcDst]
 	if !ok {
 		return false
 	}
-	c.retransmits[AddrPair{src: srcDst.dst, dst: conn.ActualDest}]++
+	key := AddrPair{src: srcDst.dst, dst: conn.ActualDest}
+	stats := c.connectsSuccessful[key]
+	if stats == nil {
+		stats = &ConnectionStats{}
+		c.connectsSuccessful[key] = stats
+	}
+	stats.Retransmissions++
 	return true
 }
 
@@ -985,11 +1003,6 @@ func (c *Container) gc(now time.Time) {
 			for d := range c.connectsSuccessful {
 				if d.src == dst {
 					delete(c.connectsSuccessful, d)
-				}
-			}
-			for d := range c.retransmits {
-				if d.src == dst {
-					delete(c.retransmits, d)
 				}
 			}
 			c.l7Stats.delete(dst)

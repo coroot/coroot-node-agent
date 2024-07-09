@@ -3,6 +3,7 @@
 struct tcp_event {
     __u64 fd;
     __u64 timestamp;
+    __u64 duration;
     __u32 type;
     __u32 pid;
     __u16 sport;
@@ -53,12 +54,19 @@ struct sk_info {
     __u64 fd;
     __u32 pid;
 };
+
+struct conn_info {
+    __u64 fd;
+    __u64 ts;
+    __u32 pid;
+};
+
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(key_size, sizeof(void *));
-    __uint(value_size, sizeof(struct sk_info));
+    __uint(value_size, sizeof(struct conn_info));
     __uint(max_entries, 10240);
-} sk_info SEC(".maps");
+} conn_info SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
@@ -86,20 +94,22 @@ int inet_sock_set_state(void *ctx)
         if (!fdp) {
             return 0;
         }
-        struct sk_info i = {};
+        struct conn_info i = {};
         i.pid = pid;
+        i.ts = bpf_ktime_get_ns();
         i.fd = *fdp;
         bpf_map_delete_elem(&fd_by_pid_tgid, &id);
-        bpf_map_update_elem(&sk_info, &args.skaddr, &i, BPF_ANY);
+        bpf_map_update_elem(&conn_info, &args.skaddr, &i, BPF_ANY);
         return 0;
     }
 
     __u64 fd = 0;
     __u32 type = 0;
     __u64 timestamp = 0;
+    __u64 duration = 0;
     void *map = &tcp_connect_events;
     if (args.oldstate == BPF_TCP_SYN_SENT) {
-        struct sk_info *i = bpf_map_lookup_elem(&sk_info, &args.skaddr);
+        struct conn_info *i = bpf_map_lookup_elem(&conn_info, &args.skaddr);
         if (!i) {
             return 0;
         }
@@ -113,9 +123,10 @@ int inet_sock_set_state(void *ctx)
         } else if (args.newstate == BPF_TCP_CLOSE) {
             type = EVENT_TYPE_CONNECTION_ERROR;
         }
+        duration = bpf_ktime_get_ns() - i->ts;
         pid = i->pid;
         fd = i->fd;
-        bpf_map_delete_elem(&sk_info, &args.skaddr);
+        bpf_map_delete_elem(&conn_info, &args.skaddr);
     }
     if (args.oldstate == BPF_TCP_ESTABLISHED && (args.newstate == BPF_TCP_FIN_WAIT1 || args.newstate == BPF_TCP_CLOSE_WAIT)) {
         pid = 0;
@@ -136,6 +147,7 @@ int inet_sock_set_state(void *ctx)
 
     struct tcp_event e = {};
     e.type = type;
+    e.duration = duration;
     e.timestamp = timestamp;
     e.pid = pid;
     e.sport = args.sport;

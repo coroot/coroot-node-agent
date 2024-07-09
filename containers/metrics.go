@@ -28,12 +28,13 @@ var metrics = struct {
 	DiskWriteOps   *prometheus.Desc
 	DiskWriteBytes *prometheus.Desc
 
-	NetListenInfo         *prometheus.Desc
-	NetConnectsSuccessful *prometheus.Desc
-	NetConnectsFailed     *prometheus.Desc
-	NetConnectionsActive  *prometheus.Desc
-	NetRetransmits        *prometheus.Desc
-	NetLatency            *prometheus.Desc
+	NetListenInfo            *prometheus.Desc
+	NetConnectionsSuccessful *prometheus.Desc
+	NetConnectionsTotalTime  *prometheus.Desc
+	NetConnectionsFailed     *prometheus.Desc
+	NetConnectionsActive     *prometheus.Desc
+	NetRetransmits           *prometheus.Desc
+	NetLatency               *prometheus.Desc
 
 	LogMessages *prometheus.Desc
 
@@ -70,12 +71,13 @@ var metrics = struct {
 	DiskWriteOps:   metric("container_resources_disk_writes_total", "Total number of writes completed successfully by the container", "mount_point", "device", "volume"),
 	DiskWriteBytes: metric("container_resources_disk_written_bytes_total", "Total number of bytes written to the disk by the container", "mount_point", "device", "volume"),
 
-	NetListenInfo:         metric("container_net_tcp_listen_info", "Listen address of the container", "listen_addr", "proxy"),
-	NetConnectsSuccessful: metric("container_net_tcp_successful_connects_total", "Total number of successful TCP connects", "destination", "actual_destination"),
-	NetConnectsFailed:     metric("container_net_tcp_failed_connects_total", "Total number of failed TCP connects", "destination"),
-	NetConnectionsActive:  metric("container_net_tcp_active_connections", "Number of active outbound connections used by the container", "destination", "actual_destination"),
-	NetRetransmits:        metric("container_net_tcp_retransmits_total", "Total number of retransmitted TCP segments", "destination", "actual_destination"),
-	NetLatency:            metric("container_net_latency_seconds", "Round-trip time between the container and a remote IP", "destination_ip"),
+	NetListenInfo:            metric("container_net_tcp_listen_info", "Listen address of the container", "listen_addr", "proxy"),
+	NetConnectionsSuccessful: metric("container_net_tcp_successful_connects_total", "Total number of successful TCP connects", "destination", "actual_destination"),
+	NetConnectionsTotalTime:  metric("container_net_tcp_connection_time_seconds_total", "Time spent on TCP connections", "destination", "actual_destination"),
+	NetConnectionsFailed:     metric("container_net_tcp_failed_connects_total", "Total number of failed TCP connects", "destination"),
+	NetConnectionsActive:     metric("container_net_tcp_active_connections", "Number of active outbound connections used by the container", "destination", "actual_destination"),
+	NetRetransmits:           metric("container_net_tcp_retransmits_total", "Total number of retransmitted TCP segments", "destination", "actual_destination"),
+	NetLatency:               metric("container_net_latency_seconds", "Round-trip time between the container and a remote IP", "destination_ip"),
 
 	LogMessages: metric("container_log_messages_total", "Number of messages grouped by the automatically extracted repeated pattern", "source", "level", "pattern_hash", "sample"),
 
