@@ -29,16 +29,17 @@ type EventType uint32
 type EventReason uint32
 
 const (
-	EventTypeProcessStart    EventType = 1
-	EventTypeProcessExit     EventType = 2
-	EventTypeConnectionOpen  EventType = 3
-	EventTypeConnectionClose EventType = 4
-	EventTypeConnectionError EventType = 5
-	EventTypeListenOpen      EventType = 6
-	EventTypeListenClose     EventType = 7
-	EventTypeFileOpen        EventType = 8
-	EventTypeTCPRetransmit   EventType = 9
-	EventTypeL7Request       EventType = 10
+	EventTypeProcessStart     EventType = 1
+	EventTypeProcessExit      EventType = 2
+	EventTypeConnectionOpen   EventType = 3
+	EventTypeConnectionClose  EventType = 4
+	EventTypeConnectionError  EventType = 5
+	EventTypeListenOpen       EventType = 6
+	EventTypeListenClose      EventType = 7
+	EventTypeFileOpen         EventType = 8
+	EventTypeTCPRetransmit    EventType = 9
+	EventTypeL7Request        EventType = 10
+	EventTypePythonThreadLock EventType = 11
 
 	EventReasonNone    EventReason = 0
 	EventReasonOOMKill EventReason = 1
@@ -59,10 +60,11 @@ type Event struct {
 type perfMapType uint8
 
 const (
-	perfMapTypeProcEvents perfMapType = 1
-	perfMapTypeTCPEvents  perfMapType = 2
-	perfMapTypeFileEvents perfMapType = 3
-	perfMapTypeL7Events   perfMapType = 4
+	perfMapTypeProcEvents         perfMapType = 1
+	perfMapTypeTCPEvents          perfMapType = 2
+	perfMapTypeFileEvents         perfMapType = 3
+	perfMapTypeL7Events           perfMapType = 4
+	perfMapTypePythonThreadEvents perfMapType = 5
 )
 
 type Tracer struct {
@@ -201,6 +203,7 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		{name: "tcp_connect_events", typ: perfMapTypeTCPEvents, perCPUBufferSizePages: 8},
 		{name: "tcp_retransmit_events", typ: perfMapTypeTCPEvents, perCPUBufferSizePages: 4},
 		{name: "file_events", typ: perfMapTypeFileEvents, perCPUBufferSizePages: 4},
+		{name: "python_thread_events", typ: perfMapTypePythonThreadEvents, perCPUBufferSizePages: 4},
 	}
 
 	if !t.disableL7Tracing {
@@ -324,6 +327,12 @@ type l7Event struct {
 	PayloadSize         uint64
 }
 
+type pythonThreadEvent struct {
+	Type     EventType
+	Pid      uint32
+	Duration uint64
+}
+
 func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapType) {
 	for {
 		rec, err := r.Read()
@@ -391,6 +400,17 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 				Fd:        v.Fd,
 				Timestamp: v.Timestamp,
 				Duration:  time.Duration(v.Duration),
+			}
+		case perfMapTypePythonThreadEvents:
+			v := &pythonThreadEvent{}
+			if err := binary.Read(bytes.NewBuffer(rec.RawSample), binary.LittleEndian, v); err != nil {
+				klog.Warningln("failed to read msg:", err)
+				continue
+			}
+			event = Event{
+				Type:     v.Type,
+				Pid:      v.Pid,
+				Duration: time.Duration(v.Duration),
 			}
 		default:
 			continue

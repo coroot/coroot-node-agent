@@ -206,7 +206,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					}
 				}
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					p := c.onProcessStart(e.Pid)
+					p := c.onProcessStart(e.Pid, r.tracer)
 					if r.processInfoCh != nil && p != nil {
 						r.processInfoCh <- ProcessInfo{Pid: p.Pid, ContainerId: c.id, StartedAt: p.StartedAt}
 					}
@@ -271,6 +271,10 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 						r.ip2fqdn[ip] = fqdn
 					}
 					r.ip2fqdnLock.Unlock()
+				}
+			case ebpftracer.EventTypePythonThreadLock:
+				if c := r.containersByPid[e.Pid]; c != nil {
+					c.pythonThreadLockWaitTime += e.Duration
 				}
 			}
 		}
