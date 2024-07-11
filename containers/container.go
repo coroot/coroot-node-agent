@@ -125,7 +125,8 @@ type Container struct {
 	l7Stats  L7Stats
 	dnsStats *L7Metrics
 
-	oomKills int
+	oomKills                 int
+	pythonThreadLockWaitTime time.Duration
 
 	mounts map[string]proc.MountInfo
 
@@ -352,6 +353,10 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	for appType := range appTypes {
 		ch <- gauge(metrics.ApplicationType, 1, appType)
 	}
+	if c.pythonThreadLockWaitTime > 0 {
+		ch <- counter(metrics.PythonThreadLockWaitTime, c.pythonThreadLockWaitTime.Seconds())
+	}
+
 	if c.dnsStats.Requests != nil {
 		c.dnsStats.Requests.Collect(ch)
 	}
@@ -367,7 +372,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (c *Container) onProcessStart(pid uint32) *Process {
+func (c *Container) onProcessStart(pid uint32, trace *ebpftracer.Tracer) *Process {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	stats, err := TaskstatsPID(pid)
@@ -375,7 +380,8 @@ func (c *Container) onProcessStart(pid uint32) *Process {
 		return nil
 	}
 	c.zombieAt = time.Time{}
-	p := NewProcess(pid, stats)
+	p := NewProcess(pid, stats, trace)
+
 	if p == nil {
 		return nil
 	}
