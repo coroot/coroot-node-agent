@@ -79,11 +79,15 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) []link.Link {
 	}
 	progs := []prog{
 		{symbol: "SSL_write", uprobe: writeEnter},
-		{symbol: "SSL_write_ex", uprobe: writeEnter},
 		{symbol: "SSL_read", uprobe: readEnter},
-		{symbol: "SSL_read_ex", uprobe: readExEnter},
 		{symbol: "SSL_read", uretprobe: readExit},
-		{symbol: "SSL_read_ex", uretprobe: readExit},
+	}
+	if semver.Compare(version, "v1.1.1") >= 0 {
+		progs = append(progs, []prog{
+			{symbol: "SSL_write_ex", uprobe: writeEnter},
+			{symbol: "SSL_read_ex", uprobe: readExEnter},
+			{symbol: "SSL_read_ex", uretprobe: readExit},
+		}...)
 	}
 	for _, p := range progs {
 		if p.uprobe != "" {
