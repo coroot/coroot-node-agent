@@ -77,6 +77,9 @@ type ActiveConnection struct {
 	Timestamp  uint64
 	Closed     time.Time
 
+	BytesSent     uint64
+	BytesReceived uint64
+
 	http2Parser    *l7.Http2Parser
 	postgresParser *l7.PostgresParser
 	mysqlParser    *l7.MysqlParser
@@ -93,9 +96,11 @@ type PidFd struct {
 }
 
 type ConnectionStats struct {
-	Count           int64
+	Count           uint64
 	TotalTime       time.Duration
-	Retransmissions int64
+	Retransmissions uint64
+	BytesSent       uint64
+	BytesReceived   uint64
 }
 
 type Container struct {
@@ -136,12 +141,14 @@ type Container struct {
 	nsConntrack   *Conntrack
 	lbConntracks  []*Conntrack
 
+	registry *Registry
+
 	lock sync.RWMutex
 
 	done chan struct{}
 }
 
-func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, hostConntrack *Conntrack, pid uint32) (*Container, error) {
+func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, hostConntrack *Conntrack, pid uint32, registry *Registry) (*Container, error) {
 	netNs, err := proc.GetNetNs(pid)
 	if err != nil {
 		return nil, err
@@ -172,6 +179,8 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 		logParsers: map[string]*LogParser{},
 
 		hostConntrack: hostConntrack,
+
+		registry: registry,
 
 		done: make(chan struct{}),
 	}
@@ -228,6 +237,8 @@ func (c *Container) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *Container) Collect(ch chan<- prometheus.Metric) {
+	c.registry.updateTrafficStatsIfNecessary()
+
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
@@ -300,6 +311,8 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		if stats.Retransmissions > 0 {
 			ch <- counter(metrics.NetRetransmits, float64(stats.Retransmissions), d.src.String(), d.dst.String())
 		}
+		ch <- counter(metrics.NetBytesSent, float64(stats.BytesSent), d.src.String(), d.dst.String())
+		ch <- counter(metrics.NetBytesReceived, float64(stats.BytesReceived), d.src.String(), d.dst.String())
 	}
 	for dst, count := range c.connectsFailed {
 		ch <- counter(metrics.NetConnectionsFailed, float64(count), dst.String())
@@ -372,7 +385,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (c *Container) onProcessStart(pid uint32, trace *ebpftracer.Tracer) *Process {
+func (c *Container) onProcessStart(pid uint32) *Process {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	stats, err := TaskstatsPID(pid)
@@ -380,7 +393,7 @@ func (c *Container) onProcessStart(pid uint32, trace *ebpftracer.Tracer) *Proces
 		return nil
 	}
 	c.zombieAt = time.Time{}
-	p := NewProcess(pid, stats, trace)
+	p := NewProcess(pid, stats, c.registry.tracer)
 
 	if p == nil {
 		return nil
@@ -583,15 +596,60 @@ func (c *Container) getActualDestination(p *Process, src, dst netaddr.IPPort) (*
 	return nil, nil
 }
 
-func (c *Container) onConnectionClose(srcDst AddrPair) bool {
+func (c *Container) onConnectionClose(e ebpftracer.Event) bool {
+	srcDst := AddrPair{src: e.SrcAddr, dst: e.DstAddr}
+	c.lock.Lock()
+	conn, ok := c.connectionsActive[srcDst]
+	c.lock.Unlock()
+	if conn != nil {
+		if conn.Closed.IsZero() {
+			if e.Pid == 0 && e.Fd == 0 {
+				stats, err := c.registry.tracer.GetAndDeleteTCPConnection(conn.Pid, conn.Fd)
+				if err != nil {
+					klog.Warningln(c.id, conn.Pid, conn.Fd, conn.ActualDest, err)
+				} else {
+					c.lock.Lock()
+					c.updateConnectionTrafficStats(conn, stats.BytesSent, stats.BytesReceived)
+					c.lock.Unlock()
+				}
+			} else if e.TrafficStats != nil {
+				c.lock.Lock()
+				c.updateConnectionTrafficStats(conn, e.TrafficStats.BytesSent, e.TrafficStats.BytesReceived)
+				c.lock.Unlock()
+			}
+			conn.Closed = time.Now()
+		}
+	}
+	return ok
+}
+
+func (c *Container) updateTrafficStats(u *TrafficStatsUpdate) {
+	if u == nil {
+		return
+	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	conn := c.connectionsActive[srcDst]
-	if conn == nil {
-		return false
+	c.updateConnectionTrafficStats(c.connectionsByPidFd[PidFd{Pid: u.Pid, Fd: u.FD}], u.BytesSent, u.BytesReceived)
+}
+
+func (c *Container) updateConnectionTrafficStats(ac *ActiveConnection, sent, received uint64) {
+	if ac == nil {
+		return
 	}
-	conn.Closed = time.Now()
-	return true
+	key := AddrPair{src: ac.Dest, dst: ac.ActualDest}
+	stats := c.connectsSuccessful[key]
+	if stats == nil {
+		stats = &ConnectionStats{}
+		c.connectsSuccessful[key] = stats
+	}
+	if sent > ac.BytesSent {
+		stats.BytesSent += sent - ac.BytesSent
+	}
+	if received > ac.BytesReceived {
+		stats.BytesReceived += received - ac.BytesReceived
+	}
+	ac.BytesSent = sent
+	ac.BytesReceived = received
 }
 
 func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]string {

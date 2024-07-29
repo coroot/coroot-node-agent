@@ -20,6 +20,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const MinTrafficStatsUpdateInterval = 5 * time.Second
+
 var (
 	selfNetNs         = netns.None()
 	hostNetNsId       = netns.None().UniqueId()
@@ -48,6 +50,10 @@ type Registry struct {
 	ip2fqdnLock          sync.Mutex
 
 	processInfoCh chan<- ProcessInfo
+
+	trafficStatsLastUpdated time.Time
+	trafficStatsLock        sync.Mutex
+	trafficStatsUpdateCh    chan *TrafficStatsUpdate
 }
 
 func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh chan<- ProcessInfo) (*Registry, error) {
@@ -106,6 +112,8 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh 
 		processInfoCh: processInfoCh,
 
 		tracer: ebpftracer.NewTracer(kernelVersion, *flags.DisableL7Tracing),
+
+		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate),
 	}
 	if err = reg.Register(r); err != nil {
 		return nil, err
@@ -188,6 +196,13 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				}
 			}
 			r.ip2fqdnLock.Unlock()
+		case u := <-r.trafficStatsUpdateCh:
+			if u == nil {
+				continue
+			}
+			if c := r.containersByPid[u.Pid]; c != nil {
+				c.updateTrafficStats(u)
+			}
 		case e, more := <-ch:
 			if !more {
 				return
@@ -206,7 +221,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					}
 				}
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					p := c.onProcessStart(e.Pid, r.tracer)
+					p := c.onProcessStart(e.Pid)
 					if r.processInfoCh != nil && p != nil {
 						r.processInfoCh <- ProcessInfo{Pid: p.Pid, ContainerId: c.id, StartedAt: p.StartedAt}
 					}
@@ -247,10 +262,15 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					klog.Infoln("TCP connection error from unknown container", e)
 				}
 			case ebpftracer.EventTypeConnectionClose:
-				srcDst := AddrPair{src: e.SrcAddr, dst: e.DstAddr}
-				for _, c := range r.containersById {
-					if c.onConnectionClose(srcDst) {
-						break
+				if e.Pid != 0 && e.Fd != 0 {
+					if c := r.containersByPid[e.Pid]; c != nil {
+						c.onConnectionClose(e)
+					}
+				} else {
+					for _, c := range r.containersById {
+						if c.onConnectionClose(e) {
+							break
+						}
 					}
 				}
 			case ebpftracer.EventTypeTCPRetransmit:
@@ -340,7 +360,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		r.containersByCgroupId[cg.Id] = c
 		return c
 	}
-	c, err := NewContainer(id, cg, md, r.hostConntrack, pid)
+	c, err := NewContainer(id, cg, md, r.hostConntrack, pid, r)
 	if err != nil {
 		klog.Warningf("failed to create container pid=%d cg=%s id=%s: %s", pid, cg.Id, id, err)
 		return nil
@@ -355,6 +375,31 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 	r.containersByCgroupId[cg.Id] = c
 	r.containersById[id] = c
 	return c
+}
+
+func (r *Registry) updateTrafficStatsIfNecessary() {
+	r.trafficStatsLock.Lock()
+	defer r.trafficStatsLock.Unlock()
+
+	if time.Now().Sub(r.trafficStatsLastUpdated) < MinTrafficStatsUpdateInterval {
+		return
+	}
+	iter := r.tracer.ActiveConnectionsIterator()
+	cid := ebpftracer.ConnectionId{}
+	stats := ebpftracer.Connection{}
+	for iter.Next(&cid, &stats) {
+		r.trafficStatsUpdateCh <- &TrafficStatsUpdate{
+			Pid:           cid.PID,
+			FD:            cid.FD,
+			BytesSent:     stats.BytesSent,
+			BytesReceived: stats.BytesReceived,
+		}
+	}
+	if err := iter.Err(); err != nil {
+		klog.Warningln(err)
+	}
+	r.trafficStatsUpdateCh <- nil
+	r.trafficStatsLastUpdated = time.Now()
 }
 
 func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
@@ -445,4 +490,11 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 		containerdErr = err
 	}
 	return nil, fmt.Errorf("failed to interact with dockerd (%s) or with containerd (%s)", dockerdErr, containerdErr)
+}
+
+type TrafficStatsUpdate struct {
+	Pid           uint32
+	FD            uint64
+	BytesSent     uint64
+	BytesReceived uint64
 }
