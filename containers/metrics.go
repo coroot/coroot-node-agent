@@ -35,6 +35,8 @@ var metrics = struct {
 	NetConnectionsActive     *prometheus.Desc
 	NetRetransmits           *prometheus.Desc
 	NetLatency               *prometheus.Desc
+	NetBytesSent             *prometheus.Desc
+	NetBytesReceived         *prometheus.Desc
 
 	LogMessages *prometheus.Desc
 
@@ -81,6 +83,8 @@ var metrics = struct {
 	NetConnectionsActive:     metric("container_net_tcp_active_connections", "Number of active outbound connections used by the container", "destination", "actual_destination"),
 	NetRetransmits:           metric("container_net_tcp_retransmits_total", "Total number of retransmitted TCP segments", "destination", "actual_destination"),
 	NetLatency:               metric("container_net_latency_seconds", "Round-trip time between the container and a remote IP", "destination_ip"),
+	NetBytesSent:             metric("container_net_tcp_bytes_sent_total", "Total number of bytes sent to the peer", "destination", "actual_destination"),
+	NetBytesReceived:         metric("container_net_tcp_bytes_received_total", "Total number of bytes received from the peer", "destination", "actual_destination"),
 
 	LogMessages: metric("container_log_messages_total", "Number of messages grouped by the automatically extracted repeated pattern", "source", "level", "pattern_hash", "sample"),
 

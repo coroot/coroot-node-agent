@@ -16,20 +16,20 @@ import (
 )
 
 var (
-	conn        *dbus.Conn
+	dbusConn    *dbus.Conn
 	dbusTimeout = time.Second
 )
 
 func init() {
 	var err error
-	conn, err = dbus.NewConnection(func() (*gdbus.Conn, error) {
+	dbusConn, err = dbus.NewConnection(func() (*gdbus.Conn, error) {
 		c, err := gdbus.Dial("unix:path=" + proc.HostPath("/run/systemd/private"))
 		if err != nil {
 			return nil, err
 		}
 		methods := []gdbus.Auth{gdbus.AuthExternal(strconv.Itoa(os.Getuid()))}
 		if err = c.Auth(methods); err != nil {
-			conn.Close()
+			dbusConn.Close()
 			return nil, err
 		}
 		return c, nil
@@ -40,14 +40,14 @@ func init() {
 }
 
 func SystemdTriggeredBy(id string) string {
-	if conn == nil {
+	if dbusConn == nil {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), dbusTimeout)
 	defer cancel()
 	parts := strings.Split(id, "/")
 	unit := parts[len(parts)-1]
-	if prop, _ := conn.GetUnitPropertyContext(ctx, unit, "TriggeredBy"); prop != nil {
+	if prop, _ := dbusConn.GetUnitPropertyContext(ctx, unit, "TriggeredBy"); prop != nil {
 		if values, _ := prop.Value.Value().([]string); len(values) > 0 {
 			return values[0]
 		}

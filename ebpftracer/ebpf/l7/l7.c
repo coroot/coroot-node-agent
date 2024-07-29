@@ -89,7 +89,7 @@ struct read_args {
 };
 
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(key_size, sizeof(__u64));
     __uint(value_size, sizeof(struct read_args));
     __uint(max_entries, 10240);
@@ -163,26 +163,15 @@ struct user_msghdr {
 };
 
 static inline __attribute__((__always_inline__))
-void send_event(void *ctx, struct l7_event *e, __u32 pid, __u64 fd) {
-    struct sk_info sk = {};
-    sk.pid = pid;
-    sk.fd = fd;
-    __u64 *timestamp = bpf_map_lookup_elem(&connection_timestamps, &sk);
-    if (timestamp) {
-        if (*timestamp == 0) {
-            return;
-        }
-        e->connection_timestamp = *timestamp;
-    } else {
-        e->connection_timestamp = 0;
-    }
-    e->fd = fd;
-    e->pid = pid;
+void send_event(void *ctx, struct l7_event *e, struct connection_id cid, struct connection *conn) {
+    e->connection_timestamp = conn->timestamp;
+    e->fd = cid.fd;
+    e->pid = cid.pid;
     bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
 }
 
 static inline __attribute__((__always_inline__))
-__u64 read_iovec(char *iovec, __u64 iovlen, __u64 ret, char *buf) {
+__u64 read_iovec(char *iovec, __u64 iovlen, __u64 ret, char *buf, __u64 *total_size) {
     struct iovec iov = {};
     __u64 max = (ret) ? MIN(ret, MAX_PAYLOAD_SIZE) : MAX_PAYLOAD_SIZE;
     __u64 offset = 0;
@@ -198,15 +187,15 @@ __u64 read_iovec(char *iovec, __u64 iovlen, __u64 ret, char *buf) {
         if (iov.size <= 0) {
             continue;
         }
-        size = MIN(iov.size, max-offset);
-        TRUNCATE_PAYLOAD_SIZE(size);
-        TRUNCATE_PAYLOAD_SIZE(offset);
-        if (bpf_probe_read(buf + offset, size, (void *)iov.buf)) {
-            return 0;
-        }
-        offset += size;
-        if (offset >= max) {
-            break;
+        *total_size += iov.size;
+        if (offset < max) {
+            size = MIN(iov.size, max-offset);
+            TRUNCATE_PAYLOAD_SIZE(size);
+            TRUNCATE_PAYLOAD_SIZE(offset);
+            if (bpf_probe_read(buf + offset, size, (void *)iov.buf)) {
+                return 0;
+            }
+            offset += size;
         }
     }
     return offset;
@@ -216,6 +205,15 @@ static inline __attribute__((__always_inline__))
 int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, __u64 iovlen) {
     __u64 id = bpf_get_current_pid_tgid();
     __u32 zero = 0;
+    struct connection_id cid = {};
+    cid.pid = id >> 32;
+    cid.fd = fd;
+    __u64 total_size = size;
+
+    struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
+    if (!conn) {
+        return 0;
+    }
 
     char* payload = buf;
     if (iovlen) {
@@ -223,10 +221,15 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         if (!payload) {
             return 0;
         }
-        size = read_iovec(buf, iovlen, 0, payload);
+        total_size = 0;
+        size = read_iovec(buf, iovlen, 0, payload, &total_size);
     }
     if (!size) {
         return 0;
+    }
+
+    if (!is_tls) {
+        __sync_fetch_and_add(&conn->bytes_sent, total_size);
     }
 
     struct l7_request *req = bpf_map_lookup_elem(&l7_request_heap, &zero);
@@ -239,8 +242,8 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     req->ns = 0;
     req->payload_size = size;
     struct l7_request_key k = {};
-    k.pid = id >> 32;
-    k.fd = fd;
+    k.pid = cid.pid;
+    k.fd = cid.fd;
     k.is_tls = is_tls;
     k.stream_id = -1;
 
@@ -256,7 +259,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
             e->method = METHOD_STATEMENT_CLOSE;
             e->payload_size = size;
             COPY_PAYLOAD(e->payload, size, payload);
-            send_event(ctx, e, k.pid, k.fd);
+            send_event(ctx, e, cid, conn);
             return 0;
         }
         req->protocol = PROTOCOL_POSTGRES;
@@ -274,7 +277,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
             e->method = METHOD_STATEMENT_CLOSE;
             e->payload_size = size;
             COPY_PAYLOAD(e->payload, size, payload);
-            send_event(ctx, e, k.pid, k.fd);
+            send_event(ctx, e, cid, conn);
             return 0;
         }
         req->protocol = PROTOCOL_MYSQL;
@@ -287,7 +290,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         }
         e->protocol = PROTOCOL_RABBITMQ;
         e->method = METHOD_PRODUCE;
-        send_event(ctx, e, k.pid, k.fd);
+        send_event(ctx, e, cid, conn);
         return 0;
     } else if (nats_method(payload, size) == METHOD_PRODUCE) {
         struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
@@ -296,7 +299,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         }
         e->protocol = PROTOCOL_NATS;
         e->method = METHOD_PRODUCE;
-        send_event(ctx, e, k.pid, k.fd);
+        send_event(ctx, e, cid, conn);
         return 0;
     } else if (is_cassandra_request(payload, size, &k.stream_id)) {
         req->protocol = PROTOCOL_CASSANDRA;
@@ -316,7 +319,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         e->duration = bpf_ktime_get_ns();
         e->payload_size = size;
         COPY_PAYLOAD(e->payload, size, payload);
-        send_event(ctx, e, k.pid, k.fd);
+        send_event(ctx, e, cid, conn);
         return 0;
     } else if (is_dubbo2_request(payload, size)) {
         req->protocol = PROTOCOL_DUBBO2;
@@ -336,7 +339,16 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
 }
 
 static inline __attribute__((__always_inline__))
-int trace_enter_read(__u64 id, __u64 fd, char *buf, __u64 *ret, __u64 iovlen) {
+int trace_enter_read(__u64 id, __u32 pid, __u64 fd, char *buf, __u64 *ret, __u64 iovlen) {
+    struct connection_id cid = {};
+    cid.pid = pid;
+    cid.fd = fd;
+
+    struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
+    if (!conn) {
+        return 0;
+    }
+
     struct read_args args = {};
     args.fd = fd;
     args.buf = buf;
@@ -352,10 +364,17 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     if (!args) {
         return 0;
     }
-
+    struct connection_id cid = {};
+    cid.pid = pid;
+    cid.fd = args->fd;
+    struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
+    if (!conn) {
+        bpf_map_delete_elem(&active_reads, &id);
+        return 0;
+    }
     struct l7_request_key k = {};
-    k.pid = pid;
-    k.fd = args->fd;
+    k.pid = cid.pid;
+    k.fd = cid.fd;
     k.is_tls = is_tls;
     k.stream_id = -1;
 
@@ -372,7 +391,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
             return 0;
         }
     }
-
+    __u64 total_size = ret;
     int zero = 0;
     char* payload = args->buf;
     if (args->iovlen) {
@@ -380,10 +399,15 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         if (!payload) {
             return 0;
         }
-        ret = read_iovec(args->buf, args->iovlen, ret, payload);
+        total_size = 0;
+        ret = read_iovec(args->buf, args->iovlen, ret, payload, &total_size);
         if (!ret) {
             return 0;
         }
+    }
+
+    if (!is_tls) {
+        __sync_fetch_and_add(&conn->bytes_received, total_size);
     }
 
     struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
@@ -399,13 +423,13 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     if (is_rabbitmq_consume(payload, ret)) {
         e->protocol = PROTOCOL_RABBITMQ;
         e->method = METHOD_CONSUME;
-        send_event(ctx, e, k.pid, k.fd);
+        send_event(ctx, e, cid, conn);
         return 0;
     }
     if (nats_method(payload, ret) == METHOD_CONSUME) {
         e->protocol = PROTOCOL_NATS;
         e->method = METHOD_CONSUME;
-        send_event(ctx, e, k.pid, k.fd);
+        send_event(ctx, e, cid, conn);
         return 0;
     }
 
@@ -421,7 +445,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
             e->duration = bpf_ktime_get_ns() - req->ns;
             e->payload_size = ret;
             COPY_PAYLOAD(e->payload, ret, payload);
-            send_event(ctx, e, k.pid, k.fd);
+            send_event(ctx, e, cid, conn);
             bpf_map_delete_elem(&active_l7_requests, &k);
             return 0;
         } else if (is_cassandra_response(payload, ret, &k.stream_id, &e->status)) {
@@ -436,7 +460,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
             e->duration = bpf_ktime_get_ns();
             e->payload_size = ret;
             COPY_PAYLOAD(e->payload, ret, payload);
-            send_event(ctx, e, k.pid, k.fd);
+            send_event(ctx, e, cid, conn);
             return 0;
         } else {
             return 0;
@@ -489,7 +513,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         return 0;
     }
     e->duration = bpf_ktime_get_ns() - req->ns;
-    send_event(ctx, e, k.pid, k.fd);
+    send_event(ctx, e, cid, conn);
     return 0;
 }
 
@@ -543,13 +567,15 @@ int sys_enter_sendto(struct trace_event_raw_sys_enter_rw__stub* ctx) {
 SEC("tracepoint/syscalls/sys_enter_read")
 int sys_enter_read(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();
-    return trace_enter_read(id, ctx->fd, ctx->buf, 0, 0);
+    __u32 pid = id >> 32;
+    return trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, 0);
 }
 
 SEC("tracepoint/syscalls/sys_enter_readv")
 int sys_enter_readv(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();
-    return trace_enter_read(id, ctx->fd, ctx->buf, 0, ctx->size);
+    __u32 pid = id >> 32;
+    return trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, ctx->size);
 }
 
 SEC("tracepoint/syscalls/sys_enter_recvmsg")
@@ -559,13 +585,15 @@ int sys_enter_recvmsg(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     if (bpf_probe_read(&msghdr, sizeof(msghdr), (void *)ctx->buf)) {
         return 0;
     }
-    return trace_enter_read(id, ctx->fd, (char*)msghdr.msg_iov, 0, msghdr.msg_iovlen);
+    __u32 pid = id >> 32;
+    return trace_enter_read(id, pid, ctx->fd, (char*)msghdr.msg_iov, 0, msghdr.msg_iovlen);
 }
 
 SEC("tracepoint/syscalls/sys_enter_recvfrom")
 int sys_enter_recvfrom(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();
-    return trace_enter_read(id, ctx->fd, ctx->buf, 0, 0);
+    __u32 pid = id >> 32;
+    return trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, 0);
 }
 
 SEC("tracepoint/syscalls/sys_exit_read")
