@@ -32,6 +32,8 @@ func guessApplicationType(cmdline []byte) string {
 		return "mongos"
 	case bytes.HasSuffix(cmd, []byte("mysqld")):
 		return "mysql"
+	case bytes.HasSuffix(cmd, []byte("mariadbd")):
+		return "mysql"
 	case bytes.Contains(cmdline, []byte("org.apache.zookeeper.server.quorum.QuorumPeerMain")):
 		return "zookeeper"
 	case bytes.HasSuffix(cmd, []byte("redis-server")):
