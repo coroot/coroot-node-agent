@@ -199,33 +199,49 @@ int sys_enter_connect(void *ctx) {
 }
 
 SEC("tracepoint/syscalls/sys_exit_connect")
-int sys_exit_connect(void *ctx) {
+int sys_exit_connect(struct trace_event_raw_sys_exit__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();
+    __u64 *fdp = bpf_map_lookup_elem(&fd_by_pid_tgid, &id);
+    if (!fdp) {
+        return 0;
+    }
+    struct connection_id cid = {};
+    cid.pid = id >> 32;
+    cid.fd = *fdp;
+    struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
+    if (!conn && ctx->ret == 0) { // non-TCP connection
+        struct connection conn = {};
+        conn.timestamp = bpf_ktime_get_ns();
+        bpf_map_update_elem(&active_connections, &cid, &conn, BPF_ANY);
+    }
     bpf_map_delete_elem(&fd_by_pid_tgid, &id);
     return 0;
 }
 
-static inline __attribute__((__always_inline__))
-int trace_exit_accept(struct trace_event_raw_sys_exit__stub* ctx) {
-    if (ctx->ret < 0) {
+SEC("tracepoint/syscalls/sys_enter_close")
+int sys_enter_close(void *ctx) {
+    struct trace_event_raw_args_with_fd__stub args = {};
+    if (bpf_probe_read(&args, sizeof(args), ctx) < 0) {
         return 0;
     }
     __u64 id = bpf_get_current_pid_tgid();
-    struct connection_id cid = {};
-    cid.pid = id >> 32;
-    cid.fd = ctx->ret;
-    bpf_map_delete_elem(&active_connections, &cid);
+    bpf_map_update_elem(&fd_by_pid_tgid, &id, &args.fd, BPF_ANY);
     return 0;
 }
 
-SEC("tracepoint/syscalls/sys_exit_accept")
-int sys_exit_accept(struct trace_event_raw_sys_exit__stub* ctx) {
-    return trace_exit_accept(ctx);
-}
-
-SEC("tracepoint/syscalls/sys_exit_accept4")
-int sys_exit_accept4(struct trace_event_raw_sys_exit__stub* ctx) {
-    return trace_exit_accept(ctx);
+SEC("tracepoint/syscalls/sys_exit_close")
+int sys_exit_close(struct trace_event_raw_sys_exit__stub* ctx) {
+    __u64 id = bpf_get_current_pid_tgid();
+    __u64 *fdp = bpf_map_lookup_elem(&fd_by_pid_tgid, &id);
+    if (!fdp) {
+        return 0;
+    }
+    struct connection_id cid = {};
+    cid.pid = id >> 32;
+    cid.fd = *fdp;
+    bpf_map_delete_elem(&active_connections, &cid);
+    bpf_map_delete_elem(&fd_by_pid_tgid, &id);
+    return 0;
 }
 
 
