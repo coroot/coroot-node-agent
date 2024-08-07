@@ -119,7 +119,7 @@ func TestContainerByCgroup(t *testing.T) {
 
 	typ, id, err = containerByCgroup("/system.slice/system-serial\\x2dgetty.slice")
 	as.Equal(typ, ContainerTypeSystemdService)
-	as.Equal("/system.slice/system-serial\\x2dgetty.slice", id)
+	as.Equal("/system.slice/system-serial-getty.slice", id)
 	as.Nil(err)
 
 	typ, id, err = containerByCgroup("/runtime.slice/kubelet.service")

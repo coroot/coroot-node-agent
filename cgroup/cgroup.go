@@ -167,7 +167,7 @@ func containerByCgroup(path string) (ContainerType, string, error) {
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid systemd cgroup %s", path)
 		}
-		return ContainerTypeSystemdService, matches[1], nil
+		return ContainerTypeSystemdService, strings.Replace(matches[1], "\\x2d", "-", -1), nil
 	}
 	return ContainerTypeUnknown, "", fmt.Errorf("unknown container: %s", path)
 }
