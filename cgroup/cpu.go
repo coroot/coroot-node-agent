@@ -2,7 +2,7 @@ package cgroup
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -57,28 +57,26 @@ func (cg Cgroup) cpuStatV2() (*CPUStat, error) {
 		UsageSeconds:         float64(vars["usage_usec"]) / 1e6,
 		ThrottledTimeSeconds: float64(vars["throttled_usec"]) / 1e6,
 	}
-	payload, err := ioutil.ReadFile(path.Join(cgRoot, cg.subsystems[""], "cpu.max"))
-	if err != nil {
-		return nil, err
-	}
-	data := strings.TrimSpace(string(payload))
-	parts := strings.Fields(data)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid cpu.max payload: %s", data)
-	}
-	if parts[0] == "max" { //no limit
-		return res, nil
-	}
-	quotaUs, err := strconv.ParseUint(parts[0], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid quota value in cpu.max: %s", parts[0])
-	}
-	periodUs, err := strconv.ParseUint(parts[1], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid period value in cpu.max: %s", parts[1])
-	}
-	if periodUs > 0 {
-		res.LimitCores = float64(quotaUs) / float64(periodUs)
+	if payload, err := os.ReadFile(path.Join(cgRoot, cg.subsystems[""], "cpu.max")); err == nil {
+		data := strings.TrimSpace(string(payload))
+		parts := strings.Fields(data)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid cpu.max payload: %s", data)
+		}
+		if parts[0] == "max" { //no limit
+			return res, nil
+		}
+		quotaUs, err := strconv.ParseUint(parts[0], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid quota value in cpu.max: %s", parts[0])
+		}
+		periodUs, err := strconv.ParseUint(parts[1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid period value in cpu.max: %s", parts[1])
+		}
+		if periodUs > 0 {
+			res.LimitCores = float64(quotaUs) / float64(periodUs)
+		}
 	}
 	return res, nil
 }
