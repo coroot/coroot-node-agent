@@ -262,16 +262,8 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					klog.Infoln("TCP connection error from unknown container", e)
 				}
 			case ebpftracer.EventTypeConnectionClose:
-				if e.Pid != 0 && e.Fd != 0 {
-					if c := r.containersByPid[e.Pid]; c != nil {
-						c.onConnectionClose(e)
-					}
-				} else {
-					for _, c := range r.containersById {
-						if c.onConnectionClose(e) {
-							break
-						}
-					}
+				if c := r.containersByPid[e.Pid]; c != nil {
+					c.onConnectionClose(e)
 				}
 			case ebpftracer.EventTypeTCPRetransmit:
 				srcDst := AddrPair{src: e.SrcAddr, dst: e.DstAddr}

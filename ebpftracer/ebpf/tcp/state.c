@@ -140,19 +140,7 @@ int inet_sock_set_state(void *ctx)
         fd = cid->fd;
     }
     if (args.oldstate == BPF_TCP_ESTABLISHED && (args.newstate == BPF_TCP_FIN_WAIT1 || args.newstate == BPF_TCP_CLOSE_WAIT)) {
-        struct connection_id *cid = bpf_map_lookup_elem(&connection_id_by_socket, &args.skaddr);
-        if (cid) {
-            pid = cid->pid;
-            fd = cid->fd;
-            struct connection *conn = bpf_map_lookup_elem(&active_connections, cid);
-            if (conn) {
-                e.bytes_sent = conn->bytes_sent;
-                e.bytes_received = conn->bytes_received;
-                bpf_map_delete_elem(&active_connections, cid);
-            }
-            bpf_map_delete_elem(&connection_id_by_socket, &args.skaddr);
-        }
-        type = EVENT_TYPE_CONNECTION_CLOSE;
+        bpf_map_delete_elem(&connection_id_by_socket, &args.skaddr);
     }
     if (args.oldstate == BPF_TCP_CLOSE && args.newstate == BPF_TCP_LISTEN) {
         type = EVENT_TYPE_LISTEN_OPEN;
@@ -225,24 +213,20 @@ int sys_enter_close(void *ctx) {
         return 0;
     }
     __u64 id = bpf_get_current_pid_tgid();
-    bpf_map_update_elem(&fd_by_pid_tgid, &id, &args.fd, BPF_ANY);
-    return 0;
-}
-
-SEC("tracepoint/syscalls/sys_exit_close")
-int sys_exit_close(struct trace_event_raw_sys_exit__stub* ctx) {
-    __u64 id = bpf_get_current_pid_tgid();
-    __u64 *fdp = bpf_map_lookup_elem(&fd_by_pid_tgid, &id);
-    if (!fdp) {
-        return 0;
-    }
     struct connection_id cid = {};
     cid.pid = id >> 32;
-    cid.fd = *fdp;
-    bpf_map_delete_elem(&active_connections, &cid);
-    bpf_map_delete_elem(&fd_by_pid_tgid, &id);
+    cid.fd = args.fd;
+    struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
+    if (conn) {
+        struct tcp_event e = {};
+        e.type = EVENT_TYPE_CONNECTION_CLOSE;
+        e.pid = cid.pid;
+        e.fd = cid.fd;
+        e.bytes_sent = conn->bytes_sent;
+        e.bytes_received = conn->bytes_received;
+        e.timestamp = conn->timestamp;
+        bpf_perf_event_output(ctx, &tcp_connect_events, BPF_F_CURRENT_CPU, &e, sizeof(e));
+        bpf_map_delete_elem(&active_connections, &cid);
+    }
     return 0;
 }
-
-
-

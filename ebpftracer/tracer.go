@@ -168,12 +168,6 @@ func (t *Tracer) init(ch chan<- Event) error {
 	return nil
 }
 
-func (t *Tracer) GetAndDeleteTCPConnection(pid uint32, fd uint64) (*Connection, error) {
-	id := ConnectionId{FD: fd, PID: pid}
-	conn := &Connection{}
-	return conn, t.collection.Maps["active_connections"].LookupAndDelete(id, conn)
-}
-
 func (t *Tracer) ActiveConnectionsIterator() *ebpf.MapIterator {
 	return t.collection.Maps["active_connections"].Iterate()
 }
