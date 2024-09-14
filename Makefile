@@ -4,8 +4,16 @@ all: lint test
 .PHONY: test
 test: go-test
 
+.PHONY: build
+build: lint go-build
+
 .PHONY: lint
 lint: go-mod go-vet go-fmt go-imports
+
+.PHONY: go-build
+go-build:
+	make -C ./ebpftracer build
+	go build
 
 .PHONY: go-mod
 go-mod:
