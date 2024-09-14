@@ -73,7 +73,7 @@ struct {
      __type(key, int);
      __type(value, struct l7_event);
      __uint(max_entries, 1);
-} l7_event_heap SEC(".maps");
+} l7_event_heap SEC(".maps");  // 只用堆顶
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
@@ -103,7 +103,7 @@ struct l7_request_key {
 };
 
 struct l7_request {
-    __u64 ns;
+    __u64 ns;  // 请求发出时间
     __u8 protocol;
     __u8 partial;
     __u8 request_type;
@@ -124,7 +124,7 @@ struct {
     __uint(key_size, sizeof(struct l7_request_key));
     __uint(value_size, sizeof(struct l7_request));
     __uint(max_entries, 32768);
-} active_l7_requests SEC(".maps");
+} active_l7_requests SEC(".maps");  // 类似 `active_connections`，是针对 L7 的。
 
 struct {
      __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -147,11 +147,13 @@ struct trace_event_raw_sys_exit_rw__stub {
     long int ret;
 };
 
+// IO vector, parameter for readv/writev
 struct iovec {
     char* buf;
     __u64 size;
 };
 
+// user message header：应用层消息头
 struct user_msghdr {
 	void *msg_name;
 	int msg_namelen;
@@ -307,7 +309,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         req->protocol = PROTOCOL_KAFKA;
         struct l7_request *prev_req = bpf_map_lookup_elem(&active_l7_requests, &k);
         if (prev_req && prev_req->protocol == PROTOCOL_KAFKA) {
-            req->ns = prev_req->ns;
+            req->ns = prev_req->ns; // 这是由 Kafka 协议的“流水线”特性决定的。
         }
     } else if (looks_like_http2_frame(payload, size, METHOD_HTTP2_CLIENT_FRAMES)) {
         struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);

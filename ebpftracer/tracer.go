@@ -50,6 +50,7 @@ type TrafficStats struct {
 	BytesReceived uint64
 }
 
+// Event 类似 Flow，是建立 Span 的原始数据。
 type Event struct {
 	Type         EventType
 	Reason       EventReason
@@ -456,6 +457,7 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 			continue
 		}
 
+		// 写入到 eBPF 消息队列
 		ch <- event
 	}
 }

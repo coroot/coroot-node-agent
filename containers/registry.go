@@ -56,6 +56,7 @@ type Registry struct {
 	trafficStatsUpdateCh    chan *TrafficStatsUpdate
 }
 
+// 综合了各个功能模块
 func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh chan<- ProcessInfo) (*Registry, error) {
 	ns, err := proc.GetSelfNetNs()
 	if err != nil {
@@ -100,7 +101,7 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh 
 
 	r := &Registry{
 		reg:    reg,
-		events: make(chan ebpftracer.Event, 10000),
+		events: make(chan ebpftracer.Event, 10000), // 创建 eBPF 消息队列。达到 size 后的行为是阻塞而不是溢出。
 
 		hostConntrack: ct,
 
@@ -118,6 +119,7 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh 
 	if err = reg.Register(r); err != nil {
 		return nil, err
 	}
+	// 分别启动 eBPF 事件的消费者与生产者。
 	go r.handleEvents(r.events)
 	if err = r.tracer.Run(r.events); err != nil {
 		close(r.events)
@@ -149,6 +151,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 	defer gcTicker.Stop()
 	for {
 		select {
+		// 处理 agent 定时 GC 事件。
 		case now := <-gcTicker.C:
 			for pid, c := range r.containersByPid {
 				cg, err := proc.ReadCgroup(pid)
@@ -196,6 +199,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				}
 			}
 			r.ip2fqdnLock.Unlock()
+		// 处理 StatsUpdate 事件。
 		case u := <-r.trafficStatsUpdateCh:
 			if u == nil {
 				continue
@@ -203,6 +207,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			if c := r.containersByPid[u.Pid]; c != nil {
 				c.updateTrafficStats(u)
 			}
+		// 处理 eBPF 采集的事件。
 		case e, more := <-ch:
 			if !more {
 				return
