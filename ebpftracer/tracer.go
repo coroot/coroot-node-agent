@@ -23,7 +23,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const MaxPayloadSize = 1024
+const MaxPayloadSize = 1024 // 最大负载长度。比如 'http-length'。
 
 type EventType uint32
 type EventReason uint32

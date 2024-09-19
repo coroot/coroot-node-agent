@@ -87,6 +87,7 @@ func systemUUID() string {
 	return strings.TrimSpace(string(payload))
 }
 
+// 疑问点：不知道 whitelist 的作用。
 func whitelistNodeExternalNetworks() {
 	netdevs, err := node.NetDevices()
 	if err != nil {

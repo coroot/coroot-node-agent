@@ -151,7 +151,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 	defer gcTicker.Stop()
 	for {
 		select {
-		// 处理 agent 定时 GC 事件。
+		// 处理 agent 定时 GC 事件，清理不活跃的连接信息。
 		case now := <-gcTicker.C:
 			for pid, c := range r.containersByPid {
 				cg, err := proc.ReadCgroup(pid)

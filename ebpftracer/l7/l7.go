@@ -134,6 +134,7 @@ func (s Status) Error() bool {
 }
 
 type RequestData struct {
+	// todo 是否应该引入 startTime，也就是 conn.timestamp，写在 @ebpftracer/tracer.go:396。
 	Protocol    Protocol
 	Status      Status
 	Duration    time.Duration

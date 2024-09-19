@@ -692,7 +692,7 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		return nil
 	}
 	stats := c.l7Stats.get(r.Protocol, conn.Dest, conn.ActualDest)
-	trace := tracing.NewTrace(string(c.id), conn.ActualDest)
+	trace := tracing.NewTrace(string(c.id), conn.ActualDest) // NewTrace 唯一被调。
 	switch r.Protocol {
 	case l7.ProtocolHTTP:
 		stats.observe(r.Status.Http(), "", r.Duration)

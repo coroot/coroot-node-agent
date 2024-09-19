@@ -48,7 +48,7 @@ func Init(machineId, hostname, version string) {
 		opts = append(opts, otlptracehttp.WithInsecure())
 	}
 	client := otlptracehttp.NewClient(opts...)
-	exporter, err := otlptrace.New(context.Background(), client)
+	exporter, err := otlptrace.New(context.Background(), client) // and this exporter starts
 	if err != nil {
 		klog.Exitln(err)
 	}
@@ -87,7 +87,7 @@ func NewTrace(containerId string, destination netaddr.IPPort) *Trace {
 }
 
 func (t *Trace) createSpan(name string, duration time.Duration, error bool, attrs ...attribute.KeyValue) {
-	end := time.Now()
+	end := time.Now() // todo createSpan 关于 end 设定为处理时间，这是不够严谨的。  应该把 event 中的 start 时间使用起来。
 	start := end.Add(-duration)
 	_, span := tracer(t.containerId).Start(nil, name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
 	span.SetAttributes(attrs...)

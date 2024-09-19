@@ -68,6 +68,7 @@ func lookupCiliumConntrackTable(src, dst netaddr.IPPort) *netaddr.IPPort {
 	return nil
 }
 
+// 优化点：对 `ciliumCt4` 的解析过程放在协程中进行，同步改异步。
 func lookupCilium4(src, dst netaddr.IPPort) *netaddr.IPPort {
 	if ciliumCt4 == nil || backends4Map == nil {
 		return nil
