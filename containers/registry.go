@@ -88,6 +88,7 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh 
 	if err := ContainerdInit(); err != nil {
 		klog.Warningln(err)
 	}
+	// 疑点：一般而言 crio 和 containerd 是二选一的关系，所以这个 warning 并不成立。
 	if err := CrioInit(); err != nil {
 		klog.Warningln(err)
 	}
@@ -298,6 +299,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 	}
 }
 
+// 同样的问题，同样是 pull-based 查找，可以优化为异步维护 containersByPid 表。
 func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 	if c, seen := r.containersByPid[pid]; c != nil {
 		return c

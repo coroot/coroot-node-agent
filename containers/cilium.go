@@ -25,6 +25,7 @@ var (
 func init() {
 	var err error
 
+	// ct4 eBPF map 只在 K8s Daemonset 中可见。
 	ciliumCt4, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, ctmap.MapNameTCP4Global)))
 	if err != nil {
 		klog.Infoln(err)
