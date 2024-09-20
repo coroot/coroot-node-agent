@@ -3,9 +3,9 @@ RUN apt update && apt install -y libsystemd-dev
 WORKDIR /tmp/src
 COPY go.mod .
 COPY go.sum .
-RUN go mod download
+RUN export GOPROXY='https://goproxy.cn' && go mod download
 COPY . .
-ARG VERSION=unknown
+ARG VERSION=latest
 RUN CGO_ENABLED=1 go build -mod=readonly -ldflags "-X main.version=$VERSION" -o coroot-node-agent .
 
 FROM debian:bullseye

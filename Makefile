@@ -35,3 +35,7 @@ go-imports:
 .PHONY: go-test
 go-test:
 	go test ./...
+
+.PHONY: docker
+docker:
+	docker build . -t registry.cn-beijing.aliyuncs.com/obser/coroot-node-agent:latest
