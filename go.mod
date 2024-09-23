@@ -10,10 +10,11 @@ require (
 	github.com/containerd/cgroups v1.0.4
 	github.com/containerd/containerd v1.6.26
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/coroot/logparser v1.1.2
+	github.com/coroot/logparser v1.1.5
 	github.com/docker/docker v25.0.0+incompatible
 	github.com/florianl/go-conntrack v0.3.0
 	github.com/go-kit/log v0.2.1
+	github.com/godbus/dbus/v5 v5.0.6
 	github.com/grafana/pyroscope/ebpf v0.4.1
 	github.com/jpillora/backoff v1.0.0
 	github.com/mdlayher/taskstats v0.0.0-20230712191918-387b3d561d14
@@ -33,6 +34,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.22.0
 	go.opentelemetry.io/otel/trace v1.22.0
 	golang.org/x/arch v0.4.0
+	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a
 	golang.org/x/mod v0.16.0
 	golang.org/x/net v0.22.0
 	golang.org/x/sys v0.18.0
@@ -89,7 +91,6 @@ require (
 	github.com/go-openapi/strfmt v0.22.0 // indirect
 	github.com/go-openapi/swag v0.22.4 // indirect
 	github.com/go-openapi/validate v0.22.1 // indirect
-	github.com/godbus/dbus/v5 v5.0.6 // indirect
 	github.com/gogo/googleapis v1.4.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.0 // indirect
@@ -168,7 +169,6 @@ require (
 	go4.org/intern v0.0.0-20211027215823-ae77deb06f29 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
 	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a // indirect
 	golang.org/x/oauth2 v0.16.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
