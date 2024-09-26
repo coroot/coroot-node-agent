@@ -135,16 +135,16 @@ struct {
 
 struct trace_event_raw_sys_enter_rw__stub {
     __u64 unused;
-    long int id;
-    __u64 fd;
-    char* buf;
-    __u64 size;
+    long int id;  // 系统调用编号，表示当前调用的具体系统调用，比如在 sys_enter_write 中应该是 SYS_write，即 write 的系统调用号。
+    __u64 fd;  // write 系统调用的第一个参数，表示文件描述符（file descriptor，fd），指明数据要写入的文件或设备。
+    char* buf;  // write 系统调用的第二个参数，表示要写入的数据的缓冲区地址，这个指针指向用户空间的缓冲区。
+    __u64 size;  // write 系统调用的第三个参数，表示要写入的字节数。
 };
 
 struct trace_event_raw_sys_exit_rw__stub {
     __u64 unused;
-    long int id;
-    long int ret;
+    long int id;  // 系统调用号，可以用来确认是否是 read 系统调用。
+    long int ret;  // 系统调用返回值，即 read 返回的值。调用成功时为读取的字节数，失败时为负数的错误码。
 };
 
 // IO vector, parameter for readv/writev
@@ -382,7 +382,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
 
     bpf_map_delete_elem(&active_reads, &id);
 
-    if (ret <= 0) {
+    if (ret <= 0) {  // ret < 0, error in SYS_read; ret = 0, meets special file likes pipe.
         return 0;
     }
     if (args->ret) {
@@ -486,6 +486,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     } else if (e->protocol == PROTOCOL_MEMCACHED) {
         response = is_memcached_response(payload, ret, &e->status);
     } else if (e->protocol == PROTOCOL_MYSQL) {
+        // statement_id 是一个出参。
         response = is_mysql_response(payload, ret, req->request_type, &e->statement_id, &e->status);
         if (req->request_type == MYSQL_COM_STMT_PREPARE) {
             e->method = METHOD_STATEMENT_PREPARE;
