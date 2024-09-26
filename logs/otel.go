@@ -26,7 +26,7 @@ func Init(machineId, hostname, version string) {
 		klog.Infoln("no OpenTelemetry logs collector endpoint configured")
 		return
 	}
-	klog.Infoln("OpenTelemetry logs collector endpoint:", endpointUrl.String())
+	klog.Infoln("OpenTelemetry logs exporter endpoint:", endpointUrl.String())
 	path := endpointUrl.Path
 	if path == "" {
 		path = "/"

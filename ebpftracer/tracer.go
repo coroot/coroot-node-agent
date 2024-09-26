@@ -57,9 +57,9 @@ type Event struct {
 	SrcAddr      netaddr.IPPort
 	DstAddr      netaddr.IPPort
 	Fd           uint64
-	Timestamp    uint64
+	Timestamp    uint64 // todo 单位是 micro or mill?
 	Duration     time.Duration
-	L7Request    *l7.RequestData
+	L7Request    *l7.Request
 	TrafficStats *TrafficStats
 }
 
@@ -391,12 +391,12 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 				continue
 			}
 			payload := reader.Bytes()
-			req := &l7.RequestData{
-				Protocol:    l7.Protocol(v.Protocol),
-				Status:      l7.Status(v.Status),
-				Duration:    time.Duration(v.Duration),
-				Method:      l7.Method(v.Method),
-				StatementId: v.StatementId,
+			req := &l7.Request{
+				Protocol: l7.Protocol(v.Protocol),
+				Status:   l7.Status(v.Status),
+				Duration: time.Duration(v.Duration),
+				Method:   l7.Method(v.Method),
+				ID:       v.StatementId,
 			}
 			switch {
 			case v.PayloadSize == 0:

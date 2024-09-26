@@ -641,7 +641,7 @@ func (c *Container) updateConnectionTrafficStats(ac *ActiveConnection, sent, rec
 	ac.BytesReceived = received
 }
 
-func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]string {
+func (c *Container) onDNSRequest(r *l7.Request) map[netaddr.IP]string {
 	status := r.Status.DNS()
 	if status == "" {
 		return nil
@@ -676,7 +676,7 @@ func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]string {
 	return ip2fqdn
 }
 
-func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) map[netaddr.IP]string {
+func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.Request) map[netaddr.IP]string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -723,7 +723,7 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		if conn.mysqlParser == nil {
 			conn.mysqlParser = l7.NewMysqlParser()
 		}
-		query := conn.mysqlParser.Parse(r.Payload, r.StatementId)
+		query := conn.mysqlParser.Parse(r.Payload, r.ID)
 		trace.MysqlQuery(query, r.Status.Error(), r.Duration)
 	case l7.ProtocolMemcached:
 		stats.observe(r.Status.String(), "", r.Duration)

@@ -34,7 +34,7 @@ func Init(machineId, hostname, version string) {
 		klog.Infoln("no OpenTelemetry traces collector endpoint configured")
 		return
 	}
-	klog.Infoln("OpenTelemetry traces collector endpoint:", endpointUrl.String())
+	klog.Infoln("OpenTelemetry traces exporter endpoint:", endpointUrl.String())
 	path := endpointUrl.Path
 	if path == "" {
 		path = "/"
@@ -48,7 +48,8 @@ func Init(machineId, hostname, version string) {
 		opts = append(opts, otlptracehttp.WithInsecure())
 	}
 	client := otlptracehttp.NewClient(opts...)
-	exporter, err := otlptrace.New(context.Background(), client)
+	ctx := context.Background()
+	exporter, err := otlptrace.New(ctx, client) // and this exporter starts
 	if err != nil {
 		klog.Exitln(err)
 	}
@@ -66,6 +67,13 @@ func Init(machineId, hostname, version string) {
 				semconv.ContainerID(containerId),
 			)),
 		)
+		go func() {
+			defer func() {
+				if err := provider.Shutdown(ctx); err != nil {
+					klog.Infof("Shutdown tracer provider for container %s\n", containerId)
+				}
+			}()
+		}()
 		return provider.Tracer("coroot-node-agent", trace.WithInstrumentationVersion(version))
 	}
 }
@@ -87,9 +95,9 @@ func NewTrace(containerId string, destination netaddr.IPPort) *Trace {
 }
 
 func (t *Trace) createSpan(name string, duration time.Duration, error bool, attrs ...attribute.KeyValue) {
-	end := time.Now()
+	end := time.Now() // todo createSpan 关于 end 设定为处理时间，这是不够严谨的。  应该把 event 中的 start 时间使用起来。
 	start := end.Add(-duration)
-	_, span := tracer(t.containerId).Start(nil, name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := tracer(t.containerId).Start(context.Background(), name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
 	span.SetAttributes(attrs...)
 	span.SetAttributes(t.commonAttrs...)
 	if error {

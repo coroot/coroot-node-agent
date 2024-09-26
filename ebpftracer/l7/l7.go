@@ -8,6 +8,7 @@ import (
 type Protocol uint8
 
 const (
+	ProtocolUnknown   Protocol = 0
 	ProtocolHTTP      Protocol = 1
 	ProtocolPostgres  Protocol = 2
 	ProtocolRedis     Protocol = 3
@@ -65,6 +66,8 @@ const (
 	MethodStatementClose    Method = 4
 	MethodHttp2ClientFrames Method = 5
 	MethodHttp2ServerFrames Method = 6
+	// todo http REST
+
 )
 
 func (m Method) String() string {
@@ -95,6 +98,7 @@ const (
 	StatusFailed  Status = 500
 )
 
+// String returns human-readable content.
 func (s Status) String() string {
 	switch s {
 	case StatusUnknown:
@@ -133,11 +137,12 @@ func (s Status) Error() bool {
 	return s == StatusFailed
 }
 
-type RequestData struct {
-	Protocol    Protocol
-	Status      Status
-	Duration    time.Duration
-	Method      Method
-	StatementId uint32
-	Payload     []byte
+// Request stands for original L7 Flow.
+type Request struct {
+	ID       uint32 // todo 还没有统一成 16 位的 SpanID。比如 http 可能是 X-Request-Id。目前 TracingAlgo 最好不用使用。
+	Protocol Protocol
+	Method   Method
+	Status   Status
+	Duration time.Duration
+	Payload  []byte // 没什么用，取消吧
 }
