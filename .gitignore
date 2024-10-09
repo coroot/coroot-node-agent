@@ -1,2 +1,5 @@
 .idea
 .vagrant
+
+./ebpftracer/ebpf.go
+./coroot-node-agent
