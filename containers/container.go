@@ -2,6 +2,7 @@ package containers
 
 import (
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/coroot/logparser"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
+	"golang.org/x/exp/maps"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 )
@@ -335,7 +337,14 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	appTypes := map[string]struct{}{}
 	seenJvms := map[string]bool{}
-	for pid, process := range c.processes {
+	seenDotNetApps := map[string]bool{}
+	pids := maps.Keys(c.processes)
+	sort.Slice(pids, func(i, j int) bool {
+		return pids[i] < pids[j]
+	})
+
+	for _, pid := range pids {
+		process := c.processes[pid]
 		cmdline := proc.GetCmdline(pid)
 		if len(cmdline) == 0 {
 			continue
@@ -358,7 +367,11 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 			}
 		case process.dotNetMonitor != nil:
 			appTypes["dotnet"] = struct{}{}
-			process.dotNetMonitor.Collect(ch)
+			appName := process.dotNetMonitor.AppName()
+			if !seenDotNetApps[appName] {
+				seenDotNetApps[appName] = true
+				process.dotNetMonitor.Collect(ch)
+			}
 		}
 	}
 	for appType := range appTypes {
