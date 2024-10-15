@@ -2,6 +2,7 @@ package profiling
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -35,6 +36,9 @@ var (
 	constLabels labels.Labels
 	httpClient  = http.Client{
 		Timeout: UploadTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: *flags.InsecureSkipVerify},
+		},
 	}
 	endpointUrl  *url.URL
 	session      ebpfspy.Session

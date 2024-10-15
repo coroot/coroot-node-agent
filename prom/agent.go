@@ -41,6 +41,9 @@ func StartAgent(machineId string) error {
 			Headers:       common.AuthHeaders(),
 			RemoteTimeout: model.Duration(RemoteWriteTimeout),
 			QueueConfig:   config.DefaultQueueConfig,
+			HTTPClientConfig: promConfig.HTTPClientConfig{
+				TLSConfig: promConfig.TLSConfig{InsecureSkipVerify: *flags.InsecureSkipVerify},
+			},
 		},
 	)
 	cfg.ScrapeConfigs = append(cfg.ScrapeConfigs, &config.ScrapeConfig{
