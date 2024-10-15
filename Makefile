@@ -12,7 +12,7 @@ lint: go-mod go-vet go-fmt go-imports
 
 .PHONY: go-build
 go-build:
-	make -C ./ebpftracer build
+	make -C ./ebpftracer ebpf.go
 	go build
 
 .PHONY: go-mod
