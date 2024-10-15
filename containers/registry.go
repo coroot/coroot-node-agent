@@ -253,6 +253,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, e.Timestamp, false, e.Duration)
 					c.attachTlsUprobes(r.tracer, e.Pid)
 				} else {
+					// todo Maybe this flow comes from or goes to the "world", so container is unknown.
 					klog.Infoln("TCP connection from unknown container", e)
 				}
 			case ebpftracer.EventTypeConnectionError:
@@ -277,7 +278,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					continue
 				}
 				if c := r.containersByPid[e.Pid]; c != nil {
-					ip2fqdn := c.onL7Request(e.Pid, e.Fd, e.Timestamp, e.L7Request)
+					ip2fqdn := c.onL7Request(e.Pid, e.Fd, e.Timestamp, e.L7Request, &e)
 					r.ip2fqdnLock.Lock()
 					for ip, fqdn := range ip2fqdn {
 						r.ip2fqdn[ip] = fqdn

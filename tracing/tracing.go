@@ -3,6 +3,8 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"github.com/coroot/coroot-node-agent/ebpftracer"
+	"strconv"
 	"time"
 
 	"github.com/coroot/coroot-node-agent/common"
@@ -48,8 +50,7 @@ func Init(machineId, hostname, version string) {
 		opts = append(opts, otlptracehttp.WithInsecure())
 	}
 	client := otlptracehttp.NewClient(opts...)
-	ctx := context.Background()
-	exporter, err := otlptrace.New(ctx, client) // and this exporter starts
+	exporter, err := otlptrace.New(context.Background(), client) // and this exporter starts
 	if err != nil {
 		klog.Exitln(err)
 	}
@@ -67,35 +68,33 @@ func Init(machineId, hostname, version string) {
 				semconv.ContainerID(containerId),
 			)),
 		)
-		go func() {
-			defer func() {
-				if err := provider.Shutdown(ctx); err != nil {
-					klog.Infof("Shutdown tracer provider for container %s\n", containerId)
-				}
-			}()
-		}()
 		return provider.Tracer("coroot-node-agent", trace.WithInstrumentationVersion(version))
 	}
 }
 
-type Trace struct {
+// SpanBuilder keeps common attributes for spans
+type SpanBuilder struct {
 	containerId string
 	destination netaddr.IPPort
 	commonAttrs []attribute.KeyValue
 }
 
-func NewTrace(containerId string, destination netaddr.IPPort) *Trace {
+func NewSpanBuilder(containerId string, destination netaddr.IPPort, rawEvent *ebpftracer.Event) *SpanBuilder {
 	if tracer == nil {
 		return nil
 	}
-	return &Trace{containerId: containerId, destination: destination, commonAttrs: []attribute.KeyValue{
+	return &SpanBuilder{containerId: containerId, destination: destination, commonAttrs: []attribute.KeyValue{
 		semconv.NetPeerName(destination.IP().String()),
 		semconv.NetPeerPort(int(destination.Port())),
+		attribute.String("tgid_req_cs", strconv.FormatUint(rawEvent.TgidReqCs, 10)),
+		attribute.String("tgid_req_ss", strconv.FormatUint(rawEvent.TgidReqSs, 10)),
+		attribute.String("tgid_resp_ss", strconv.FormatUint(rawEvent.TgidRespSs, 10)),
+		attribute.String("tgid_resp_cs", strconv.FormatUint(rawEvent.TgidRespCs, 10)),
 	}}
 }
 
-func (t *Trace) createSpan(name string, duration time.Duration, error bool, attrs ...attribute.KeyValue) {
-	end := time.Now() // todo createSpan 关于 end 设定为处理时间，这是不够严谨的。  应该把 event 中的 start 时间使用起来。
+func (t *SpanBuilder) createSpan(name string, duration time.Duration, error bool, attrs ...attribute.KeyValue) {
+	end := time.Now()
 	start := end.Add(-duration)
 	_, span := tracer(t.containerId).Start(context.Background(), name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
 	span.SetAttributes(attrs...)
@@ -106,7 +105,7 @@ func (t *Trace) createSpan(name string, duration time.Duration, error bool, attr
 	span.End(trace.WithTimestamp(end))
 }
 
-func (t *Trace) HttpRequest(method, path string, status l7.Status, duration time.Duration) {
+func (t *SpanBuilder) HttpRequest(method, path string, status l7.Status, duration time.Duration) {
 	if t == nil || method == "" {
 		return
 	}
@@ -117,7 +116,7 @@ func (t *Trace) HttpRequest(method, path string, status l7.Status, duration time
 	)
 }
 
-func (t *Trace) Http2Request(method, path, scheme string, status l7.Status, duration time.Duration) {
+func (t *SpanBuilder) Http2Request(method, path, scheme string, status l7.Status, duration time.Duration) {
 	if t == nil {
 		return
 	}
@@ -137,7 +136,7 @@ func (t *Trace) Http2Request(method, path, scheme string, status l7.Status, dura
 	)
 }
 
-func (t *Trace) PostgresQuery(query string, error bool, duration time.Duration) {
+func (t *SpanBuilder) PostgresQuery(query string, error bool, duration time.Duration) {
 	if t == nil || query == "" {
 		return
 	}
@@ -147,7 +146,7 @@ func (t *Trace) PostgresQuery(query string, error bool, duration time.Duration) 
 	)
 }
 
-func (t *Trace) MysqlQuery(query string, error bool, duration time.Duration) {
+func (t *SpanBuilder) MysqlQuery(query string, error bool, duration time.Duration) {
 	if t == nil || query == "" {
 		return
 	}
@@ -157,7 +156,7 @@ func (t *Trace) MysqlQuery(query string, error bool, duration time.Duration) {
 	)
 }
 
-func (t *Trace) MongoQuery(query string, error bool, duration time.Duration) {
+func (t *SpanBuilder) MongoQuery(query string, error bool, duration time.Duration) {
 	if t == nil || query == "" {
 		return
 	}
@@ -167,7 +166,7 @@ func (t *Trace) MongoQuery(query string, error bool, duration time.Duration) {
 	)
 }
 
-func (t *Trace) MemcachedQuery(cmd string, items []string, error bool, duration time.Duration) {
+func (t *SpanBuilder) MemcachedQuery(cmd string, items []string, error bool, duration time.Duration) {
 	if t == nil || cmd == "" {
 		return
 	}
@@ -183,7 +182,7 @@ func (t *Trace) MemcachedQuery(cmd string, items []string, error bool, duration 
 	t.createSpan(cmd, duration, error, attrs...)
 }
 
-func (t *Trace) RedisQuery(cmd, args string, error bool, duration time.Duration) {
+func (t *SpanBuilder) RedisQuery(cmd, args string, error bool, duration time.Duration) {
 	if t == nil || cmd == "" {
 		return
 	}

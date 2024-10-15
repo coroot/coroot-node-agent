@@ -58,6 +58,10 @@ struct l7_event {
     __u64 fd;
     __u64 connection_timestamp;
     __u32 pid;
+    __u64 tgid_req_cs;
+    __u64 tgid_req_ss;
+    __u64 tgid_resp_ss;
+    __u64 tgid_resp_cs;
     __u32 status;
     __u64 duration;
     __u8 protocol;
@@ -66,19 +70,19 @@ struct l7_event {
     __u32 statement_id;
     __u64 payload_size;
     char payload[MAX_PAYLOAD_SIZE];
-};
+} __attribute__((packed));  /* use "packed" to aviod disorder the struct */
 
 struct {
-     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);  // non-historical store, Array, not LRU
      __type(key, int);
      __type(value, struct l7_event);
      __uint(max_entries, 1);
 } l7_event_heap SEC(".maps");
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);  // for perf event
     __uint(key_size, sizeof(int));
-    __uint(value_size, sizeof(int));
+    __uint(value_size, sizeof(int));  // value is a pointer to `struct l7_event`
 } l7_events SEC(".maps");
 
 struct read_args {
@@ -102,8 +106,10 @@ struct l7_request_key {
     __s16 stream_id;
 };
 
-struct l7_request {
+struct l7_request {  // more like concept `flow`, maybe request, maybe response
     __u64 ns;
+    __u64 tgid_send;  // tgid who sends the request
+    __u64 tgid_recv;  // tgid who receives the request
     __u8 protocol;
     __u8 partial;
     __u8 request_type;
@@ -164,6 +170,7 @@ struct user_msghdr {
 
 static inline __attribute__((__always_inline__))
 void send_event(void *ctx, struct l7_event *e, struct connection_id cid, struct connection *conn) {
+    // todo Want to inline those 3 setters to callings.
     e->connection_timestamp = conn->timestamp;
     e->fd = cid.fd;
     e->pid = cid.pid;
@@ -203,10 +210,11 @@ __u64 read_iovec(char *iovec, __u64 iovlen, __u64 ret, char *buf, __u64 *total_s
 
 static inline __attribute__((__always_inline__))
 int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, __u64 iovlen) {
-    __u64 id = bpf_get_current_pid_tgid();
+    __u64 write_ns = bpf_ktime_get_ns();
+    __u64 write_tgid = bpf_get_current_pid_tgid();
     __u32 zero = 0;
     struct connection_id cid = {};
-    cid.pid = id >> 32;
+    cid.pid = write_tgid >> 32;
     cid.fd = fd;
     __u64 total_size = size;
 
@@ -236,11 +244,16 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     if (!req) {
         return 0;
     }
+
+    // reset req
+    req->ns = 0;
+    req->tgid_send = 0;
+    req->tgid_recv = 0;
     req->protocol = PROTOCOL_UNKNOWN;
     req->partial = 0;
     req->request_id = 0;
-    req->ns = 0;
     req->payload_size = size;
+
     struct l7_request_key k = {};
     k.pid = cid.pid;
     k.fd = cid.fd;
@@ -250,13 +263,14 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     if (is_http_request(payload)) {
         req->protocol = PROTOCOL_HTTP;
     } else if (is_postgres_query(payload, size, &req->request_type)) {
-        if (req->request_type == POSTGRES_FRAME_CLOSE) {
+        if (req->request_type == POSTGRES_FRAME_CLOSE) {  // protocol is pipelined, and req is partially Response
             struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
             if (!e) {
                 return 0;
             }
             e->protocol = PROTOCOL_POSTGRES;
             e->method = METHOD_STATEMENT_CLOSE;
+            // todo tgid
             e->payload_size = size;
             COPY_PAYLOAD(e->payload, size, payload);
             send_event(ctx, e, cid, conn);
@@ -268,13 +282,14 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     } else if (is_memcached_query(payload, size)) {
         req->protocol = PROTOCOL_MEMCACHED;
     } else if (is_mysql_query(payload, size, &req->request_type)) {
-        if (req->request_type == MYSQL_COM_STMT_CLOSE) {
+        if (req->request_type == MYSQL_COM_STMT_CLOSE) {  // protocol is pipelined, and req is partially Response
             struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
             if (!e) {
                 return 0;
             }
             e->protocol = PROTOCOL_MYSQL;
             e->method = METHOD_STATEMENT_CLOSE;
+            // todo tgid
             e->payload_size = size;
             COPY_PAYLOAD(e->payload, size, payload);
             send_event(ctx, e, cid, conn);
@@ -316,7 +331,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         }
         e->protocol = PROTOCOL_HTTP2;
         e->method = METHOD_HTTP2_CLIENT_FRAMES;
-        e->duration = bpf_ktime_get_ns();
+        e->duration = write_ns;
         e->payload_size = size;
         COPY_PAYLOAD(e->payload, size, payload);
         send_event(ctx, e, cid, conn);
@@ -326,15 +341,18 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     } else if (is_dns_request(payload, size, &k.stream_id)) {
         req->protocol = PROTOCOL_DNS;
     }
-
     if (req->protocol == PROTOCOL_UNKNOWN) {
         return 0;
     }
-    if (req->ns == 0) {
-        req->ns = bpf_ktime_get_ns();
-    }
+
+    // req is real REQUEST
+    req->ns = write_ns;
+    req->tgid_send = write_tgid;
+    req->tgid_recv = 0; // todo how to tgid other side?
+
     COPY_PAYLOAD(req->payload, size, payload);
-    bpf_map_update_elem(&active_l7_requests, &k, req, BPF_NOEXIST);
+
+    bpf_map_update_elem(&active_l7_requests, &k, req, BPF_NOEXIST);  // req is REQUEST
     return 0;
 }
 
@@ -358,20 +376,29 @@ int trace_enter_read(__u64 id, __u32 pid, __u64 fd, char *buf, __u64 *ret, __u64
     return 0;
 }
 
+// At READ:
+// 1.Lookup `active_connections`, to find WRITE related context from the other side.
+// 2.Lookup `active_l7_requests`, if this is a response, then find corresponding request.
 static inline __attribute__((__always_inline__))
 int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) {
+    __u64 read_ns = bpf_ktime_get_ns();
+    __u64 read_tgid = bpf_get_current_pid_tgid();
+
     struct read_args *args = bpf_map_lookup_elem(&active_reads, &id);
     if (!args) {
         return 0;
     }
+
     struct connection_id cid = {};
     cid.pid = pid;
     cid.fd = args->fd;
+
     struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
     if (!conn) {
         bpf_map_delete_elem(&active_reads, &id);
         return 0;
     }
+
     struct l7_request_key k = {};
     k.pid = cid.pid;
     k.fd = cid.fd;
@@ -386,12 +413,12 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     if (args->ret) {
         if (bpf_probe_read(&ret, sizeof(ret), (void*)args->ret)) {
             return 0;
-        };
+        }
         if (ret <= 0) {
             return 0;
         }
     }
-    __u64 total_size = ret;
+    __u64 total_size = ret;  // I/O related syscalls return bytes exchanged.
     int zero = 0;
     char* payload = args->buf;
     if (args->iovlen) {
@@ -414,11 +441,17 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     if (!e) {
         return 0;
     }
+
+    // reset e
     e->protocol = PROTOCOL_UNKNOWN;
     e->status = STATUS_UNKNOWN;
     e->method = METHOD_UNKNOWN;
     e->statement_id = 0;
     e->payload_size = 0;
+    e->tgid_req_cs = 0;
+    e->tgid_req_ss = 0;
+    e->tgid_resp_ss = 0;
+    e->tgid_resp_cs = 0;
 
     if (is_rabbitmq_consume(payload, ret)) {
         e->protocol = PROTOCOL_RABBITMQ;
@@ -434,7 +467,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     }
 
     struct l7_request *req = bpf_map_lookup_elem(&active_l7_requests, &k);
-    int response = 0;
+    int is_response = 0;  // 0: no, 1: yes, 2: partially
     if (!req) {
         if (is_dns_response(payload, ret, &k.stream_id, &e->status)) {
             req = bpf_map_lookup_elem(&active_l7_requests, &k);
@@ -442,7 +475,8 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
                 return 0;
             }
             e->protocol = PROTOCOL_DNS;
-            e->duration = bpf_ktime_get_ns() - req->ns;
+            // todo tgid
+            e->duration = read_ns - req->ns;
             e->payload_size = ret;
             COPY_PAYLOAD(e->payload, ret, payload);
             send_event(ctx, e, cid, conn);
@@ -453,11 +487,11 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
             if (!req) {
                 return 0;
             }
-            response = 1;
+            is_response = 1;
         } else if (looks_like_http2_frame(payload, ret, METHOD_HTTP2_SERVER_FRAMES)) {
             e->protocol = PROTOCOL_HTTP2;
             e->method = METHOD_HTTP2_SERVER_FRAMES;
-            e->duration = bpf_ktime_get_ns();
+            e->duration = read_ns;
             e->payload_size = ret;
             COPY_PAYLOAD(e->payload, ret, payload);
             send_event(ctx, e, cid, conn);
@@ -473,50 +507,56 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
 
     bpf_map_delete_elem(&active_l7_requests, &k);
     if (e->protocol == PROTOCOL_HTTP) {
-        response = is_http_response(payload, &e->status);
+        is_response = is_http_response(payload, &e->status);
     } else if (e->protocol == PROTOCOL_POSTGRES) {
-        response = is_postgres_response(payload, ret, &e->status);
+        is_response = is_postgres_response(payload, ret, &e->status);
         if (req->request_type == POSTGRES_FRAME_PARSE) {
             e->method = METHOD_STATEMENT_PREPARE;
         }
     } else if (e->protocol == PROTOCOL_REDIS) {
-        response = is_redis_response(payload, ret, &e->status);
+        is_response = is_redis_response(payload, ret, &e->status);
     } else if (e->protocol == PROTOCOL_MEMCACHED) {
-        response = is_memcached_response(payload, ret, &e->status);
+        is_response = is_memcached_response(payload, ret, &e->status);
     } else if (e->protocol == PROTOCOL_MYSQL) {
-        response = is_mysql_response(payload, ret, req->request_type, &e->statement_id, &e->status);
+        is_response = is_mysql_response(payload, ret, req->request_type, &e->statement_id, &e->status);
         if (req->request_type == MYSQL_COM_STMT_PREPARE) {
             e->method = METHOD_STATEMENT_PREPARE;
         }
     } else if (e->protocol == PROTOCOL_MONGO) {
-        response = is_mongo_response(payload, ret, req->partial);
-        if (response == 2) { // partial
-            struct l7_request *r = bpf_map_lookup_elem(&l7_request_heap, &zero);
-            if (!r) {
+        is_response = is_mongo_response(payload, ret, req->partial);
+        if (is_response == 2) { // partially
+            struct l7_request *prev_req = bpf_map_lookup_elem(&l7_request_heap, &zero);
+            if (!prev_req) {
                 return 0;
             }
-            r->partial = 1;
-            r->protocol = e->protocol;
-            r->ns = req->ns;
-            r->payload_size = req->payload_size;
-            COPY_PAYLOAD(r->payload, req->payload_size, req->payload);
-            bpf_map_update_elem(&active_l7_requests, &k, r, BPF_ANY);
+            prev_req->partial = 1;
+            prev_req->protocol = e->protocol;
+            prev_req->ns = req->ns;
+            prev_req->payload_size = req->payload_size;
+            COPY_PAYLOAD(prev_req->payload, req->payload_size, req->payload);
+            bpf_map_update_elem(&active_l7_requests, &k, prev_req, BPF_ANY);
             return 0;
         }
     } else if (e->protocol == PROTOCOL_KAFKA) {
-        response = is_kafka_response(payload, req->request_id);
+        is_response = is_kafka_response(payload, req->request_id);
     } else if (e->protocol == PROTOCOL_DUBBO2) {
-        response = is_dubbo2_response(payload, &e->status);
+        is_response = is_dubbo2_response(payload, &e->status);
     }
 
-    if (!response) {
+    if (!is_response) {
         return 0;
     }
-    e->duration = bpf_ktime_get_ns() - req->ns;
+
+    e->tgid_req_cs = req->tgid_send;
+    e->tgid_req_ss = req->tgid_recv;  // todo tgid server-side
+    e->tgid_resp_ss = 0;  // todo tgid server-side
+    e->tgid_resp_cs = read_tgid;
+    e->duration = read_ns - req->ns;
     send_event(ctx, e, cid, conn);
     return 0;
 }
 
+// WRITE: Write-like syscalls
 SEC("tracepoint/syscalls/sys_enter_write")
 int sys_enter_write(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size, 0);
@@ -564,6 +604,7 @@ int sys_enter_sendto(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size, 0);
 }
 
+// READ: Read-like syscalls
 SEC("tracepoint/syscalls/sys_enter_read")
 int sys_enter_read(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();

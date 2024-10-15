@@ -54,10 +54,14 @@ type Event struct {
 	Type         EventType
 	Reason       EventReason
 	Pid          uint32
+	TgidReqCs    uint64 // tgid of request from client-side
+	TgidReqSs    uint64 // tgid of request from server-side
+	TgidRespSs   uint64 // tgid of response from client-side
+	TgidRespCs   uint64 // tgid of response from server-side
 	SrcAddr      netaddr.IPPort
 	DstAddr      netaddr.IPPort
 	Fd           uint64
-	Timestamp    uint64 // todo 单位是 micro or mill?
+	Timestamp    uint64 // timestamp in nanoseconds
 	Duration     time.Duration
 	L7Request    *l7.Request
 	TrafficStats *TrafficStats
@@ -348,10 +352,15 @@ type fileEvent struct {
 	Fd   uint64
 }
 
+// `l7Event` to be aligned with `struct l7_event`.
 type l7Event struct {
 	Fd                  uint64
 	ConnectionTimestamp uint64
 	Pid                 uint32
+	TgidReqCs           uint64
+	TgidReqSs           uint64
+	TgidRespSs          uint64
+	TgidRespCs          uint64
 	Status              uint32
 	Duration            uint64
 	Protocol            uint8
@@ -369,60 +378,69 @@ type pythonThreadEvent struct {
 
 func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapType) {
 	for {
-		rec, err := r.Read()
+		record, err := r.Read()
 		if err != nil {
 			if errors.Is(err, perf.ErrClosed) {
 				break
 			}
 			continue
 		}
-		if rec.LostSamples > 0 {
-			klog.Errorln(name, "lost samples:", rec.LostSamples)
+		if record.LostSamples > 0 {
+			klog.Errorln(name, "lost samples:", record.LostSamples)
 			continue
 		}
 		var event Event
 
 		switch typ {
 		case perfMapTypeL7Events:
-			v := &l7Event{}
-			reader := bytes.NewBuffer(rec.RawSample)
-			if err := binary.Read(reader, binary.LittleEndian, v); err != nil {
-				klog.Warningln("failed to read msg:", err)
+			l7Event := &l7Event{}
+			reader := bytes.NewBuffer(record.RawSample)
+			if err := binary.Read(reader, binary.LittleEndian, l7Event); err != nil {
+				klog.Warningln("failed to read eBPF record: ", err)
 				continue
 			}
 			payload := reader.Bytes()
 			req := &l7.Request{
-				Protocol: l7.Protocol(v.Protocol),
-				Status:   l7.Status(v.Status),
-				Duration: time.Duration(v.Duration),
-				Method:   l7.Method(v.Method),
-				ID:       v.StatementId,
+				Protocol: l7.Protocol(l7Event.Protocol),
+				Status:   l7.Status(l7Event.Status),
+				Duration: time.Duration(l7Event.Duration),
+				Method:   l7.Method(l7Event.Method),
+				ID:       l7Event.StatementId,
 			}
 			switch {
-			case v.PayloadSize == 0:
-			case v.PayloadSize > MaxPayloadSize:
+			case l7Event.PayloadSize == 0:
+			case l7Event.PayloadSize > MaxPayloadSize:
 				req.Payload = payload[:MaxPayloadSize]
 			default:
-				req.Payload = payload[:v.PayloadSize]
+				req.Payload = payload[:l7Event.PayloadSize]
 			}
-			event = Event{Type: EventTypeL7Request, Pid: v.Pid, Fd: v.Fd, Timestamp: v.ConnectionTimestamp, L7Request: req}
+			event = Event{
+				Type:       EventTypeL7Request,
+				Pid:        l7Event.Pid,
+				TgidReqCs:  l7Event.TgidReqCs,
+				TgidReqSs:  l7Event.TgidReqSs,
+				TgidRespSs: l7Event.TgidRespSs,
+				TgidRespCs: l7Event.TgidRespCs,
+				Fd:         l7Event.Fd,
+				Timestamp:  l7Event.ConnectionTimestamp,
+				L7Request:  req}
 		case perfMapTypeFileEvents:
 			v := &fileEvent{}
-			if err := binary.Read(bytes.NewBuffer(rec.RawSample), binary.LittleEndian, v); err != nil {
+			if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, v); err != nil {
 				klog.Warningln("failed to read msg:", err)
 				continue
 			}
 			event = Event{Type: v.Type, Pid: v.Pid, Fd: v.Fd}
 		case perfMapTypeProcEvents:
 			v := &procEvent{}
-			if err := binary.Read(bytes.NewBuffer(rec.RawSample), binary.LittleEndian, v); err != nil {
+			if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, v); err != nil {
 				klog.Warningln("failed to read msg:", err)
 				continue
 			}
 			event = Event{Type: v.Type, Reason: EventReason(v.Reason), Pid: v.Pid}
 		case perfMapTypeTCPEvents:
 			v := &tcpEvent{}
-			if err := binary.Read(bytes.NewBuffer(rec.RawSample), binary.LittleEndian, v); err != nil {
+			if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, v); err != nil {
 				klog.Warningln("failed to read msg:", err)
 				continue
 			}
@@ -443,7 +461,7 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 			}
 		case perfMapTypePythonThreadEvents:
 			v := &pythonThreadEvent{}
-			if err := binary.Read(bytes.NewBuffer(rec.RawSample), binary.LittleEndian, v); err != nil {
+			if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, v); err != nil {
 				klog.Warningln("failed to read msg:", err)
 				continue
 			}

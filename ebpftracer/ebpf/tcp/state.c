@@ -65,10 +65,12 @@ struct {
     __uint(max_entries, MAX_CONNECTIONS);
 } connection_id_by_socket SEC(".maps");
 
-struct connection {
+struct connection {  // TCP connection context
     __u64 timestamp;
     __u64 bytes_sent;
     __u64 bytes_received;
+    __u64 tgid_send;  // tgid who sends the flow, maybe request, maybe response
+    __u64 tgid_recv;  // tgid who receives the flow, maybe request, maybe response
 };
 
 struct {
@@ -92,6 +94,7 @@ int inet_sock_set_state(void *ctx)
     __u64 id = bpf_get_current_pid_tgid();
     __u32 pid = id >> 32;
 
+    // This transfer stands for new connection.
     if (args.oldstate == BPF_TCP_CLOSE && args.newstate == BPF_TCP_SYN_SENT) {
         __u64 *fdp = bpf_map_lookup_elem(&fd_by_pid_tgid, &id);
 
@@ -104,6 +107,7 @@ int inet_sock_set_state(void *ctx)
 
         struct connection conn = {};
         conn.timestamp = bpf_ktime_get_ns();
+        conn.tgid_send = bpf_get_current_pid_tgid();
 
         bpf_map_delete_elem(&fd_by_pid_tgid, &id);
         bpf_map_update_elem(&connection_id_by_socket, &args.skaddr, &cid, BPF_ANY);
@@ -197,9 +201,10 @@ int sys_exit_connect(struct trace_event_raw_sys_exit__stub* ctx) {
     cid.pid = id >> 32;
     cid.fd = *fdp;
     struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
-    if (!conn && ctx->ret == 0) { // non-TCP connection
+    if (!conn && ctx->ret == 0) {  // non-TCP connection, so state transfers can't hook.
         struct connection conn = {};
         conn.timestamp = bpf_ktime_get_ns();
+        conn.tgid_send = bpf_get_current_pid_tgid();
         bpf_map_update_elem(&active_connections, &cid, &conn, BPF_ANY);
     }
     bpf_map_delete_elem(&fd_by_pid_tgid, &id);

@@ -676,7 +676,7 @@ func (c *Container) onDNSRequest(r *l7.Request) map[netaddr.IP]string {
 	return ip2fqdn
 }
 
-func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.Request) map[netaddr.IP]string {
+func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.Request, rawEvent *ebpftracer.Event) map[netaddr.IP]string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -692,8 +692,10 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		return nil
 	}
 	stats := c.l7Stats.get(r.Protocol, conn.Dest, conn.ActualDest)
-	trace := tracing.NewTrace(string(c.id), conn.ActualDest)
+	trace := tracing.NewSpanBuilder(string(c.id), conn.ActualDest, rawEvent)
+
 	switch r.Protocol {
+	// sort `case` by protocol's statistics distribution
 	case l7.ProtocolHTTP:
 		stats.observe(r.Status.Http(), "", r.Duration)
 		method, path := l7.ParseHttp(r.Payload)
@@ -743,6 +745,8 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		stats.observe(r.Status.String(), r.Method.String(), 0)
 	case l7.ProtocolDubbo2:
 		stats.observe(r.Status.String(), "", r.Duration)
+	default:
+		klog.Warningf("unknown protocol, protocol code is %d", r.Protocol)
 	}
 	return nil
 }

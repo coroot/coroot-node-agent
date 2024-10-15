@@ -22,6 +22,8 @@ const (
 	ProtocolHTTP2     Protocol = 11
 	ProtocolDubbo2    Protocol = 12
 	ProtocolDNS       Protocol = 13
+	// todo supports ProtocolClickhouse
+
 )
 
 func (p Protocol) String() string {
