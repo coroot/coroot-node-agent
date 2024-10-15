@@ -77,7 +77,7 @@ struct {
      __type(key, int);
      __type(value, struct l7_event);
      __uint(max_entries, 1);
-} l7_event_heap SEC(".maps");
+} l7_event_heap SEC(".maps");  // 只用堆顶
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);  // for perf event
@@ -107,7 +107,7 @@ struct l7_request_key {
 };
 
 struct l7_request {  // more like concept `flow`, maybe request, maybe response
-    __u64 ns;
+    __u64 ns;  // 请求发出时间，单位纳秒。
     __u64 tgid_send;  // tgid who sends the request
     __u64 tgid_recv;  // tgid who receives the request
     __u8 protocol;
@@ -130,7 +130,7 @@ struct {
     __uint(key_size, sizeof(struct l7_request_key));
     __uint(value_size, sizeof(struct l7_request));
     __uint(max_entries, 32768);
-} active_l7_requests SEC(".maps");
+} active_l7_requests SEC(".maps");  // 类似 `active_connections`，是针对 L7 的，同样限制于 client-side。
 
 struct {
      __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -141,23 +141,25 @@ struct {
 
 struct trace_event_raw_sys_enter_rw__stub {
     __u64 unused;
-    long int id;
-    __u64 fd;
-    char* buf;
-    __u64 size;
+    long int id;  // 系统调用编号，表示当前调用的具体系统调用，比如在 sys_enter_write 中应该是 SYS_write，即 write 的系统调用号。
+    __u64 fd;  // write 系统调用的第一个参数，表示文件描述符（file descriptor，fd），指明数据要写入的文件或设备。
+    char* buf;  // write 系统调用的第二个参数，表示要写入的数据的缓冲区地址，这个指针指向用户空间的缓冲区。
+    __u64 size;  // write 系统调用的第三个参数，表示要写入的字节数。
 };
 
 struct trace_event_raw_sys_exit_rw__stub {
     __u64 unused;
-    long int id;
-    long int ret;
+    long int id;  // 系统调用号，可以用来确认是否是 read 系统调用。
+    long int ret;  // 系统调用返回值，即 read 返回的值。调用成功时为读取的字节数，失败时为负数的错误码。
 };
 
+// I/O vector, parameter for readv/writev
 struct iovec {
     char* buf;
     __u64 size;
 };
 
+// user message header：应用层消息头
 struct user_msghdr {
 	void *msg_name;
 	int msg_namelen;
@@ -322,7 +324,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         req->protocol = PROTOCOL_KAFKA;
         struct l7_request *prev_req = bpf_map_lookup_elem(&active_l7_requests, &k);
         if (prev_req && prev_req->protocol == PROTOCOL_KAFKA) {
-            req->ns = prev_req->ns;
+            req->ns = prev_req->ns; // 这是由 Kafka 协议的“流水线”特性决定的。
         }
     } else if (looks_like_http2_frame(payload, size, METHOD_HTTP2_CLIENT_FRAMES)) {
         struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
@@ -407,7 +409,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
 
     bpf_map_delete_elem(&active_reads, &id);
 
-    if (ret <= 0) {
+    if (ret <= 0) {  // ret < 0, error in SYS_read; ret = 0, meets special file likes pipe.
         return 0;
     }
     if (args->ret) {

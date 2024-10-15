@@ -25,6 +25,7 @@ var (
 func init() {
 	var err error
 
+	// ct4 eBPF map 只在 K8s Daemonset 中可见。
 	ciliumCt4, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, ctmap.MapNameTCP4Global)))
 	if err != nil {
 		klog.Infoln(err)
@@ -68,6 +69,7 @@ func lookupCiliumConntrackTable(src, dst netaddr.IPPort) *netaddr.IPPort {
 	return nil
 }
 
+// 优化点：对 `ciliumCt4` 的解析过程放在协程中进行，同步改异步。
 func lookupCilium4(src, dst netaddr.IPPort) *netaddr.IPPort {
 	if ciliumCt4 == nil || backends4Map == nil {
 		return nil

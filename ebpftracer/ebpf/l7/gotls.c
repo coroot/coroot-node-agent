@@ -3,7 +3,7 @@
 #define GO_PARAM1(x) ((x)->ax)
 #define GO_PARAM2(x) ((x)->bx)
 #define GO_PARAM3(x) ((x)->cx)
-#define GOROUTINE(x) ((x)->r14)
+#define GOROUTINE(x) ((x)->r14)  // goroutine ID 可以从寄存器拿到。
 #elif defined(__TARGET_ARCH_arm64)
 #define GO_PARAM1(x) (((PT_REGS_ARM64 *)(x))->regs[0])
 #define GO_PARAM2(x) (((PT_REGS_ARM64 *)(x))->regs[1])

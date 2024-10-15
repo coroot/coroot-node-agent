@@ -1,5 +1,5 @@
 #define IPPROTO_TCP 6
-#define MAX_CONNECTIONS 1000000
+#define MAX_CONNECTIONS 1000000  // 可观测的最大连接数
 
 struct tcp_event {
     __u64 fd;
@@ -128,6 +128,8 @@ int inet_sock_set_state(void *ctx)
         if (!cid) {
             return 0;
         }
+        // 从缓存表中拿到“连接”。
+        // “连接”保存了请求发出时的相关信息。
         struct connection *conn = bpf_map_lookup_elem(&active_connections, cid);
         if (!conn) {
             return 0;

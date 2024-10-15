@@ -23,7 +23,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const MaxPayloadSize = 1024
+const MaxPayloadSize = 1024 // 最大负载长度。比如 'http-length'。
 
 type EventType uint32
 type EventReason uint32
@@ -50,6 +50,7 @@ type TrafficStats struct {
 	BytesReceived uint64
 }
 
+// Event 类似 Flow，是建立 Span 的原始数据。
 type Event struct {
 	Type         EventType
 	Reason       EventReason
@@ -474,6 +475,7 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 			continue
 		}
 
+		// 写入到 eBPF 消息队列
 		ch <- event
 	}
 }
