@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,10 +24,12 @@ import (
 const MinTrafficStatsUpdateInterval = 5 * time.Second
 
 var (
-	selfNetNs         = netns.None()
-	hostNetNsId       = netns.None().UniqueId()
-	agentPid          = uint32(os.Getpid())
-	containerIdRegexp = regexp.MustCompile(`[a-z0-9]{64}`)
+	selfNetNs                = netns.None()
+	hostNetNsId              = netns.None().UniqueId()
+	agentPid                 = uint32(os.Getpid())
+	containerIdRegexp        = regexp.MustCompile(`[a-z0-9]{64}`)
+	cronjobPodName           = regexp.MustCompile(`([a-z0-9-]+)-([0-9]{8})-[bcdfghjklmnpqrstvwxz2456789]{5}`)
+	cronjobPodScheduleWindow = 7 * 24 * time.Hour
 )
 
 type ProcessInfo struct {
@@ -418,6 +421,14 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 		}
 		if name == "" || name == "POD" { // skip pause containers
 			return ""
+		}
+		if g := cronjobPodName.FindStringSubmatch(pod); len(g) == 3 {
+			now := time.Now()
+			tsMiniutes, _ := strconv.ParseUint(g[2], 10, 64)
+			scheduledAt := time.Unix(int64(tsMiniutes)*60, 0)
+			if scheduledAt.After(now.Add(-cronjobPodScheduleWindow)) && scheduledAt.Before(now.Add(cronjobPodScheduleWindow)) {
+				return ContainerID(fmt.Sprintf("/k8s-cronjob/%s/%s/%s", namespace, g[1], name))
+			}
 		}
 		return ContainerID(fmt.Sprintf("/k8s/%s/%s/%s", namespace, pod, name))
 	}
