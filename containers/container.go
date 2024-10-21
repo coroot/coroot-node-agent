@@ -2,6 +2,7 @@ package containers
 
 import (
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/coroot/logparser"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
+	"golang.org/x/exp/maps"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 )
@@ -119,7 +121,6 @@ type Container struct {
 	delaysLock  sync.Mutex
 
 	listens map[netaddr.IPPort]map[uint32]*ListenDetails
-	ipsByNs map[string][]netaddr.IP
 
 	connectsSuccessful map[AddrPair]*ConnectionStats // dst:actual_dst -> count
 	connectsFailed     map[netaddr.IPPort]int64      // dst -> count
@@ -164,7 +165,6 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 		delaysByPid: map[uint32]Delays{},
 
 		listens: map[netaddr.IPPort]map[uint32]*ListenDetails{},
-		ipsByNs: map[string][]netaddr.IP{},
 
 		connectsSuccessful: map[AddrPair]*ConnectionStats{},
 		connectsFailed:     map[netaddr.IPPort]int64{},
@@ -337,7 +337,14 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	appTypes := map[string]struct{}{}
 	seenJvms := map[string]bool{}
-	for pid, process := range c.processes {
+	seenDotNetApps := map[string]bool{}
+	pids := maps.Keys(c.processes)
+	sort.Slice(pids, func(i, j int) bool {
+		return pids[i] < pids[j]
+	})
+
+	for _, pid := range pids {
+		process := c.processes[pid]
 		cmdline := proc.GetCmdline(pid)
 		if len(cmdline) == 0 {
 			continue
@@ -360,7 +367,11 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 			}
 		case process.dotNetMonitor != nil:
 			appTypes["dotnet"] = struct{}{}
-			process.dotNetMonitor.Collect(ch)
+			appName := process.dotNetMonitor.AppName()
+			if !seenDotNetApps[appName] {
+				seenDotNetApps[appName] = true
+				process.dotNetMonitor.Collect(ch)
+			}
 		}
 	}
 	for appType := range appTypes {
@@ -486,16 +497,12 @@ func (c *Container) onListenOpen(pid uint32, addr netaddr.IPPort, safe bool) {
 			return
 		}
 		defer ns.Close()
-		nsId := ns.UniqueId()
-		ips, ok := c.ipsByNs[nsId]
-		if !ok {
-			if ips, err = proc.GetNsIps(ns); err != nil {
-				klog.Warningln(err)
-			} else {
-				klog.Infof("got IPs %s for %s", ips, nsId)
-				c.ipsByNs[nsId] = ips
-			}
+		ips, err := proc.GetNsIps(ns)
+		if err != nil {
+			klog.Warningln(err)
+			return
 		}
+		klog.Infof("got IPs %s for %s", ips, ns.UniqueId())
 		details.NsIPs = ips
 	}
 }
@@ -1026,12 +1033,6 @@ func (c *Container) gc(now time.Time) {
 			}
 		}
 		seenNamespaces[p.NetNsId()] = true
-	}
-
-	for ns := range c.ipsByNs {
-		if !seenNamespaces[ns] {
-			delete(c.ipsByNs, ns)
-		}
 	}
 
 	c.revalidateListens(now, listens)

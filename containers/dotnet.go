@@ -53,6 +53,7 @@ func (m *dotNetMetric) units() string {
 
 type DotNetMonitor struct {
 	pid            uint32
+	appName        string
 	cancel         context.CancelFunc
 	lastUpdate     time.Time
 	runtimeVersion string
@@ -74,8 +75,8 @@ func NewDotNetMonitor(ctx context.Context, pid uint32, appName string) *DotNetMo
 	constLabels := prometheus.Labels{"application": appName}
 
 	m := &DotNetMonitor{
-		pid: pid,
-
+		pid:                           pid,
+		appName:                       appName,
 		info:                          newGaugeVec("container_dotnet_info", "Meta information about the Common Language Runtime (CLR)", constLabels, "runtime_version"),
 		memoryAllocatedBytes:          newCounter("container_dotnet_memory_allocated_bytes_total", "The number of bytes allocated", constLabels),
 		exceptionCount:                newGauge("container_dotnet_exceptions_total", "The number of exceptions that have occurred", constLabels),
@@ -89,6 +90,10 @@ func NewDotNetMonitor(ctx context.Context, pid uint32, appName string) *DotNetMo
 	}
 	go m.run(ctx)
 	return m
+}
+
+func (m *DotNetMonitor) AppName() string {
+	return m.appName
 }
 
 func (m *DotNetMonitor) Collect(ch chan<- prometheus.Metric) {

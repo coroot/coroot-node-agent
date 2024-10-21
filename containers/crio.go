@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/coroot/coroot-node-agent/common"
@@ -20,7 +21,6 @@ const crioTimeout = 30 * time.Second
 
 var (
 	crioClient *http.Client
-	crioSocket = proc.HostPath("/var/run/crio/crio.sock")
 )
 
 type CrioContainerInfo struct {
@@ -37,8 +37,23 @@ type CrioVolume struct {
 }
 
 func CrioInit() error {
-	if _, err := os.Stat(crioSocket); err != nil {
-		return err
+	sockets := []string{
+		"/var/run/crio/crio.sock",
+		"/run/crio/crio.sock",
+	}
+	var crioSocket string
+	var err error
+	for _, socket := range sockets {
+		socketHostPath := proc.HostPath(socket)
+		if _, err := os.Stat(socketHostPath); err == nil {
+			crioSocket = socketHostPath
+			break
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("couldn't connect to CRI-O through the following UNIX sockets: [%s]: %s",
+			strings.Join(sockets, ","), err,
+		)
 	}
 	klog.Infoln("cri-o socket:", crioSocket)
 
@@ -50,6 +65,7 @@ func CrioInit() error {
 			DisableCompression: true,
 		},
 	}
+
 	return nil
 }
 

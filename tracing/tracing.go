@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"strconv"
@@ -45,6 +46,7 @@ func Init(machineId, hostname, version string) {
 		otlptracehttp.WithEndpoint(endpointUrl.Host),
 		otlptracehttp.WithURLPath(path),
 		otlptracehttp.WithHeaders(common.AuthHeaders()),
+		otlptracehttp.WithTLSClientConfig(&tls.Config{InsecureSkipVerify: *flags.InsecureSkipVerify}),
 	}
 	if endpointUrl.Scheme != "https" {
 		opts = append(opts, otlptracehttp.WithInsecure())
