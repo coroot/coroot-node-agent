@@ -1,3 +1,5 @@
+// TCP state monitoring, both client-side and server-side
+
 #define IPPROTO_TCP 6
 #define MAX_CONNECTIONS 1000000  // 可观测的最大连接数
 
@@ -11,21 +13,21 @@ struct tcp_event {
     __u64 bytes_received;
     __u16 sport;
     __u16 dport;
-    __u8 saddr[16];
+    __u8 saddr[16];  // IP address parser supports "IPv4 in IPv6".
     __u8 daddr[16];
 };
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
     __uint(key_size, sizeof(int));
-    __uint(value_size, sizeof(int));
-} tcp_listen_events SEC(".maps");
+    __uint(value_size, sizeof(int));  // pointer to `struct tcp_event`
+} tcp_listen_events SEC(".maps");  // `listen` belongs to server-side
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
     __uint(key_size, sizeof(int));
-    __uint(value_size, sizeof(int));
-} tcp_connect_events SEC(".maps");
+    __uint(value_size, sizeof(int));  // pointer to `struct tcp_event`
+} tcp_connect_events SEC(".maps");  // `connect` belongs to client-side
 
 struct trace_event_raw_inet_sock_set_state__stub {
     __u64 unused;
@@ -119,7 +121,7 @@ int inet_sock_set_state(void *ctx)
     __u32 type = 0;
     __u64 timestamp = 0;
     __u64 duration = 0;
-    void *map = &tcp_connect_events;
+    void *tcp_events_p = &tcp_connect_events;  // client-side or server-side
 
     struct tcp_event e = {};
 
@@ -128,8 +130,7 @@ int inet_sock_set_state(void *ctx)
         if (!cid) {
             return 0;
         }
-        // 从缓存表中拿到“连接”。
-        // “连接”保存了请求发出时的相关信息。
+        // 从缓存表中拿到活跃连接
         struct connection *conn = bpf_map_lookup_elem(&active_connections, cid);
         if (!conn) {
             return 0;
@@ -138,6 +139,7 @@ int inet_sock_set_state(void *ctx)
             timestamp = conn->timestamp;
             type = EVENT_TYPE_CONNECTION_OPEN;
         } else if (args.newstate == BPF_TCP_CLOSE) {
+            // 建连过程异常，需要清除活跃连接
             bpf_map_delete_elem(&active_connections, cid);
             type = EVENT_TYPE_CONNECTION_ERROR;
         }
@@ -145,21 +147,27 @@ int inet_sock_set_state(void *ctx)
         pid = cid->pid;
         fd = cid->fd;
     }
+
     if (args.oldstate == BPF_TCP_ESTABLISHED && (args.newstate == BPF_TCP_FIN_WAIT1 || args.newstate == BPF_TCP_CLOSE_WAIT)) {
+        // 清除活跃连接的套接字
         bpf_map_delete_elem(&connection_id_by_socket, &args.skaddr);
     }
+
     if (args.oldstate == BPF_TCP_CLOSE && args.newstate == BPF_TCP_LISTEN) {
         type = EVENT_TYPE_LISTEN_OPEN;
-        map = &tcp_listen_events;
-    }
-    if (args.oldstate == BPF_TCP_LISTEN && args.newstate == BPF_TCP_CLOSE) {
-        type = EVENT_TYPE_LISTEN_CLOSE;
-        map = &tcp_listen_events;
+        tcp_events_p = &tcp_listen_events;
     }
 
-    if (type == 0) {
+    if (args.oldstate == BPF_TCP_LISTEN && args.newstate == BPF_TCP_CLOSE) {
+        type = EVENT_TYPE_LISTEN_CLOSE;
+        tcp_events_p = &tcp_listen_events;
+    }
+
+    if (type == EVENT_TYPE_UNKNOWN) {
         return 0;
     }
+
+    // 构建 tcp_event
     e.type = type;
     e.duration = duration;
     e.timestamp = timestamp;
@@ -170,7 +178,7 @@ int inet_sock_set_state(void *ctx)
     __builtin_memcpy(&e.saddr, &args.saddr_v6, sizeof(e.saddr));
     __builtin_memcpy(&e.daddr, &args.daddr_v6, sizeof(e.saddr));
 
-    bpf_perf_event_output(ctx, map, BPF_F_CURRENT_CPU, &e, sizeof(e));
+    bpf_perf_event_output(ctx, tcp_events_p, BPF_F_CURRENT_CPU, &e, sizeof(e));
 
     return 0;
 }

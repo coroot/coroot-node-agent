@@ -25,10 +25,12 @@ import (
 
 const MaxPayloadSize = 1024 // 最大负载长度。比如 'http-length'。
 
-type EventType uint32
-type EventReason uint32
+type EventType int32 // .c uses default int32
+type EventReason int32
 
+// To be synchronized with ebpf.c definitions.
 const (
+	EventTypeUnknown          EventType = 0
 	EventTypeProcessStart     EventType = 1
 	EventTypeProcessExit      EventType = 2
 	EventTypeConnectionOpen   EventType = 3
@@ -41,7 +43,7 @@ const (
 	EventTypeL7Request        EventType = 10
 	EventTypePythonThreadLock EventType = 11
 
-	EventReasonNone    EventReason = 0
+	EventReasonUnknown EventReason = 0
 	EventReasonOOMKill EventReason = 1
 )
 
@@ -298,15 +300,15 @@ func (t EventType) String() string {
 	case EventTypeProcessExit:
 		return "process-exit"
 	case EventTypeConnectionOpen:
-		return "connection-open"
+		return "tcp-connect-open"
 	case EventTypeConnectionClose:
-		return "connection-close"
+		return "tcp-connect-close"
 	case EventTypeConnectionError:
-		return "connection-error"
+		return "tcp-connect-error"
 	case EventTypeListenOpen:
-		return "listen-open"
+		return "tcp-listen-open"
 	case EventTypeListenClose:
-		return "listen-close"
+		return "tcp-listen-close"
 	case EventTypeFileOpen:
 		return "file-open"
 	case EventTypeTCPRetransmit:
@@ -319,8 +321,6 @@ func (t EventType) String() string {
 
 func (t EventReason) String() string {
 	switch t {
-	case EventReasonNone:
-		return "none"
 	case EventReasonOOMKill:
 		return "oom-kill"
 	}
@@ -333,6 +333,7 @@ type procEvent struct {
 	Reason uint32
 }
 
+// To be synchronized with `struct tcp_event`.
 type tcpEvent struct {
 	Fd            uint64
 	Timestamp     uint64
@@ -343,7 +344,7 @@ type tcpEvent struct {
 	BytesReceived uint64
 	SPort         uint16
 	DPort         uint16
-	SAddr         [16]byte
+	SAddr         [16]byte // supports IPv4 in IPv6
 	DAddr         [16]byte
 }
 
@@ -353,7 +354,7 @@ type fileEvent struct {
 	Fd   uint64
 }
 
-// `l7Event` to be aligned with `struct l7_event`.
+// To be synchronized with `struct l7_event`.
 type l7Event struct {
 	Fd                  uint64
 	ConnectionTimestamp uint64

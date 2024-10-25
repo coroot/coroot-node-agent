@@ -44,11 +44,11 @@ type Registry struct {
 	tracer *ebpftracer.Tracer
 	events chan ebpftracer.Event
 
-	hostConntrack *Conntrack
+	hostConntrack *Conntrack // 复用 conntrack 连接查找表。
 
-	containersById       map[ContainerID]*Container
-	containersByCgroupId map[string]*Container
-	containersByPid      map[uint32]*Container
+	containersById       map[ContainerID]*Container // 内部编号 ContainerID。
+	containersByCgroupId map[string]*Container      // 通过 host 上的 cgroupID 查找相应的容器
+	containersByPid      map[uint32]*Container      // 通过 host 上的进程查找相应的容器，比如 k8s pod。
 	ip2fqdn              map[netaddr.IP]string
 	ip2fqdnLock          sync.Mutex
 
@@ -59,7 +59,7 @@ type Registry struct {
 	trafficStatsUpdateCh    chan *TrafficStatsUpdate
 }
 
-// 综合了各个功能模块
+// NewRegistry 综合了各个功能模块
 func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh chan<- ProcessInfo) (*Registry, error) {
 	ns, err := proc.GetSelfNetNs()
 	if err != nil {
