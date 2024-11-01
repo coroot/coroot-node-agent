@@ -403,13 +403,14 @@ func (r *Registry) getFQDN(ip netaddr.IP) string {
 }
 
 func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
-	if cg.ContainerType == cgroup.ContainerTypeSystemdService {
+	switch cg.ContainerType {
+	case cgroup.ContainerTypeSystemdService:
 		if strings.HasPrefix(cg.ContainerId, "/system.slice/crio-conmon-") {
 			return ""
 		}
 		return ContainerID(cg.ContainerId)
-	}
-	switch cg.ContainerType {
+	case cgroup.ContainerTypeTalosRuntime:
+		return ContainerID(cg.ContainerId)
 	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
 	default:
 		return ""
