@@ -146,5 +146,5 @@ type Request struct {
 	Method   Method
 	Status   Status
 	Duration time.Duration
-	Payload  []byte // 没什么用，取消吧
+	Payload  []byte
 }

@@ -96,7 +96,7 @@ func NewSpanBuilder(containerId string, destination netaddr.IPPort, rawEvent *eb
 }
 
 func (t *SpanBuilder) createSpan(name string, duration time.Duration, error bool, attrs ...attribute.KeyValue) {
-	end := time.Now()
+	end := time.Now() // todo 不管之前如何滥用时间字段，这里完全在使用 process time，这一点可以使用 event time，因为中间会存在 agent 处理耗时。
 	start := end.Add(-duration)
 	_, span := tracer(t.containerId).Start(context.Background(), name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
 	span.SetAttributes(attrs...)

@@ -49,7 +49,7 @@ type Registry struct {
 	containersById       map[ContainerID]*Container // 内部编号 ContainerID。
 	containersByCgroupId map[string]*Container      // 通过 host 上的 cgroupID 查找相应的容器
 	containersByPid      map[uint32]*Container      // 通过 host 上的进程查找相应的容器，比如 k8s pod。
-	ip2fqdn              map[netaddr.IP]string
+	ip2fqdn              map[netaddr.IP]string      // coroot 维护的 DNS 局部缓存。
 	ip2fqdnLock          sync.Mutex
 
 	processInfoCh chan<- ProcessInfo
@@ -250,7 +250,9 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
 					c.onListenOpen(e.Pid, e.SrcAddr, false)
 				} else {
-					klog.Infoln("TCP listen open from unknown container", e)
+					if !c.destBelongsToWorld(e.DstAddr) {
+						klog.Infoln("TCP listen open from unknown container", e)
+					}
 				}
 			case ebpftracer.EventTypeListenClose:
 				if c := r.containersByPid[e.Pid]; c != nil {
@@ -262,14 +264,17 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, e.Timestamp, false, e.Duration)
 					c.attachTlsUprobes(r.tracer, e.Pid)
 				} else {
-					// todo Maybe this flow comes from or goes to the "world", so container is unknown.
-					klog.Infoln("TCP connection from unknown container", e)
+					if !c.destBelongsToWorld(e.DstAddr) {
+						klog.Infoln("TCP connection from unknown container", e)
+					}
 				}
 			case ebpftracer.EventTypeConnectionError:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
 					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, 0, true, e.Duration)
 				} else {
-					klog.Infoln("TCP connection error from unknown container", e)
+					if !c.destBelongsToWorld(e.DstAddr) {
+						klog.Infoln("TCP connection error from unknown container", e)
+					}
 				}
 			case ebpftracer.EventTypeConnectionClose:
 				if c := r.containersByPid[e.Pid]; c != nil {
@@ -287,12 +292,18 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					continue
 				}
 				if c := r.containersByPid[e.Pid]; c != nil {
+					// 针对 L7Request 事件，e.Timestamp 目前保留的是建立连接的时间。
+					// 在 onDNSRequest 上更新 r.ip2fqdn 缓存。
 					ip2fqdn := c.onL7Request(e.Pid, e.Fd, e.Timestamp, e.L7Request, &e)
 					r.ip2fqdnLock.Lock()
 					for ip, fqdn := range ip2fqdn {
 						r.ip2fqdn[ip] = fqdn
 					}
 					r.ip2fqdnLock.Unlock()
+				}
+			case ebpftracer.EventTypeL7Response:
+				if c := r.containersByPid[e.Pid]; c != nil {
+					c.onL7Response(e.Pid, e.Fd, e.Timestamp, e.Duration, e.TgidReqSs, e.TgidRespSs)
 				}
 			case ebpftracer.EventTypePythonThreadLock:
 				if c := r.containersByPid[e.Pid]; c != nil {
@@ -337,7 +348,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		klog.Warningf("failed to get container metadata for pid %d -> %s: %s", pid, cg.Id, err)
 		return nil
 	}
-	id := calcId(cg, md)
+	id := calculateContainerId(cg, md)
 	klog.Infof("calculated container id %d -> %s -> %s", pid, cg.Id, id)
 	if id == "" {
 		if cg.Id == "/init.scope" && pid != 1 {
@@ -405,7 +416,7 @@ func (r *Registry) updateTrafficStatsIfNecessary() {
 	r.trafficStatsLastUpdated = time.Now()
 }
 
-func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
+func calculateContainerId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 	if cg.ContainerType == cgroup.ContainerTypeSystemdService {
 		if strings.HasPrefix(cg.ContainerId, "/system.slice/crio-conmon-") {
 			return ""

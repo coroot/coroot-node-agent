@@ -25,8 +25,8 @@ import (
 
 const MaxPayloadSize = 1024 // 最大负载长度。比如 'http-length'。
 
-type EventType int32 // .c uses default int32
-type EventReason int32
+type EventType uint32 // .c uses default int32
+type EventReason uint32
 
 // To be synchronized with ebpf.c definitions.
 const (
@@ -40,9 +40,15 @@ const (
 	EventTypeListenClose      EventType = 7
 	EventTypeFileOpen         EventType = 8
 	EventTypeTCPRetransmit    EventType = 9
-	EventTypeL7Request        EventType = 10
-	EventTypePythonThreadLock EventType = 11
+	EventTypePythonThreadLock EventType = 10
+)
 
+const (
+	EventTypeL7Request  EventType = 101
+	EventTypeL7Response EventType = 102
+)
+
+const (
 	EventReasonUnknown EventReason = 0
 	EventReasonOOMKill EventReason = 1
 )
@@ -78,6 +84,7 @@ const (
 	perfMapTypeFileEvents         perfMapType = 3
 	perfMapTypeL7Events           perfMapType = 4
 	perfMapTypePythonThreadEvents perfMapType = 5
+	perfMapTypeL7SSEvents         perfMapType = 6
 )
 
 type Tracer struct {
@@ -126,6 +133,7 @@ func (t *Tracer) Close() {
 	t.collection.Close()
 }
 
+// Tracer 在初始化时可能已经积压了一些事件，所以用了一些边界状态。
 func (t *Tracer) init(ch chan<- Event) error {
 	pids, err := proc.ListPids()
 	if err != nil {
@@ -243,10 +251,8 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		{name: "tcp_retransmit_events", typ: perfMapTypeTCPEvents, perCPUBufferSizePages: 4},
 		{name: "file_events", typ: perfMapTypeFileEvents, perCPUBufferSizePages: 4},
 		{name: "python_thread_events", typ: perfMapTypePythonThreadEvents, perCPUBufferSizePages: 4},
-	}
-
-	if !t.disableL7Tracing {
-		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: 32})
+		{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: 32},
+		{name: "l7_events_ss", typ: perfMapTypeL7SSEvents, perCPUBufferSizePages: 32},
 	}
 
 	for _, pm := range perfMaps {
@@ -263,7 +269,9 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		program := t.collection.Programs[programSpec.Name]
 		if t.disableL7Tracing {
 			switch programSpec.Name {
-			case "sys_enter_writev", "sys_enter_write", "sys_enter_sendto", "sys_enter_sendmsg", "sys_enter_sendmmsg":
+			case "sys_enter_write", "sys_enter_writev", "sys_enter_sendto", "sys_enter_sendmsg", "sys_enter_sendmmsg":
+				continue
+			case "sys_exit_write", "sys_exit_writev", "sys_exit_sendto", "sys_exit_sendmsg":
 				continue
 			case "sys_enter_read", "sys_enter_readv", "sys_enter_recvfrom", "sys_enter_recvmsg":
 				continue
@@ -316,7 +324,7 @@ func (t EventType) String() string {
 	case EventTypeL7Request:
 		return "l7-request"
 	}
-	return "unknown: " + strconv.Itoa(int(t))
+	return "type-unknown-" + strconv.Itoa(int(t))
 }
 
 func (t EventReason) String() string {
@@ -324,7 +332,7 @@ func (t EventReason) String() string {
 	case EventReasonOOMKill:
 		return "oom-kill"
 	}
-	return "unknown: " + strconv.Itoa(int(t))
+	return "reason-unknown-" + strconv.Itoa(int(t))
 }
 
 type procEvent struct {
@@ -372,6 +380,17 @@ type l7Event struct {
 	PayloadSize         uint64
 }
 
+// To be synchronized with `struct l7_event_ss`, based on server-side monitoring.
+type l7EventSS struct {
+	Fd          uint64
+	Pid         uint32
+	Timestamp   uint64
+	Duration    uint64
+	StatementId uint32
+	TgidRead    uint64
+	TgidWrite   uint64
+}
+
 type pythonThreadEvent struct {
 	Type     EventType
 	Pid      uint32
@@ -398,10 +417,10 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 			l7Event := &l7Event{}
 			reader := bytes.NewBuffer(record.RawSample)
 			if err := binary.Read(reader, binary.LittleEndian, l7Event); err != nil {
-				klog.Warningln("failed to read eBPF record: ", err)
+				klog.Warningln("failed to read from l7_events PerfMap: ", err)
 				continue
 			}
-			payload := reader.Bytes()
+			payload := reader.Bytes() // `Bytes` holds the unread portion of the buffer
 			req := &l7.Request{
 				Protocol: l7.Protocol(l7Event.Protocol),
 				Status:   l7.Status(l7Event.Status),
@@ -424,8 +443,25 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 				TgidRespSs: l7Event.TgidRespSs,
 				TgidRespCs: l7Event.TgidRespCs,
 				Fd:         l7Event.Fd,
-				Timestamp:  l7Event.ConnectionTimestamp,
-				L7Request:  req}
+				//Timestamp:  l7Event.ConnectionTimestamp, // shouldn't use this kernel timestamp
+				Duration:  time.Duration(l7Event.Duration),
+				L7Request: req}
+		case perfMapTypeL7SSEvents:
+			l7EventSS := &l7EventSS{}
+			reader := bytes.NewBuffer(record.RawSample)
+			if err := binary.Read(reader, binary.LittleEndian, l7EventSS); err != nil {
+				klog.Warningln("failed to read from l7_events_ss PerfMap: ", err)
+				continue
+			}
+			event = Event{
+				Type:       EventTypeL7Response,
+				Pid:        l7EventSS.Pid,
+				TgidReqSs:  l7EventSS.TgidRead,
+				TgidRespSs: l7EventSS.TgidWrite,
+				Fd:         l7EventSS.Fd,
+				Timestamp:  l7EventSS.Timestamp,
+				Duration:   time.Duration(l7EventSS.Duration),
+			}
 		case perfMapTypeFileEvents:
 			v := &fileEvent{}
 			if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, v); err != nil {

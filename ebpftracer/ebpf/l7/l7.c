@@ -1,3 +1,5 @@
+// L7 request/response monitoring, both client-side and server-side
+
 #define PROTOCOL_UNKNOWN    0
 #define PROTOCOL_HTTP	    1
 #define PROTOCOL_POSTGRES	2
@@ -54,9 +56,12 @@
 #include "dubbo2.c"
 #include "dns.c"
 
+// ===== client-side =====
+// L7 request monitoring from the client-side. First WRITE then READ.
+
 struct l7_event {
     __u64 fd;
-    __u64 connection_timestamp;
+    __u64 connection_timestamp;  // connection timestamp instead of the span start timestamp, actually unused from the GoLang part
     __u32 pid;
     __u64 tgid_req_cs;
     __u64 tgid_req_ss;
@@ -70,20 +75,20 @@ struct l7_event {
     __u32 statement_id;
     __u64 payload_size;
     char payload[MAX_PAYLOAD_SIZE];
-} __attribute__((packed));  /* use "packed" to aviod disorder the struct */
+} __attribute__((packed));
 
 struct {
      __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);  // non-historical store, Array, not LRU
      __type(key, int);
      __type(value, struct l7_event);
      __uint(max_entries, 1);
-} l7_event_heap SEC(".maps");  // 只用堆顶
+} l7_event_heap SEC(".maps");  // heap is used to share (and save) memory between each protocol parser
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);  // for perf event
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
     __uint(key_size, sizeof(int));
-    __uint(value_size, sizeof(int));  // value is a pointer to `struct l7_event`
-} l7_events SEC(".maps");
+    __uint(value_size, sizeof(int));
+} l7_events SEC(".maps");  // PerfMap's specific map format
 
 struct read_args {
     __u64 fd;
@@ -94,7 +99,7 @@ struct read_args {
 
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
-    __uint(key_size, sizeof(__u64));
+    __uint(key_size, sizeof(__u64));  // Uses tgid, or introduced goroutine_id. Totally matches the smallest executor.
     __uint(value_size, sizeof(struct read_args));
     __uint(max_entries, 10240);
 } active_reads SEC(".maps");
@@ -107,9 +112,9 @@ struct l7_request_key {
 };
 
 struct l7_request {  // more like concept `flow`, maybe request, maybe response
-    __u64 ns;  // 请求发出时间，单位纳秒。
+    __u64 ns;  // timestamp when sends the request
     __u64 tgid_send;  // tgid who sends the request
-    __u64 tgid_recv;  // tgid who receives the request
+    __u64 tgid_recv;  // tgid who receives the response
     __u8 protocol;
     __u8 partial;
     __u8 request_type;
@@ -123,7 +128,7 @@ struct {
      __type(key, int);
      __type(value, struct l7_request);
      __uint(max_entries, 1);
-} l7_request_heap SEC(".maps");
+} l7_request_heap SEC(".maps");  // Heap is used to share memory. Besides, eBPF stack has limited memory.
 
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
@@ -172,11 +177,11 @@ struct user_msghdr {
 
 static inline __attribute__((__always_inline__))
 void send_event(void *ctx, struct l7_event *e, struct connection_id cid, struct connection *conn) {
-    // todo Want to inline those 3 setters to callings.
     e->connection_timestamp = conn->timestamp;
     e->fd = cid.fd;
     e->pid = cid.pid;
     bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
+//    bpf_printk("output l7_events, pid %u", e->pid);
 }
 
 static inline __attribute__((__always_inline__))
@@ -220,8 +225,10 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     cid.fd = fd;
     __u64 total_size = size;
 
+    // filter from active_connections
     struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
     if (!conn) {
+//        bpf_printk("miss active_connections, at trace_enter_write");
         return 0;
     }
 
@@ -247,6 +254,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         return 0;
     }
 
+    /* 对于 heap 的更新方式有两种。一种是这样先 lookup 再写成员。另一种是用 update ANY 写结构体。 */
     // reset req
     req->ns = 0;
     req->tgid_send = 0;
@@ -359,13 +367,20 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
 }
 
 static inline __attribute__((__always_inline__))
+int trace_exit_write(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) {
+    return 0; // nothing
+}
+
+static inline __attribute__((__always_inline__))
 int trace_enter_read(__u64 id, __u32 pid, __u64 fd, char *buf, __u64 *ret, __u64 iovlen) {
     struct connection_id cid = {};
     cid.pid = pid;
     cid.fd = fd;
 
+    // filter from active_connections
     struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
     if (!conn) {
+//        bpf_printk("miss active_connections, at trace_enter_read");
         return 0;
     }
 
@@ -386,18 +401,20 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     __u64 read_ns = bpf_ktime_get_ns();
     __u64 read_tgid = bpf_get_current_pid_tgid();
 
+    // filter from active_reads, between enter_read and exit_read
     struct read_args *args = bpf_map_lookup_elem(&active_reads, &id);
     if (!args) {
         return 0;
     }
 
+    // filter from active_connections
     struct connection_id cid = {};
     cid.pid = pid;
     cid.fd = args->fd;
-
     struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
+    bpf_map_delete_elem(&active_reads, &id);
     if (!conn) {
-        bpf_map_delete_elem(&active_reads, &id);
+//        bpf_printk("miss active_connections, at trace_exir_read");
         return 0;
     }
 
@@ -406,8 +423,6 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     k.fd = cid.fd;
     k.is_tls = is_tls;
     k.stream_id = -1;
-
-    bpf_map_delete_elem(&active_reads, &id);
 
     if (ret <= 0) {  // ret < 0, error in SYS_read; ret = 0, meets special file likes pipe.
         return 0;
@@ -558,24 +573,186 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     return 0;
 }
 
-// WRITE: Write-like syscalls
+// ===== server-side =====
+// L7 request monitoring from the server-side. First READ then WRITE.
+
+struct l7_event_ss {
+    __u64 fd;  // server socket fd
+    __u32 pid;  // server pid
+    __u64 timestamp;  // (kernel) timestamp when reads request from client, actually unused from the GoLang part
+    __u64 duration;  // duration to nanoseconds when writing response to client, used from the GoLang part
+    __u32 statement_id;  // some protocols may support request_id, like MySQL
+    __u64 tgid_read;  // tgid who receives the request
+    __u64 tgid_write;  // tgid who sends the response
+} __attribute__((packed));
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(int));
+    __uint(value_size, sizeof(int));
+} l7_events_ss SEC(".maps");  // PerfMap's specific map format
+
+struct l7_response_key {
+    __u64 fd;
+    __u32 pid;
+};
+
+struct l7_response {
+    __u64 ns;  // (kernel) timestamp when receives the request
+    __u64 tgid_recv;  // tgid who receives the request
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(struct l7_response_key));
+    __uint(value_size, sizeof(struct l7_response));
+    __uint(max_entries, 32768);
+} active_l7_responses SEC(".maps");
+
+struct write_args {
+    __u64 fd;  // only fd needed
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(struct write_args));
+    __uint(max_entries, 10240);
+} active_writes SEC(".maps");
+
+static inline __attribute__((__always_inline__))
+int trace_ss_enter_read(__u64 id, __u32 pid, __u64 fd) {
+    __u64 read_ns = bpf_ktime_get_ns();
+    __u64 read_tgid = bpf_get_current_pid_tgid();
+
+    // deb 读请求就有问题，说明 active_connections_ss 的内容有问题，在 state 当中。
+    struct connection_id cid = {};
+    cid.pid = pid;
+    cid.fd = fd;
+    // filter from active_connections_ss
+    struct connection *conn = bpf_map_lookup_elem(&active_connections_ss, &cid);
+    if (!conn) {
+        return 0;
+    }
+    bpf_printk("hit active_connections_ss, at trace_ss_enter_read");
+
+    struct l7_response_key resp_key = {};
+    resp_key.pid = pid;
+    resp_key.fd = fd;
+
+    struct l7_response resp = {};  // not use things like request heap, since it's very light
+    resp.ns = read_ns;
+    resp.tgid_recv = read_tgid;
+
+    bpf_map_update_elem(&active_l7_responses, &resp_key, &resp, BPF_NOEXIST);
+    return 0;
+}
+
+static inline __attribute__((__always_inline__))
+int trace_ss_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) {
+    return 0;  // nothing
+}
+
+static inline __attribute__((__always_inline__))
+int trace_ss_enter_write(__u64 id, __u32 pid, __u64 fd) {
+   /* struct connection_id cid = {};
+    cid.pid = pid;
+    cid.fd = fd;
+    // filter from active_connections_ss
+    struct connection *conn = bpf_map_lookup_elem(&active_connections_ss, &cid);
+    if (!conn) {
+//        bpf_printk("miss active_connections_ss, at trace_ss_enter_write");
+        return 0;
+    }
+*/
+    struct write_args args = {};
+    args.fd = fd;
+    bpf_map_update_elem(&active_writes, &id, &args, BPF_ANY);
+    return 0;
+}
+
+static inline __attribute__((__always_inline__))
+int trace_ss_exit_write(void *ctx, __u64 id, __u32 pid) {
+    __u64 write_ns = bpf_ktime_get_ns();
+    __u64 write_tgid = bpf_get_current_pid_tgid();
+
+    struct write_args *args = bpf_map_lookup_elem(&active_writes, &id);
+    if (!args) {
+        return 0;
+    }
+
+/*    // filter from active_connections_ss
+    struct connection_id cid = {};
+    cid.pid = pid;
+    cid.fd = args->fd;
+    struct connection *conn = bpf_map_lookup_elem(&active_connections_ss, &cid);
+    bpf_map_delete_elem(&active_writes, &id);
+    if (!conn) {
+//        bpf_printk("miss active_connections_ss, at trace_ss_exit_write");
+        return 0;
+    }*/
+
+    struct l7_response_key resp_key = {};
+    resp_key.pid = pid;
+    resp_key.fd = args->fd;
+
+    struct l7_response *resp = bpf_map_lookup_elem(&active_l7_responses, &resp_key);
+    if (!resp) {
+        return 0;
+    }
+
+    bpf_map_delete_elem(&active_l7_responses, &resp_key);
+
+    struct l7_event_ss event = {};
+    event.fd = resp_key.fd;
+    event.pid = resp_key.pid;
+    event.timestamp = resp->ns;
+    event.duration = write_ns - resp->ns;
+    event.tgid_read = resp->tgid_recv;
+    event.tgid_write = write_tgid;
+
+    bpf_perf_event_output(ctx, &l7_events_ss, BPF_F_CURRENT_CPU, &event, sizeof(struct l7_event_ss));
+    // deb: 没有事件
+    bpf_printk("output l7_events_ss, pid %u", event.pid);
+
+    return 0;
+}
+
+// ===== host registry =====
+// enter write-like syscalls
 SEC("tracepoint/syscalls/sys_enter_write")
 int sys_enter_write(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size, 0);
+    __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
+
+    trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size, 0);
+    trace_ss_enter_write(id, pid, ctx->fd);
+    return 0;
 }
 
 SEC("tracepoint/syscalls/sys_enter_writev")
 int sys_enter_writev(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, 0, ctx->size);
+    __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
+
+    trace_enter_write(ctx, ctx->fd, 0, ctx->buf, 0, ctx->size);
+    trace_ss_enter_write(id, pid, ctx->fd);
+    return 0;
 }
 
 SEC("tracepoint/syscalls/sys_enter_sendmsg")
 int sys_enter_sendmsg(struct trace_event_raw_sys_enter_rw__stub* ctx) {
+    __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
+
     struct user_msghdr msghdr = {};
     if (bpf_probe_read(&msghdr, sizeof(msghdr), (void *)ctx->buf)) {
         return 0;
     }
-    return trace_enter_write(ctx, ctx->fd, 0, (char*)msghdr.msg_iov, 0, msghdr.msg_iovlen);
+
+    trace_enter_write(ctx, ctx->fd, 0, (char*)msghdr.msg_iov, 0, msghdr.msg_iovlen);
+    trace_ss_enter_write(id, pid, ctx->fd);
+    return 0;
 }
 
 struct mmsghdr {
@@ -598,27 +775,80 @@ int sys_enter_sendmmsg(struct trace_event_raw_sys_enter_rw__stub* ctx) {
         offset += sizeof(h);
         trace_enter_write(ctx, ctx->fd, 0, (char*)h.msg_hdr.msg_iov, 0, h.msg_hdr.msg_iovlen);
     }
+
+    __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
+    trace_ss_enter_write(id, pid, ctx->fd);
+
     return 0;
 }
 
 SEC("tracepoint/syscalls/sys_enter_sendto")
 int sys_enter_sendto(struct trace_event_raw_sys_enter_rw__stub* ctx) {
-    return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size, 0);
+    __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
+
+    trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size, 0);
+    trace_ss_enter_write(id, pid, ctx->fd);
+    return 0;
 }
 
-// READ: Read-like syscalls
+// exit write-like syscalls
+SEC("tracepoint/syscalls/sys_exit_write")
+int sys_exit_write(struct trace_event_raw_sys_exit_rw__stub* ctx) {
+    __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
+
+    trace_ss_exit_write(ctx, id, pid);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_writev")
+int sys_exit_writev(struct trace_event_raw_sys_exit_rw__stub* ctx) {
+    __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
+
+    trace_ss_exit_write(ctx, id, pid);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_sendmsg")
+int sys_exit_sendmsg(struct trace_event_raw_sys_exit_rw__stub* ctx) {
+    __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
+
+    trace_ss_exit_write(ctx, id, pid);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_sendto")
+int sys_exit_sendto(struct trace_event_raw_sys_exit_rw__stub* ctx) {
+    __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
+
+    trace_ss_exit_write(ctx, id, pid);
+    return 0;
+}
+
+// todo temporarily not include sendmmsg
+
+// enter read-like syscalls
 SEC("tracepoint/syscalls/sys_enter_read")
 int sys_enter_read(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();
     __u32 pid = id >> 32;
-    return trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, 0);
+    trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, 0);
+    trace_ss_enter_read(id, pid, ctx->fd);
+    return 0;
 }
 
 SEC("tracepoint/syscalls/sys_enter_readv")
 int sys_enter_readv(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     __u64 id = bpf_get_current_pid_tgid();
     __u32 pid = id >> 32;
-    return trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, ctx->size);
+    trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, ctx->size);
+    trace_ss_enter_read(id, pid, ctx->fd);
+    return 0;
 }
 
 SEC("tracepoint/syscalls/sys_enter_recvmsg")
@@ -639,6 +869,7 @@ int sys_enter_recvfrom(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     return trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, 0);
 }
 
+// exit read-like syscalls
 SEC("tracepoint/syscalls/sys_exit_read")
 int sys_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();

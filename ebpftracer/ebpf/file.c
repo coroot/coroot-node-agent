@@ -4,7 +4,7 @@ struct file_event {
 	__u32 type;
 	__u32 pid;
 	__u64 fd;
-};
+} __attribute__((packed));
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);

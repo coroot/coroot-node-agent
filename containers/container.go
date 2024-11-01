@@ -603,6 +603,14 @@ func (c *Container) getActualDestination(p *Process, src, dst netaddr.IPPort) (*
 	return nil, nil
 }
 
+func (c *Container) destBelongsToWorld(dst netaddr.IPPort) bool {
+	// 判断主机是否请求某个外部站点，其特点往往是 ipv6:443。
+	if dst.IP().Is6() && dst.Port() == 443 {
+		return true
+	}
+	return false
+}
+
 func (c *Container) onConnectionClose(e ebpftracer.Event) {
 	c.lock.Lock()
 	conn := c.connectionsByPidFd[PidFd{Pid: e.Pid, Fd: e.Fd}]
@@ -683,7 +691,7 @@ func (c *Container) onDNSRequest(r *l7.Request) map[netaddr.IP]string {
 	return ip2fqdn
 }
 
-func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.Request, rawEvent *ebpftracer.Event) map[netaddr.IP]string {
+func (c *Container) onL7Request(pid uint32, fd uint64, connectionTimestamp uint64, r *l7.Request, rawEvent *ebpftracer.Event) map[netaddr.IP]string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -695,7 +703,7 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	if conn == nil {
 		return nil
 	}
-	if timestamp != 0 && conn.Timestamp != timestamp {
+	if connectionTimestamp != 0 && conn.Timestamp != connectionTimestamp {
 		return nil
 	}
 	stats := c.l7Stats.get(r.Protocol, conn.Dest, conn.ActualDest)
@@ -756,6 +764,12 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		klog.Warningf("unknown protocol, protocol code is %d", r.Protocol)
 	}
 	return nil
+}
+
+func (c *Container) onL7Response(pid uint32, fd uint64, timestamp uint64, duration time.Duration, TgidReqSs, TgidRespSs uint64) {
+	klog.Infof("[deb] get tcp_event_ss: %d, %d\n", TgidReqSs, TgidRespSs)
+	// todo directly write to OLAP
+
 }
 
 func (c *Container) onRetransmission(srcDst AddrPair) bool {
