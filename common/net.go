@@ -1,6 +1,9 @@
 package common
 
 import (
+	"fmt"
+	"net"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -114,4 +117,92 @@ func (f *portFilter) ShouldBeSkipped(port uint16) bool {
 		return false
 	}
 	return port >= f.from && port <= f.to
+}
+
+type HostPort struct {
+	host string
+	ip   netaddr.IP
+	port uint16
+}
+
+func HostPortFromIPPort(ipPort netaddr.IPPort) HostPort {
+	return HostPort{ip: ipPort.IP(), port: ipPort.Port()}
+}
+
+func HostPortWithEmptyIP(host string, port uint16) HostPort {
+	return HostPort{host: host, port: port}
+}
+
+func (hp HostPort) String() string {
+	if hp.Port() == 0 {
+		return ""
+	}
+	return net.JoinHostPort(hp.Host(), strconv.Itoa(int(hp.port)))
+}
+
+func (hp HostPort) IPPort() netaddr.IPPort {
+	return netaddr.IPPortFrom(hp.ip, hp.port)
+}
+
+func (hp HostPort) Port() uint16 {
+	return hp.port
+}
+
+func (hp HostPort) IP() netaddr.IP {
+	return hp.ip
+}
+
+func (hp HostPort) Host() string {
+	if !hp.ip.IsZero() {
+		return hp.ip.String()
+	}
+	return hp.host
+}
+
+type DestinationKey struct {
+	destination       HostPort
+	actualDestination HostPort
+}
+
+func (dk DestinationKey) Destination() HostPort {
+	return dk.destination
+}
+
+func (dk DestinationKey) ActualDestination() HostPort {
+	return dk.actualDestination
+}
+
+func (dk DestinationKey) ActualDestinationIfKnown() HostPort {
+	if dk.actualDestination.Port() != 0 {
+		return dk.actualDestination
+	}
+	return dk.destination
+}
+
+func (dk DestinationKey) DestinationLabelValue() string {
+	return dk.destination.String()
+}
+
+func (dk DestinationKey) ActualDestinationLabelValue() string {
+	return dk.actualDestination.String()
+}
+
+func (dk DestinationKey) String() string {
+	return fmt.Sprintf("%s (%s)", dk.Destination(), dk.actualDestination.String())
+}
+
+var (
+	awsS3FQDN = regexp.MustCompile(`.+s3.*.amazonaws.com`)
+)
+
+func NewDestinationKey(dst, actualDst netaddr.IPPort, fqdn string) DestinationKey {
+	if awsS3FQDN.MatchString(fqdn) {
+		return DestinationKey{
+			destination: HostPortWithEmptyIP(fqdn, dst.Port()),
+		}
+	}
+	return DestinationKey{
+		destination:       HostPortFromIPPort(dst),
+		actualDestination: HostPortFromIPPort(actualDst),
+	}
 }

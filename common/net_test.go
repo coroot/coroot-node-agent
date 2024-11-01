@@ -24,5 +24,36 @@ func TestConnectionFilter(t *testing.T) {
 	assert.True(t, f.ShouldBeSkipped(netaddr.MustParseIP("3.3.3.3"), netaddr.MustParseIP("3.3.3.3")))
 	f.WhitelistPrefix(netaddr.MustParseIPPrefix("4.4.4.4/32"))
 	assert.False(t, f.ShouldBeSkipped(netaddr.MustParseIP("3.3.3.3"), netaddr.MustParseIP("4.4.4.4")))
+}
 
+func TestDestinationKey(t *testing.T) {
+	d := netaddr.IPPortFrom(netaddr.MustParseIP("10.10.10.10"), 443)
+	ad := netaddr.IPPortFrom(netaddr.MustParseIP("127.0.0.1"), 443)
+
+	assert.Equal(t, "10.10.10.10:443 (127.0.0.1:443)", NewDestinationKey(d, ad, "").String())
+
+	assert.Equal(t,
+		"aa.bb.s3.amazonaws.com:443 ()",
+		NewDestinationKey(d, ad, "aa.bb.s3.amazonaws.com").String(),
+	)
+
+	assert.Equal(t,
+		"amazonlinux-2-repos-us-east-1.s3.dualstack.us-east-1.amazonaws.com:443 ()",
+		NewDestinationKey(d, ad, "amazonlinux-2-repos-us-east-1.s3.dualstack.us-east-1.amazonaws.com").String(),
+	)
+
+	assert.Equal(t,
+		"bucket.s3.amazonaws.com:443 ()",
+		NewDestinationKey(d, ad, "bucket.s3.amazonaws.com").String(),
+	)
+
+	assert.Equal(t,
+		"bucket.s3-accelerate.amazonaws.com:443 ()",
+		NewDestinationKey(d, ad, "bucket.s3-accelerate.amazonaws.com").String(),
+	)
+
+	assert.Equal(t,
+		"bucket.s3.amazonaws.com.default.svc.cluster.local:443 ()",
+		NewDestinationKey(d, ad, "bucket.s3.amazonaws.com.default.svc.cluster.local").String(),
+	)
 }

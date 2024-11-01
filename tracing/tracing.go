@@ -17,7 +17,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
-	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 )
 
@@ -74,16 +73,16 @@ func Init(machineId, hostname, version string) {
 
 type Trace struct {
 	containerId string
-	destination netaddr.IPPort
+	destination common.HostPort
 	commonAttrs []attribute.KeyValue
 }
 
-func NewTrace(containerId string, destination netaddr.IPPort) *Trace {
+func NewTrace(containerId string, destination common.HostPort) *Trace {
 	if tracer == nil {
 		return nil
 	}
 	return &Trace{containerId: containerId, destination: destination, commonAttrs: []attribute.KeyValue{
-		semconv.NetPeerName(destination.IP().String()),
+		semconv.NetPeerName(destination.Host()),
 		semconv.NetPeerPort(int(destination.Port())),
 	}}
 }

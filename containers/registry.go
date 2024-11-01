@@ -50,7 +50,7 @@ type Registry struct {
 	containersByCgroupId map[string]*Container
 	containersByPid      map[uint32]*Container
 	ip2fqdn              map[netaddr.IP]string
-	ip2fqdnLock          sync.Mutex
+	ip2fqdnLock          sync.RWMutex
 
 	processInfoCh chan<- ProcessInfo
 
@@ -135,8 +135,8 @@ func (r *Registry) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (r *Registry) Collect(ch chan<- prometheus.Metric) {
-	r.ip2fqdnLock.Lock()
-	defer r.ip2fqdnLock.Unlock()
+	r.ip2fqdnLock.RLock()
+	defer r.ip2fqdnLock.RUnlock()
 	for ip, fqdn := range r.ip2fqdn {
 		ch <- gauge(metrics.Ip2Fqdn, 1, ip.String(), fqdn)
 	}
@@ -169,7 +169,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			}
 			activeIPs := map[netaddr.IP]struct{}{}
 			for id, c := range r.containersById {
-				for dst := range c.connectLastAttempt {
+				for dst := range c.lastConnectionAttempts {
 					activeIPs[dst.IP()] = struct{}{}
 				}
 				if !c.Dead(now) {
@@ -269,9 +269,8 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					c.onConnectionClose(e)
 				}
 			case ebpftracer.EventTypeTCPRetransmit:
-				srcDst := AddrPair{src: e.SrcAddr, dst: e.DstAddr}
 				for _, c := range r.containersById {
-					if c.onRetransmission(srcDst) {
+					if c.onRetransmission(e.SrcAddr, e.DstAddr) {
 						break
 					}
 				}
@@ -395,6 +394,12 @@ func (r *Registry) updateTrafficStatsIfNecessary() {
 	}
 	r.trafficStatsUpdateCh <- nil
 	r.trafficStatsLastUpdated = time.Now()
+}
+
+func (r *Registry) getFQDN(ip netaddr.IP) string {
+	r.ip2fqdnLock.RLock()
+	defer r.ip2fqdnLock.RUnlock()
+	return r.ip2fqdn[ip]
 }
 
 func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
