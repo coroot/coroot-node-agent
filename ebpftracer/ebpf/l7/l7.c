@@ -228,7 +228,6 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     // filter from active_connections
     struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
     if (!conn) {
-//        bpf_printk("miss active_connections, at trace_enter_write");
         return 0;
     }
 
@@ -380,7 +379,6 @@ int trace_enter_read(__u64 id, __u32 pid, __u64 fd, char *buf, __u64 *ret, __u64
     // filter from active_connections
     struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
     if (!conn) {
-//        bpf_printk("miss active_connections, at trace_enter_read");
         return 0;
     }
 
@@ -414,7 +412,6 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
     bpf_map_delete_elem(&active_reads, &id);
     if (!conn) {
-//        bpf_printk("miss active_connections, at trace_exir_read");
         return 0;
     }
 
@@ -625,16 +622,7 @@ int trace_ss_enter_read(__u64 id, __u32 pid, __u64 fd) {
     __u64 read_ns = bpf_ktime_get_ns();
     __u64 read_tgid = bpf_get_current_pid_tgid();
 
-    // deb 读请求就有问题，说明 active_connections_ss 的内容有问题，在 state 当中。
-    struct connection_id cid = {};
-    cid.pid = pid;
-    cid.fd = fd;
-    // filter from active_connections_ss
-    struct connection *conn = bpf_map_lookup_elem(&active_connections_ss, &cid);
-    if (!conn) {
-        return 0;
-    }
-    bpf_printk("hit active_connections_ss, at trace_ss_enter_read");
+    // todo filter from active_connections_ss
 
     struct l7_response_key resp_key = {};
     resp_key.pid = pid;
@@ -655,16 +643,8 @@ int trace_ss_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int re
 
 static inline __attribute__((__always_inline__))
 int trace_ss_enter_write(__u64 id, __u32 pid, __u64 fd) {
-   /* struct connection_id cid = {};
-    cid.pid = pid;
-    cid.fd = fd;
-    // filter from active_connections_ss
-    struct connection *conn = bpf_map_lookup_elem(&active_connections_ss, &cid);
-    if (!conn) {
-//        bpf_printk("miss active_connections_ss, at trace_ss_enter_write");
-        return 0;
-    }
-*/
+    // todo filter from active_connections_ss
+
     struct write_args args = {};
     args.fd = fd;
     bpf_map_update_elem(&active_writes, &id, &args, BPF_ANY);
@@ -681,16 +661,7 @@ int trace_ss_exit_write(void *ctx, __u64 id, __u32 pid) {
         return 0;
     }
 
-/*    // filter from active_connections_ss
-    struct connection_id cid = {};
-    cid.pid = pid;
-    cid.fd = args->fd;
-    struct connection *conn = bpf_map_lookup_elem(&active_connections_ss, &cid);
-    bpf_map_delete_elem(&active_writes, &id);
-    if (!conn) {
-//        bpf_printk("miss active_connections_ss, at trace_ss_exit_write");
-        return 0;
-    }*/
+    // todo filter from active_connections_ss
 
     struct l7_response_key resp_key = {};
     resp_key.pid = pid;
@@ -711,9 +682,9 @@ int trace_ss_exit_write(void *ctx, __u64 id, __u32 pid) {
     event.tgid_read = resp->tgid_recv;
     event.tgid_write = write_tgid;
 
+    // todo after filtering active_connections_ss, we could insert l7_events_ss
+
     bpf_perf_event_output(ctx, &l7_events_ss, BPF_F_CURRENT_CPU, &event, sizeof(struct l7_event_ss));
-    // deb: 没有事件
-    bpf_printk("output l7_events_ss, pid %u", event.pid);
 
     return 0;
 }
