@@ -8,7 +8,15 @@ COPY . .
 ARG VERSION=unknown
 RUN CGO_ENABLED=1 go build -mod=readonly -ldflags "-X main.version=$VERSION" -o coroot-node-agent .
 
-FROM debian:bullseye
-RUN apt update && apt install -y ca-certificates && apt clean
+FROM registry.access.redhat.com/ubi9/ubi
+
+ARG VERSION=unknown
+LABEL name="coroot-node-agent" \
+      vendor="Coroot, Inc." \
+      version=${VERSION} \
+      summary="Coroot Node Agent."
+
+COPY LICENSE /licenses/LICENSE
+
 COPY --from=builder /tmp/src/coroot-node-agent /usr/bin/coroot-node-agent
 ENTRYPOINT ["coroot-node-agent"]
