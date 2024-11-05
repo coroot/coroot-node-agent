@@ -1,4 +1,4 @@
-ebpf.go: $(wildcard ebpf/**.c)
+ebpf.go: $(wildcard ./ebpf/**.c)
 	@echo ===BUILDING ebpf.go===
 	docker rmi -f ebpftracer
 	docker build -t ebpftracer --progress plain .

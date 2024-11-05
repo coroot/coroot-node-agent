@@ -5,7 +5,6 @@ go 1.21
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
 	github.com/ClickHouse/ch-go v0.61.5
-	github.com/ClickHouse/clickhouse-go/v2 v2.30.0
 	github.com/agoda-com/opentelemetry-logs-go v0.4.1
 	github.com/cilium/cilium v1.13.7
 	github.com/cilium/ebpf v0.11.0
@@ -57,7 +56,6 @@ require (
 	github.com/Microsoft/hcsshim v0.9.10 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9 // indirect
-	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/avvmoto/buf-readerat v0.0.0-20171115124131-a17c8cb89270 // indirect
 	github.com/aws/aws-sdk-go v1.50.0 // indirect
@@ -141,7 +139,6 @@ require (
 	github.com/opencontainers/selinux v1.10.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/pascaldekloe/name v1.0.1 // indirect
-	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
 	github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5 // indirect
@@ -157,7 +154,6 @@ require (
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.12 // indirect
-	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/afero v1.9.2 // indirect
 	github.com/spf13/cast v1.5.0 // indirect

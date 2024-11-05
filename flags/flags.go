@@ -39,6 +39,10 @@ var (
 
 	ScrapeInterval = kingpin.Flag("scrape-interval", "How often to gather metrics from the agent").Default("15s").Envar("SCRAPE_INTERVAL").Duration()
 	WalDir         = kingpin.Flag("wal-dir", "Path to where the agent stores data (e.g. the metrics Write-Ahead Log)").Default("/tmp/coroot-node-agent").Envar("WAL_DIR").String()
+
+	ClickhouseEndpoint = kingpin.Flag("clickhouse-endpoint", "Clickhouse endpoint").Envar("CLICKHOUSE_ENDPOINT").Default("default").String()
+	ClickhouseUser     = kingpin.Flag("clickhouse-user", "Clickhouse user").Envar("CLICKHOUSE_USER").Default("default").String()
+	ClickhousePassword = kingpin.Flag("clickhouse-password", "Clickhouse password").Envar("CLICKHOUSE_PASSWORD").String()
 )
 
 func GetString(fl *string) string {

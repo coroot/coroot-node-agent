@@ -63,10 +63,8 @@ struct l7_event {
     __u64 fd;
     __u64 connection_timestamp;  // connection timestamp instead of the span start timestamp, actually unused from the GoLang part
     __u32 pid;
-    __u64 tgid_req_cs;
-    __u64 tgid_req_ss;
-    __u64 tgid_resp_ss;
-    __u64 tgid_resp_cs;
+    __u64 tgid_write;  // tgid who sends the request
+    __u64 tgid_read;  // tgid who receives the response
     __u32 status;
     __u64 duration;
     __u8 protocol;
@@ -114,7 +112,7 @@ struct l7_request_key {
 struct l7_request {  // more like concept `flow`, maybe request, maybe response
     __u64 ns;  // timestamp when sends the request
     __u64 tgid_send;  // tgid who sends the request
-    __u64 tgid_recv;  // tgid who receives the response
+    __u64 tgid_recv;  // tgid who receives the response, unused actually
     __u8 protocol;
     __u8 partial;
     __u8 request_type;
@@ -181,7 +179,6 @@ void send_event(void *ctx, struct l7_event *e, struct connection_id cid, struct 
     e->fd = cid.fd;
     e->pid = cid.pid;
     bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
-//    bpf_printk("output l7_events, pid %u", e->pid);
 }
 
 static inline __attribute__((__always_inline__))
@@ -272,14 +269,15 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     if (is_http_request(payload)) {
         req->protocol = PROTOCOL_HTTP;
     } else if (is_postgres_query(payload, size, &req->request_type)) {
-        if (req->request_type == POSTGRES_FRAME_CLOSE) {  // protocol is pipelined, and req is partially Response
+        if (req->request_type == POSTGRES_FRAME_CLOSE) {  // this request is the end of the pg stream query
             struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
             if (!e) {
                 return 0;
             }
             e->protocol = PROTOCOL_POSTGRES;
             e->method = METHOD_STATEMENT_CLOSE;
-            // todo tgid
+            e->tgid_write = write_tgid;
+            e->tgid_read = write_tgid;  // maybe the pg_server is single thread, for networking
             e->payload_size = size;
             COPY_PAYLOAD(e->payload, size, payload);
             send_event(ctx, e, cid, conn);
@@ -291,14 +289,15 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     } else if (is_memcached_query(payload, size)) {
         req->protocol = PROTOCOL_MEMCACHED;
     } else if (is_mysql_query(payload, size, &req->request_type)) {
-        if (req->request_type == MYSQL_COM_STMT_CLOSE) {  // protocol is pipelined, and req is partially Response
+        if (req->request_type == MYSQL_COM_STMT_CLOSE) {  // this request is the end of the mysql stream query
             struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
             if (!e) {
                 return 0;
             }
             e->protocol = PROTOCOL_MYSQL;
             e->method = METHOD_STATEMENT_CLOSE;
-            // todo tgid
+            e->tgid_write = write_tgid;
+            e->tgid_read = write_tgid;  // maybe the mysqld is single thread, for networking
             e->payload_size = size;
             COPY_PAYLOAD(e->payload, size, payload);
             send_event(ctx, e, cid, conn);
@@ -314,6 +313,8 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         }
         e->protocol = PROTOCOL_RABBITMQ;
         e->method = METHOD_PRODUCE;
+        e->tgid_write = write_tgid;
+        e->tgid_read = write_tgid;  // checkme
         send_event(ctx, e, cid, conn);
         return 0;
     } else if (nats_method(payload, size) == METHOD_PRODUCE) {
@@ -323,6 +324,8 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         }
         e->protocol = PROTOCOL_NATS;
         e->method = METHOD_PRODUCE;
+        e->tgid_write = write_tgid;
+        e->tgid_read = write_tgid;
         send_event(ctx, e, cid, conn);
         return 0;
     } else if (is_cassandra_request(payload, size, &k.stream_id)) {
@@ -340,6 +343,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         }
         e->protocol = PROTOCOL_HTTP2;
         e->method = METHOD_HTTP2_CLIENT_FRAMES;
+        // todo client-side tgid for writing http2
         e->duration = write_ns;
         e->payload_size = size;
         COPY_PAYLOAD(e->payload, size, payload);
@@ -350,14 +354,14 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     } else if (is_dns_request(payload, size, &k.stream_id)) {
         req->protocol = PROTOCOL_DNS;
     }
+
     if (req->protocol == PROTOCOL_UNKNOWN) {
         return 0;
     }
 
-    // req is real REQUEST
     req->ns = write_ns;
     req->tgid_send = write_tgid;
-    req->tgid_recv = 0; // todo how to tgid other side?
+    req->tgid_recv = 0;
 
     COPY_PAYLOAD(req->payload, size, payload);
 
@@ -462,20 +466,20 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     e->method = METHOD_UNKNOWN;
     e->statement_id = 0;
     e->payload_size = 0;
-    e->tgid_req_cs = 0;
-    e->tgid_req_ss = 0;
-    e->tgid_resp_ss = 0;
-    e->tgid_resp_cs = 0;
+    e->tgid_write = 0;
+    e->tgid_read = 0;
 
     if (is_rabbitmq_consume(payload, ret)) {
         e->protocol = PROTOCOL_RABBITMQ;
         e->method = METHOD_CONSUME;
+        // todo tgid
         send_event(ctx, e, cid, conn);
         return 0;
     }
     if (nats_method(payload, ret) == METHOD_CONSUME) {
         e->protocol = PROTOCOL_NATS;
         e->method = METHOD_CONSUME;
+        // todo tgid
         send_event(ctx, e, cid, conn);
         return 0;
     }
@@ -489,7 +493,6 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
                 return 0;
             }
             e->protocol = PROTOCOL_DNS;
-            // todo tgid
             e->duration = read_ns - req->ns;
             e->payload_size = ret;
             COPY_PAYLOAD(e->payload, ret, payload);
@@ -508,6 +511,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
             e->duration = read_ns;
             e->payload_size = ret;
             COPY_PAYLOAD(e->payload, ret, payload);
+            // todo client-side tgid for reading http2
             send_event(ctx, e, cid, conn);
             return 0;
         } else {
@@ -561,10 +565,8 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         return 0;
     }
 
-    e->tgid_req_cs = req->tgid_send;
-    e->tgid_req_ss = req->tgid_recv;  // todo tgid server-side
-    e->tgid_resp_ss = 0;  // todo tgid server-side
-    e->tgid_resp_cs = read_tgid;
+    e->tgid_write = req->tgid_send;
+    e->tgid_read = read_tgid;
     e->duration = read_ns - req->ns;
     send_event(ctx, e, cid, conn);
     return 0;

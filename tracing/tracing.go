@@ -89,8 +89,6 @@ func NewSpanBuilder(containerId string, destination netaddr.IPPort, rawEvent *eb
 		semconv.NetPeerName(destination.IP().String()),
 		semconv.NetPeerPort(int(destination.Port())),
 		attribute.String("tgid_req_cs", strconv.FormatUint(rawEvent.TgidReqCs, 10)),
-		attribute.String("tgid_req_ss", strconv.FormatUint(rawEvent.TgidReqSs, 10)),
-		attribute.String("tgid_resp_ss", strconv.FormatUint(rawEvent.TgidRespSs, 10)),
 		attribute.String("tgid_resp_cs", strconv.FormatUint(rawEvent.TgidRespCs, 10)),
 	}}
 }

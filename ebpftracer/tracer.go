@@ -367,10 +367,8 @@ type l7Event struct {
 	Fd                  uint64
 	ConnectionTimestamp uint64
 	Pid                 uint32
-	TgidReqCs           uint64
-	TgidReqSs           uint64
-	TgidRespSs          uint64
-	TgidRespCs          uint64
+	TgidWrite           uint64
+	TgidRead            uint64
 	Status              uint32
 	Duration            uint64
 	Protocol            uint8
@@ -438,10 +436,8 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 			event = Event{
 				Type:       EventTypeL7Request,
 				Pid:        l7Event.Pid,
-				TgidReqCs:  l7Event.TgidReqCs,
-				TgidReqSs:  l7Event.TgidReqSs,
-				TgidRespSs: l7Event.TgidRespSs,
-				TgidRespCs: l7Event.TgidRespCs,
+				TgidReqCs:  l7Event.TgidWrite,
+				TgidRespCs: l7Event.TgidRead,
 				Fd:         l7Event.Fd,
 				//Timestamp:  l7Event.ConnectionTimestamp, // shouldn't use this kernel timestamp
 				Duration:  time.Duration(l7Event.Duration),

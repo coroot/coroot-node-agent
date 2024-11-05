@@ -2,7 +2,10 @@ package containers
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"github.com/ClickHouse/ch-go"
+	"github.com/coroot/coroot-node-agent/tracing"
 	"os"
 	"regexp"
 	"strconv"
@@ -57,6 +60,8 @@ type Registry struct {
 	trafficStatsLastUpdated time.Time
 	trafficStatsLock        sync.Mutex
 	trafficStatsUpdateCh    chan *TrafficStatsUpdate
+
+	sseBatcher *tracing.SSEventBatcher
 }
 
 // NewRegistry 综合了各个功能模块
@@ -103,6 +108,18 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh 
 		return nil, err
 	}
 
+	opts := ch.Options{
+		Address:     flags.GetString(flags.ClickhouseEndpoint),
+		User:        flags.GetString(flags.ClickhouseUser),
+		Password:    flags.GetString(flags.ClickhousePassword),
+		Compression: ch.CompressionLZ4,
+		DialTimeout: 10 * time.Second,
+	}
+	chClient, err := ch.Dial(context.Background(), opts)
+	if err != nil {
+		return nil, err
+	}
+
 	r := &Registry{
 		reg:    reg,
 		events: make(chan ebpftracer.Event, 10000), // 创建 eBPF 消息队列。达到 size 后的行为是阻塞而不是溢出。
@@ -119,10 +136,13 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh 
 		tracer: ebpftracer.NewTracer(kernelVersion, *flags.DisableL7Tracing),
 
 		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate),
+
+		sseBatcher: tracing.NewSSEventBatcher(tracing.SSEBatchLimit, tracing.SSEBatchTimeout, chClient),
 	}
 	if err = reg.Register(r); err != nil {
 		return nil, err
 	}
+
 	// 分别启动 eBPF 事件的消费者与生产者。
 	go r.handleEvents(r.events)
 	if err = r.tracer.Run(r.events); err != nil {
@@ -303,7 +323,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				}
 			case ebpftracer.EventTypeL7Response:
 				if c := r.containersByPid[e.Pid]; c != nil {
-					c.onL7Response(e.Pid, e.Fd, e.Timestamp, e.Duration, e.TgidReqSs, e.TgidRespSs)
+					r.sseBatcher.Append(e.Timestamp, e.Duration, e.TgidReqSs, e.TgidRespSs)
 				}
 			case ebpftracer.EventTypePythonThreadLock:
 				if c := r.containersByPid[e.Pid]; c != nil {

@@ -766,12 +766,6 @@ func (c *Container) onL7Request(pid uint32, fd uint64, connectionTimestamp uint6
 	return nil
 }
 
-func (c *Container) onL7Response(pid uint32, fd uint64, timestamp uint64, duration time.Duration, TgidReqSs, TgidRespSs uint64) {
-	klog.Infof("[deb] get tcp_event_ss: %d, %d\n", TgidReqSs, TgidRespSs)
-	// todo directly write to OLAP
-
-}
-
 func (c *Container) onRetransmission(srcDst AddrPair) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
