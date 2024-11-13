@@ -86,6 +86,9 @@ func (f connectionFilter) WhitelistPrefix(p netaddr.IPPrefix) {
 }
 
 func (f connectionFilter) ShouldBeSkipped(dst, actualDst netaddr.IP) bool {
+	if dst.IsLinkLocalUnicast() {
+		return true
+	}
 	if IsIpPrivate(dst) || dst.IsLoopback() {
 		return false
 	}
