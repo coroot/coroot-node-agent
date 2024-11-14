@@ -86,6 +86,9 @@ func (f connectionFilter) WhitelistPrefix(p netaddr.IPPrefix) {
 }
 
 func (f connectionFilter) ShouldBeSkipped(dst, actualDst netaddr.IP) bool {
+	if dst.IsLinkLocalUnicast() {
+		return true
+	}
 	if IsIpPrivate(dst) || dst.IsLoopback() {
 		return false
 	}
@@ -205,4 +208,16 @@ func NewDestinationKey(dst, actualDst netaddr.IPPort, fqdn string) DestinationKe
 		destination:       HostPortFromIPPort(dst),
 		actualDestination: HostPortFromIPPort(actualDst),
 	}
+}
+
+var ec2NodeRegex = regexp.MustCompile(`ip-\d+-\d+-\d+-\d+\.ec2`)
+var externalDomainWithSuffix = regexp.MustCompile(`(.+\.(com|net|org|io))\..+`)
+
+func NormalizeFQDN(fqdn string, requestType string) string {
+	if requestType == "TypePTR" {
+		return "IP.in-addr.arpa"
+	}
+	fqdn = ec2NodeRegex.ReplaceAllLiteralString(fqdn, "IP.ec2")
+	fqdn = externalDomainWithSuffix.ReplaceAllString(fqdn, "$1.search_path_suffix")
+	return fqdn
 }

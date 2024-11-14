@@ -654,6 +654,15 @@ func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]string {
 	if t == "" {
 		return nil
 	}
+	fqdn = common.NormalizeFQDN(fqdn, t)
+
+	// To reduce the number of metrics, we ignore AAAA requests with empty results,
+	// as they are typically performed simultaneously with A requests and do not add
+	// any additional latency to the application.
+	if t == "TypeAAAA" && r.Status == 0 && len(ips) == 0 {
+		return nil
+	}
+
 	if c.dnsStats.Requests == nil {
 		dnsReq := L7Requests[l7.ProtocolDNS]
 		c.dnsStats.Requests = prometheus.NewCounterVec(
