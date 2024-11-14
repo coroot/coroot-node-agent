@@ -57,3 +57,18 @@ func TestDestinationKey(t *testing.T) {
 		NewDestinationKey(d, ad, "bucket.s3.amazonaws.com.default.svc.cluster.local").String(),
 	)
 }
+
+func TestNormalizeFQDN(t *testing.T) {
+	assert.Equal(t, "IP.in-addr.arpa", NormalizeFQDN("4.3.2.1.in-addr.arpa", "TypePTR"))
+	assert.Equal(t, "coroot.com", NormalizeFQDN("coroot.com", "TypeA"))
+	assert.Equal(t, "IP.ec2.internal", NormalizeFQDN("ip-172-1-2-3.ec2.internal", "TypeA"))
+
+	assert.Equal(t, "example.com", NormalizeFQDN("example.com", "TypeA"))
+	assert.Equal(t, "example.com.search_path_suffix", NormalizeFQDN("example.com.cluster.local", "TypeA"))
+	assert.Equal(t, "example.com.search_path_suffix", NormalizeFQDN("example.com.svc.cluster.local", "TypeA"))
+	assert.Equal(t, "example.com.search_path_suffix", NormalizeFQDN("example.com.svc.default.cluster.local", "TypeA"))
+
+	assert.Equal(t, "example.net.search_path_suffix", NormalizeFQDN("example.net.svc.default.cluster.local", "TypeA"))
+	assert.Equal(t, "example.org.search_path_suffix", NormalizeFQDN("example.org.svc.default.cluster.local", "TypeA"))
+	assert.Equal(t, "example.io.search_path_suffix", NormalizeFQDN("example.io.svc.default.cluster.local", "TypeA"))
+}
