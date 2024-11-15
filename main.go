@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	version = "unknown"
+	version = flags.Version
 )
 
 const minSupportedKernelVersion = "4.16"
