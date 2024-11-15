@@ -10,7 +10,7 @@ fi
 
 BIN_DIR=/usr/bin
 SYSTEMD_DIR=/etc/systemd/system
-VERSION=
+VERSION="latest"
 SYSTEM_NAME=coroot-node-agent
 SYSTEMD_SERVICE=${SYSTEM_NAME}.service
 UNINSTALL_SH=${BIN_DIR}/${SYSTEM_NAME}-uninstall.sh
@@ -26,7 +26,15 @@ info()
 fatal()
 {
     echo '[ERROR] ' "$@" >&2
+    show_help
     exit 1
+}
+
+show_help() {
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  -h, --help                        Show this help message and exit"
+    echo "  -v v1.22.2, --version v1.22.2     Specify the version to install (default: latest)"
 }
 
 verify_system() {
@@ -84,20 +92,24 @@ setup_tmp() {
 }
 
 get_release_version() {
-    info "Finding the latest release"
-    latest_release_url=${GITHUB_URL}/latest
-    case $DOWNLOADER in
-        curl)
-            VERSION=$(curl -w '%{url_effective}' -L -s -S ${latest_release_url} -o /dev/null | sed -e 's|.*/||')
-            ;;
-        wget)
-            VERSION=$(wget -SqO /dev/null ${latest_release_url} 2>&1 | grep -i Location | sed -e 's|.*/||')
-            ;;
-        *)
-            fatal "Incorrect downloader executable '$DOWNLOADER'"
-            ;;
-    esac
-    info "The latest release is ${VERSION}"
+    if [ "$VERSION" = "latest" ]; then
+        info "Finding the latest release"
+        latest_release_url=${GITHUB_URL}/latest
+        case $DOWNLOADER in
+            curl)
+                VERSION=$(curl -w '%{url_effective}' -L -s -S ${latest_release_url} -o /dev/null | sed -e 's|.*/||')
+                ;;
+            wget)
+                VERSION=$(wget -SqO /dev/null ${latest_release_url} 2>&1 | grep -i Location | sed -e 's|.*/||')
+                ;;
+            *)
+                fatal "Incorrect downloader executable '$DOWNLOADER'"
+                ;;
+        esac
+        info "The latest release is ${VERSION}"
+    else
+        info "Using specified version ${VERSION}"
+    fi
 }
 
 download_binary() {
@@ -135,7 +147,6 @@ download() {
     download_binary
     setup_binary
 }
-
 
 create_uninstall() {
     info "Creating uninstall script ${UNINSTALL_SH}"
@@ -229,7 +240,6 @@ systemd_start() {
     $SUDO systemctl restart ${SYSTEM_NAME}
 }
 
-
 service_enable_and_start() {
     systemd_enable
 
@@ -243,6 +253,22 @@ service_enable_and_start() {
 
     return 0
 }
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -v|--version)
+            VERSION="$2"
+            shift 2
+            ;;
+        *)
+            fatal "Unknown option: $1"
+            ;;
+    esac
+done
 
 {
     verify_system
