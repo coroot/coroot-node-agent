@@ -186,6 +186,7 @@ require (
 )
 
 replace (
+	github.com/florianl/go-conntrack => github.com/coroot/go-conntrack v0.3.1
 	github.com/optiopay/kafka => github.com/cilium/kafka v0.0.0-20180809090225-01ce283b732b
 	github.com/pyroscope-io/dotnetdiag => github.com/coroot/dotnetdiag v1.2.2
 )
