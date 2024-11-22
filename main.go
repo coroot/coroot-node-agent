@@ -19,7 +19,6 @@ import (
 	"github.com/coroot/coroot-node-agent/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"golang.org/x/mod/semver"
 	"golang.org/x/sys/unix"
 	"golang.org/x/time/rate"
 	"k8s.io/klog/v2"
@@ -28,8 +27,6 @@ import (
 var (
 	version = "unknown"
 )
-
-const minSupportedKernelVersion = "4.16"
 
 func uname() (string, string, error) {
 	runtime.LockOSThread()
@@ -117,12 +114,12 @@ func main() {
 	klog.Infoln("hostname:", hostname)
 	klog.Infoln("kernel version:", kv)
 
-	ver := common.KernelMajorMinor(kv)
-	if ver == "" {
-		klog.Exitln("invalid kernel version:", kv)
+	if err = common.SetKernelVersion(kv); err != nil {
+		klog.Exitln(err)
 	}
-	if semver.Compare("v"+ver, "v"+minSupportedKernelVersion) == -1 {
-		klog.Exitf("the minimum Linux kernel version required is %s or later", minSupportedKernelVersion)
+
+	if !common.GetKernelVersion().GreaterOrEqual(common.NewVersion(4, 16, 0)) {
+		klog.Exitln("the minimum Linux kernel version required is 4.16 or later")
 	}
 
 	whitelistNodeExternalNetworks()
@@ -144,7 +141,7 @@ func main() {
 
 	processInfoCh := profiling.Init(machineId, hostname)
 
-	cr, err := containers.NewRegistry(registerer, kv, processInfoCh)
+	cr, err := containers.NewRegistry(registerer, processInfoCh)
 	if err != nil {
 		klog.Exitln(err)
 	}

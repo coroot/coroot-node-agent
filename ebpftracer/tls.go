@@ -12,17 +12,16 @@ import (
 	"strings"
 
 	"github.com/cilium/ebpf/link"
+	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/proc"
 	"golang.org/x/arch/arm64/arm64asm"
 	"golang.org/x/arch/x86/x86asm"
-	"golang.org/x/mod/semver"
 	"k8s.io/klog/v2"
 )
 
 const (
-	minSupportedGoVersion = "v1.17.0"
-	goTlsWriteSymbol      = "crypto/tls.(*Conn).Write"
-	goTlsReadSymbol       = "crypto/tls.(*Conn).Read"
+	goTlsWriteSymbol = "crypto/tls.(*Conn).Write"
+	goTlsReadSymbol  = "crypto/tls.(*Conn).Read"
 )
 
 var (
@@ -61,12 +60,17 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) []link.Link {
 	readEnter := "openssl_SSL_read_enter"
 	readExEnter := "openssl_SSL_read_ex_enter"
 	readExit := "openssl_SSL_read_exit"
+	v, err := common.VersionFromString(version)
+	if err != nil {
+		log("failed to determine version", err)
+		return nil
+	}
 	switch {
-	case semver.Compare(version, "v3.0.0") >= 0:
+	case v.GreaterOrEqual(common.NewVersion(3, 0, 0)):
 		writeEnter = "openssl_SSL_write_enter_v3_0"
 		readEnter = "openssl_SSL_read_enter_v3_0"
 		readExEnter = "openssl_SSL_read_ex_enter_v3_0"
-	case semver.Compare(version, "v1.1.1") >= 0:
+	case v.GreaterOrEqual(common.NewVersion(1, 1, 1)):
 		writeEnter = "openssl_SSL_write_enter_v1_1_1"
 		readEnter = "openssl_SSL_read_enter_v1_1_1"
 		readExEnter = "openssl_SSL_read_ex_enter_v1_1_1"
@@ -82,7 +86,7 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) []link.Link {
 		{symbol: "SSL_read", uprobe: readEnter},
 		{symbol: "SSL_read", uretprobe: readExit},
 	}
-	if semver.Compare(version, "v1.1.1") >= 0 {
+	if v.GreaterOrEqual(common.NewVersion(1, 1, 1)) {
 		progs = append(progs, []prog{
 			{symbol: "SSL_write_ex", uprobe: writeEnter},
 			{symbol: "SSL_read_ex", uprobe: readExEnter},
@@ -147,9 +151,13 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
 		log("failed to read name", err)
 		return nil, isGolangApp
 	}
-	version = strings.Replace(bi.GoVersion, "go", "v", 1)
-	if semver.Compare(version, minSupportedGoVersion) < 0 {
-		log(fmt.Sprintf("go_versions below %s are not supported", minSupportedGoVersion), nil)
+	version = bi.GoVersion
+	v, err := common.VersionFromString(strings.Replace(bi.GoVersion, "go", "", 1))
+	if err != nil {
+		log("failed to determine version", err)
+	}
+	if !v.GreaterOrEqual(common.NewVersion(1, 17, 0)) {
+		log("versions below 1.17 are not supported", nil)
 		return nil, isGolangApp
 	}
 

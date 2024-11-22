@@ -59,7 +59,7 @@ type Registry struct {
 	trafficStatsUpdateCh    chan *TrafficStatsUpdate
 }
 
-func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh chan<- ProcessInfo) (*Registry, error) {
+func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo) (*Registry, error) {
 	ns, err := proc.GetSelfNetNs()
 	if err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func NewRegistry(reg prometheus.Registerer, kernelVersion string, processInfoCh 
 
 		processInfoCh: processInfoCh,
 
-		tracer: ebpftracer.NewTracer(kernelVersion, *flags.DisableL7Tracing),
+		tracer: ebpftracer.NewTracer(*flags.DisableL7Tracing),
 
 		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate),
 	}

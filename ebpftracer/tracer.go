@@ -17,7 +17,6 @@ import (
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"github.com/coroot/coroot-node-agent/proc"
-	"golang.org/x/mod/semver"
 	"golang.org/x/sys/unix"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
@@ -74,7 +73,6 @@ const (
 )
 
 type Tracer struct {
-	kernelVersion    string
 	disableL7Tracing bool
 
 	collection *ebpf.Collection
@@ -83,12 +81,11 @@ type Tracer struct {
 	uprobes    map[string]*ebpf.Program
 }
 
-func NewTracer(kernelVersion string, disableL7Tracing bool) *Tracer {
+func NewTracer(disableL7Tracing bool) *Tracer {
 	if disableL7Tracing {
 		klog.Infoln("L7 tracing is disabled")
 	}
 	return &Tracer{
-		kernelVersion:    kernelVersion,
 		disableL7Tracing: disableL7Tracing,
 
 		readers: map[string]*perf.Reader{},
@@ -194,16 +191,17 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	if _, ok := ebpfProg[runtime.GOARCH]; !ok {
 		return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
 	}
-	kv := "v" + common.KernelMajorMinor(t.kernelVersion)
+	kv := common.GetKernelVersion()
 	var prg []byte
 	for _, p := range ebpfProg[runtime.GOARCH] {
-		if semver.Compare(kv, p.v) >= 0 {
+		pv, _ := common.VersionFromString(p.v)
+		if kv.GreaterOrEqual(pv) {
 			prg = p.p
 			break
 		}
 	}
 	if len(prg) == 0 {
-		return fmt.Errorf("unsupported kernel version: %s", t.kernelVersion)
+		return fmt.Errorf("unsupported kernel version: %s", kv)
 	}
 	_, debugFsErr := os.Stat("/sys/kernel/debug/tracing")
 	_, traceFsErr := os.Stat("/sys/kernel/tracing")
@@ -239,7 +237,7 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	}
 
 	if !t.disableL7Tracing {
-		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: 32})
+		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: 64})
 	}
 
 	for _, pm := range perfMaps {
