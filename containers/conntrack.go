@@ -11,7 +11,8 @@ import (
 )
 
 type Conntrack struct {
-	client *conntrack.Nfct
+	client  *conntrack.Nfct
+	useDump bool
 }
 
 func NewConntrack(netNs netns.NsHandle) (*Conntrack, error) {
@@ -19,7 +20,11 @@ func NewConntrack(netNs netns.NsHandle) (*Conntrack, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Conntrack{client: c}, nil
+	ct := &Conntrack{
+		client:  c,
+		useDump: common.GetKernelVersion().GreaterOrEqual(common.NewVersion(5, 8, 0)),
+	}
+	return ct, nil
 }
 
 func (c *Conntrack) GetActualDestination(src, dst netaddr.IPPort) *netaddr.IPPort {
@@ -44,7 +49,7 @@ func (c *Conntrack) GetActualDestination(src, dst netaddr.IPPort) *netaddr.IPPor
 	if dst.IP().Is6() {
 		family = conntrack.IPv6
 	}
-	sessions, err := c.client.Get(conntrack.Conntrack, family, req)
+	sessions, err := c.client.Get(conntrack.Conntrack, family, req, c.useDump)
 	if err != nil {
 		if !common.IsNotExist(err) {
 			klog.Errorf("failed to resolve actual destination for %s->%s: %s", src, dst, err)
