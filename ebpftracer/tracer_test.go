@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coroot/coroot-node-agent/common"
+
 	"github.com/containerd/cgroups"
 	cgroupsV2 "github.com/containerd/cgroups/v2"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -322,9 +324,10 @@ func runTracer(t *testing.T, verbose bool) (func() *Event, func()) {
 
 	var uname unix.Utsname
 	assert.NoError(t, unix.Uname(&uname))
+	assert.NoError(t, common.SetKernelVersion(string(bytes.Split(uname.Release[:], []byte{0})[0])))
 
 	go func() {
-		tt := NewTracer(string(bytes.Split(uname.Release[:], []byte{0})[0]), false)
+		tt := NewTracer(false)
 		err := tt.Run(events)
 		require.NoError(t, err)
 		<-done
