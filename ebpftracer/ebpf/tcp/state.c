@@ -29,6 +29,9 @@ struct {
 
 struct trace_event_raw_inet_sock_set_state__stub {
     __u64 unused;
+#if defined(__CTX_EXTRA_PADDING)
+    __u64 unused2;
+#endif
     void *skaddr;
     int oldstate;
     int newstate;
@@ -171,7 +174,7 @@ int inet_sock_set_state(void *ctx)
 
 struct trace_event_raw_args_with_fd__stub {
     __u64 unused;
-    long int id;
+    __u64 unused2;
     __u64 fd;
 };
 

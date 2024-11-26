@@ -6,6 +6,9 @@ struct {
 
 struct trace_event_raw_tcp_event_sk_skb__stub {
     __u64 unused;
+#if defined(__CTX_EXTRA_PADDING)
+    __u64 unused2;
+#endif
     void *sbkaddr;
     void *skaddr;
 #if __KERNEL_FROM >= 420

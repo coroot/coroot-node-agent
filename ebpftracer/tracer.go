@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -194,20 +195,38 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	if _, ok := ebpfProgs[runtime.GOARCH]; !ok {
 		return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
 	}
-	kv := common.GetKernelVersion()
-	var prg []byte
-	for _, p := range ebpfProg[runtime.GOARCH] {
-		pv, _ := common.VersionFromString(p.v)
-		if kv.GreaterOrEqual(pv) {
-			prg = p.p
+
+	var traceFsPath string
+	for _, p := range []string{"/sys/kernel/debug/tracing", "/sys/kernel/tracing"} {
+		if _, err := os.Stat(p); err == nil {
+			traceFsPath = p
 			break
 		}
 	}
-	if len(prg) == 0 {
-		return fmt.Errorf("unsupported kernel version: %s", kv)
+	if traceFsPath == "" {
+		return fmt.Errorf("kernel tracing is not available: debugfs or tracefs must be mounted")
 	}
-	_, debugFsErr := os.Stat("/sys/kernel/debug/tracing")
-	_, traceFsErr := os.Stat("/sys/kernel/tracing")
+
+	var flags string
+	if isCtxExtraPaddingRequired(traceFsPath) {
+		flags = "ctx-extra-padding"
+	}
+	kv := common.GetKernelVersion()
+	var prog []byte
+	for _, p := range ebpfProgs[runtime.GOARCH] {
+		pv, _ := common.VersionFromString(p.version)
+		if !kv.GreaterOrEqual(pv) {
+			continue
+		}
+		if flags != p.flags {
+			continue
+		}
+		prog = p.prog
+		break
+	}
+	if len(prog) == 0 {
+		return fmt.Errorf("unsupported kernel version: %s %s", kv, flags)
+	}
 
 	reader, err := gzip.NewReader(base64.NewDecoder(base64.StdEncoding, bytes.NewReader(prog)))
 	if err != nil {
@@ -226,9 +245,9 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		//Programs: ebpf.ProgramOptions{LogLevel: 2, LogSize: 20 * 1024 * 1024},
 	})
 	if err != nil {
-		var verr *ebpf.VerifierError
-		if errors.As(err, &verr) {
-			klog.Errorf("%+v", verr)
+		var vErr *ebpf.VerifierError
+		if errors.As(err, &vErr) {
+			klog.Errorf("%+v", vErr)
 		}
 		return fmt.Errorf("failed to load collection: %w", err)
 	}
@@ -244,7 +263,7 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	}
 
 	if !t.disableL7Tracing {
-		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: 64})
+		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: 32})
 	}
 
 	for _, pm := range perfMaps {
@@ -283,7 +302,7 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		}
 		if err != nil {
 			t.Close()
-			return fmt.Errorf("failed to link program: %w", err)
+			return fmt.Errorf("failed to link program '%s': %w", programSpec.Name, err)
 		}
 		t.links = append(t.links, l)
 	}
@@ -468,4 +487,24 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 func ipPort(ip [16]byte, port uint16) netaddr.IPPort {
 	i, _ := netaddr.FromStdIP(ip[:])
 	return netaddr.IPPortFrom(i, port)
+}
+
+func isCtxExtraPaddingRequired(traceFsPath string) bool {
+	f, err := os.Open(path.Join(traceFsPath, "events/task/task_newtask/format"))
+	if err != nil {
+		klog.Errorln(err)
+		return false
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		klog.Errorln(err)
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, "common_preempt_lazy_count") {
+			return true
+		}
+	}
+	return false
 }
