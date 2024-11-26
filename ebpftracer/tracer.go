@@ -2,9 +2,12 @@ package ebpftracer
 
 import (
 	"bytes"
+	"compress/gzip"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strconv"
@@ -188,7 +191,7 @@ type perfMap struct {
 }
 
 func (t *Tracer) ebpf(ch chan<- Event) error {
-	if _, ok := ebpfProg[runtime.GOARCH]; !ok {
+	if _, ok := ebpfProgs[runtime.GOARCH]; !ok {
 		return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
 	}
 	kv := common.GetKernelVersion()
@@ -206,11 +209,15 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	_, debugFsErr := os.Stat("/sys/kernel/debug/tracing")
 	_, traceFsErr := os.Stat("/sys/kernel/tracing")
 
-	if debugFsErr != nil && traceFsErr != nil {
-		return fmt.Errorf("kernel tracing is not available: debugfs or tracefs must be mounted")
+	reader, err := gzip.NewReader(base64.NewDecoder(base64.StdEncoding, bytes.NewReader(prog)))
+	if err != nil {
+		return fmt.Errorf("invalid program encoding: %w", err)
 	}
-
-	collectionSpec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(prg))
+	prog, err = io.ReadAll(reader)
+	if err != nil {
+		return fmt.Errorf("failed to ungzip program: %w", err)
+	}
+	collectionSpec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(prog))
 	if err != nil {
 		return fmt.Errorf("failed to load collection spec: %w", err)
 	}
