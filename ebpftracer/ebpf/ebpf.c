@@ -33,6 +33,12 @@
     bpf_trace_printk(____fmt, sizeof(____fmt), ##__VA_ARGS__); \
 })
 
+struct trace_event_raw_sys_exit__stub {
+	__u64 unused;
+	__u64 unused2;
+	long int ret;
+};
+
 #include "proc.c"
 #include "file.c"
 #include "tcp/state.c"

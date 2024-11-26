@@ -135,16 +135,10 @@ struct {
 
 struct trace_event_raw_sys_enter_rw__stub {
     __u64 unused;
-    long int id;
+    __u64 unused2;
     __u64 fd;
     char* buf;
     __u64 size;
-};
-
-struct trace_event_raw_sys_exit_rw__stub {
-    __u64 unused;
-    long int id;
-    long int ret;
 };
 
 struct iovec {
@@ -597,28 +591,28 @@ int sys_enter_recvfrom(struct trace_event_raw_sys_enter_rw__stub* ctx) {
 }
 
 SEC("tracepoint/syscalls/sys_exit_read")
-int sys_exit_read(struct trace_event_raw_sys_exit_rw__stub* ctx) {
+int sys_exit_read(struct trace_event_raw_sys_exit__stub* ctx) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = pid_tgid >> 32;
     return trace_exit_read(ctx, pid_tgid, pid, 0, ctx->ret);
 }
 
 SEC("tracepoint/syscalls/sys_exit_readv")
-int sys_exit_readv(struct trace_event_raw_sys_exit_rw__stub* ctx) {
+int sys_exit_readv(struct trace_event_raw_sys_exit__stub* ctx) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = pid_tgid >> 32;
     return trace_exit_read(ctx, pid_tgid, pid, 0, ctx->ret);
 }
 
 SEC("tracepoint/syscalls/sys_exit_recvmsg")
-int sys_exit_recvmsg(struct trace_event_raw_sys_exit_rw__stub* ctx) {
+int sys_exit_recvmsg(struct trace_event_raw_sys_exit__stub* ctx) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = pid_tgid >> 32;
     return trace_exit_read(ctx, pid_tgid, pid, 0, ctx->ret);
 }
 
 SEC("tracepoint/syscalls/sys_exit_recvfrom")
-int sys_exit_recvfrom(struct trace_event_raw_sys_exit_rw__stub* ctx) {
+int sys_exit_recvfrom(struct trace_event_raw_sys_exit__stub* ctx) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = pid_tgid >> 32;
     return trace_exit_read(ctx, pid_tgid, pid, 0, ctx->ret);

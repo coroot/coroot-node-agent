@@ -19,27 +19,29 @@ struct {
 	__uint(max_entries, 10240);
 } open_file_info SEC(".maps");
 
-struct trace_event_raw_sys_enter__stub {
+struct trace_event_raw_sys_enter_open__stub {
 	__u64 unused;
-	long int id;
-	long unsigned int args[6];
+	__u64 unused2;
+	char *filename;
+	long int flags;
 };
 
-struct trace_event_raw_sys_exit__stub {
+struct trace_event_raw_sys_enter_openat__stub {
 	__u64 unused;
-	long int id;
-	long int ret;
+	__u64 unused2;
+	__u64 unused3;
+	char *filename;
+	long int flags;
 };
 
 static __always_inline
-int trace_enter(struct trace_event_raw_sys_enter__stub* ctx, int at)
+int trace_enter_open(long int flags, char *filename)
 {
-	int flags = (int)ctx->args[at+1];
 	if (!(flags & O_ACCMODE & (O_WRONLY | O_RDWR))) {
 		return 0;
 	}
 	char p[7];
-	long res = bpf_probe_read_str(&p, sizeof(p), (void *)ctx->args[at]);
+	long res = bpf_probe_read_str(&p, sizeof(p), (void *)filename);
 	if (p[0]=='/' && p[1]=='p' && p[2]=='r' && p[3]=='o' && p[4]=='c' && p[5]=='/') {
 		return 0;
 	}
@@ -56,7 +58,7 @@ int trace_enter(struct trace_event_raw_sys_enter__stub* ctx, int at)
 }
 
 static __always_inline
-int trace_exit(struct trace_event_raw_sys_exit__stub* ctx)
+int trace_exit_open(struct trace_event_raw_sys_exit__stub* ctx)
 {
 	__u64 id = bpf_get_current_pid_tgid();
 	if (!bpf_map_lookup_elem(&open_file_info, &id)) {
@@ -77,26 +79,26 @@ int trace_exit(struct trace_event_raw_sys_exit__stub* ctx)
 
 #if defined(__TARGET_ARCH_x86)
 SEC("tracepoint/syscalls/sys_enter_open")
-int sys_enter_open(struct trace_event_raw_sys_enter__stub* ctx)
+int sys_enter_open(struct trace_event_raw_sys_enter_open__stub* ctx)
 {
-	return trace_enter(ctx, 0);
+	return trace_enter_open(ctx->flags, ctx->filename);
 }
 
 SEC("tracepoint/syscalls/sys_exit_open")
 int sys_exit_open(struct trace_event_raw_sys_exit__stub* ctx)
 {
-	return trace_exit(ctx);
+	return trace_exit_open(ctx);
 }
 #endif
 
 SEC("tracepoint/syscalls/sys_enter_openat")
-int sys_enter_openat(struct trace_event_raw_sys_enter__stub* ctx)
+int sys_enter_openat(struct trace_event_raw_sys_enter_openat__stub* ctx)
 {
-	return trace_enter(ctx, 1);
+	return trace_enter_open(ctx->flags, ctx->filename);
 }
 
 SEC("tracepoint/syscalls/sys_exit_openat")
 int sys_exit_openat(struct trace_event_raw_sys_exit__stub* ctx)
 {
-	return trace_exit(ctx);
+	return trace_exit_open(ctx);
 }

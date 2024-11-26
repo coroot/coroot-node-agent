@@ -22,6 +22,9 @@ struct {
 
 struct trace_event_raw_task_newtask__stub {
     __u64 unused;
+#if defined(__CTX_EXTRA_PADDING)
+    __u32 unused2;
+#endif
     __u32 pid;
     char comm[TASK_COMM_LEN];
     long unsigned int clone_flags;
@@ -43,6 +46,9 @@ int task_newtask(struct trace_event_raw_task_newtask__stub *args)
 
 struct trace_event_raw_sched_process_template__stub {
     __u64 unused;
+#if defined(__CTX_EXTRA_PADDING)
+    __u32 unused2;
+#endif
     char comm[TASK_COMM_LEN];
     __u32 pid;
 };
@@ -68,6 +74,9 @@ int sched_process_exit(struct trace_event_raw_sched_process_template__stub *args
 
 struct trace_event_raw_mark_victim__stub {
     __u64 unused;
+#if defined(__CTX_EXTRA_PADDING)
+    __u32 unused2;
+#endif
     int pid;
 };
 
