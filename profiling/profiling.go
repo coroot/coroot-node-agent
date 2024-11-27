@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,11 +15,11 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/go-kit/log"
 	ebpfspy "github.com/grafana/pyroscope/ebpf"
+	"github.com/grafana/pyroscope/ebpf/cpp/demangle"
 	"github.com/grafana/pyroscope/ebpf/metrics"
 	"github.com/grafana/pyroscope/ebpf/pprof"
 	"github.com/grafana/pyroscope/ebpf/sd"
 	"github.com/grafana/pyroscope/ebpf/symtab"
-	"github.com/grafana/pyroscope/ebpf/symtab/elf"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"k8s.io/klog/v2"
@@ -80,11 +79,11 @@ func Init(hostId, hostName string) chan<- containers.ProcessInfo {
 				Size:       256,
 				KeepRounds: 8,
 			},
-			SymbolOptions: symtab.SymbolOptions{
-				GoTableFallback:    true,
-				PythonFullFilePath: false,
-				DemangleOptions:    elf.DemangleFull,
-			},
+		},
+		SymbolOptions: symtab.SymbolOptions{
+			GoTableFallback:    true,
+			PythonFullFilePath: false,
+			DemangleOptions:    demangle.DemangleFull,
 		},
 		Metrics: &metrics.Metrics{
 			Symtab: metrics.NewSymtabMetrics(reg),
@@ -131,28 +130,15 @@ func collect() {
 	defer ticker.Stop()
 	for t := range ticker.C {
 		session.UpdateTargets(sd.TargetsOptions{})
-		bs := pprof.NewProfileBuilders(SampleRate)
-		err := session.CollectProfiles(func(target *sd.Target, stack []string, value uint64, pid uint32, aggregation ebpfspy.SampleAggregation) {
-			pi := targetFinder.get(pid)
-			if pi == nil {
-				return
-			}
-			b := bs.BuilderForTarget(pi.hash, pi.labels)
-			if aggregation == ebpfspy.SampleAggregated {
-				b.CreateSample(stack, value)
-			} else {
-				b.CreateSampleOrAddValue(stack, value)
-			}
-		})
-		klog.Infof("collected %d profiles in %s", len(bs.Builders), time.Since(t).Truncate(time.Millisecond))
-		if err != nil {
+		bs := pprof.NewProfileBuilders(pprof.BuildersOptions{SampleRate: SampleRate, PerPIDProfile: false})
+		if err := pprof.Collect(bs, session); err != nil {
 			klog.Errorln(err)
 		}
+		klog.Infof("collected %d profiles in %s", len(bs.Builders), time.Since(t).Truncate(time.Millisecond))
 		t = time.Now()
 		var uploaded int
 		for _, b := range bs.Builders {
-			err = upload(b)
-			if err != nil {
+			if err := upload(b); err != nil {
 				klog.Errorln(err)
 				break
 			}
@@ -165,7 +151,18 @@ func collect() {
 func upload(b *pprof.ProfileBuilder) error {
 	u := *endpointUrl
 	q := u.Query()
-	for _, l := range append(b.Labels, constLabels...) {
+	for _, l := range b.Labels {
+		switch l.Name {
+		case "service_name":
+			l.Name = "service.name"
+		case "__container_id__":
+			l.Name = "container.id"
+		default:
+			continue
+		}
+		q.Set(l.Name, l.Value)
+	}
+	for _, l := range constLabels {
 		q.Set(l.Name, l.Value)
 	}
 	u.RawQuery = q.Encode()
@@ -210,37 +207,29 @@ func (tf *TargetFinder) start(processInfoCh <-chan containers.ProcessInfo) {
 	go func() {
 		for pi := range processInfoCh {
 			tf.lock.Lock()
+			cid := string(pi.ContainerId)
 			tf.processes[pi.Pid] = &processInfo{
-				containerId: string(pi.ContainerId),
-				startedAt:   pi.StartedAt,
+				startedAt: pi.StartedAt,
+				target: sd.NewTargetForTesting(cid, 0, sd.DiscoveryTarget{
+					"service_name": common.ContainerIdToOtelServiceName(cid),
+				}),
 			}
 			tf.lock.Unlock()
 		}
 	}()
 }
 
-func (tf *TargetFinder) get(pid uint32) *processInfo {
+func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
 	tf.lock.Lock()
+	defer tf.lock.Unlock()
 	pi := tf.processes[pid]
-	tf.lock.Unlock()
 	if pi == nil {
 		return nil
 	}
 	if tf.now.Sub(pi.startedAt) < CollectInterval {
 		return nil
 	}
-	if pi.hash == 0 {
-		pi.calcHashAndLabels()
-	}
-	return pi
-}
-
-func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
-	p := tf.get(pid)
-	if p == nil {
-		return nil
-	}
-	return &sd.Target{}
+	return pi.target
 }
 
 func (tf *TargetFinder) RemoveDeadPID(pid uint32) {
@@ -249,7 +238,7 @@ func (tf *TargetFinder) RemoveDeadPID(pid uint32) {
 	delete(tf.processes, pid)
 }
 
-func (tf *TargetFinder) DebugInfo() []string {
+func (tf *TargetFinder) DebugInfo() []map[string]string {
 	return nil
 }
 
@@ -258,18 +247,6 @@ func (tf *TargetFinder) Update(_ sd.TargetsOptions) {
 }
 
 type processInfo struct {
-	containerId string
-	startedAt   time.Time
-	labels      labels.Labels
-	hash        uint64
-}
-
-func (pi *processInfo) calcHashAndLabels() {
-	hash := fnv.New64a()
-	_, _ = hash.Write([]byte(pi.containerId))
-	pi.hash = hash.Sum64()
-	pi.labels = labels.Labels{
-		{Name: "service.name", Value: common.ContainerIdToOtelServiceName(pi.containerId)},
-		{Name: "container.id", Value: pi.containerId},
-	}
+	startedAt time.Time
+	target    *sd.Target
 }
