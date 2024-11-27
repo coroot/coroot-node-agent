@@ -6,7 +6,7 @@ Below are some basic guidelines.
 
 ## Requirements
 * Linux ≥v4.16 (amd64, arm64)
-* Go v1.21
+* Go v1.23
 
 
 ## Running

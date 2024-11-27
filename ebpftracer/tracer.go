@@ -189,6 +189,7 @@ type perfMap struct {
 	name                  string
 	perCPUBufferSizePages int
 	typ                   perfMapType
+	readTimeout           time.Duration
 }
 
 func (t *Tracer) ebpf(ch chan<- Event) error {
@@ -256,7 +257,7 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	perfMaps := []perfMap{
 		{name: "proc_events", typ: perfMapTypeProcEvents, perCPUBufferSizePages: 4},
 		{name: "tcp_listen_events", typ: perfMapTypeTCPEvents, perCPUBufferSizePages: 4},
-		{name: "tcp_connect_events", typ: perfMapTypeTCPEvents, perCPUBufferSizePages: 8},
+		{name: "tcp_connect_events", typ: perfMapTypeTCPEvents, perCPUBufferSizePages: 8, readTimeout: 10 * time.Millisecond},
 		{name: "tcp_retransmit_events", typ: perfMapTypeTCPEvents, perCPUBufferSizePages: 4},
 		{name: "file_events", typ: perfMapTypeFileEvents, perCPUBufferSizePages: 4},
 		{name: "python_thread_events", typ: perfMapTypePythonThreadEvents, perCPUBufferSizePages: 4},
@@ -266,14 +267,15 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: 32})
 	}
 
+	pageSize := os.Getpagesize()
 	for _, pm := range perfMaps {
-		r, err := perf.NewReader(t.collection.Maps[pm.name], pm.perCPUBufferSizePages*os.Getpagesize())
+		r, err := perf.NewReaderWithOptions(t.collection.Maps[pm.name], pm.perCPUBufferSizePages*pageSize, perf.ReaderOptions{WakeupEvents: 100})
 		if err != nil {
 			t.Close()
 			return fmt.Errorf("failed to create ebpf reader: %w", err)
 		}
 		t.readers[pm.name] = r
-		go runEventsReader(pm.name, r, ch, pm.typ)
+		go runEventsReader(pm.name, r, ch, pm.typ, pm.readTimeout)
 	}
 
 	for _, programSpec := range collectionSpec.Programs {
@@ -391,8 +393,12 @@ type pythonThreadEvent struct {
 	Duration uint64
 }
 
-func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapType) {
+func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapType, readTimeout time.Duration) {
+	if readTimeout == 0 {
+		readTimeout = 100 * time.Millisecond
+	}
 	for {
+		r.SetDeadline(time.Now().Add(readTimeout))
 		rec, err := r.Read()
 		if err != nil {
 			if errors.Is(err, perf.ErrClosed) {
