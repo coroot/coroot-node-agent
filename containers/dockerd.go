@@ -3,8 +3,6 @@ package containers
 import (
 	"context"
 	"fmt"
-	"os"
-	"path"
 	"strings"
 	"time"
 
@@ -12,7 +10,6 @@ import (
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/logparser"
 	"github.com/docker/docker/client"
-	"github.com/vishvananda/netns"
 	"inet.af/netaddr"
 )
 
@@ -105,23 +102,4 @@ func DockerdInspect(containerID string) (*ContainerMetadata, error) {
 		}
 	}
 	return res, nil
-}
-
-func FindNetworkLoadBalancerNs(networkId string) netns.NsHandle {
-	basePath := "/run/docker/netns"
-	files, err := os.ReadDir(proc.HostPath(basePath))
-	if err != nil {
-		return -1
-	}
-	for _, f := range files {
-		if !f.Type().IsRegular() || !strings.HasPrefix(f.Name(), "lb_") {
-			continue
-		}
-		idPrefix := strings.Split(f.Name(), "_")[1]
-		if strings.HasPrefix(networkId, idPrefix) {
-			ns, _ := netns.GetFromPath(proc.HostPath(path.Join(basePath, f.Name())))
-			return ns
-		}
-	}
-	return -1
 }

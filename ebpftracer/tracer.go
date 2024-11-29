@@ -20,7 +20,7 @@ import (
 	"github.com/cilium/ebpf/perf"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
-	"github.com/coroot/coroot-node-agent/proc"
+	"github.com/vishvananda/netns"
 	"golang.org/x/sys/unix"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
@@ -54,16 +54,17 @@ type TrafficStats struct {
 }
 
 type Event struct {
-	Type         EventType
-	Reason       EventReason
-	Pid          uint32
-	SrcAddr      netaddr.IPPort
-	DstAddr      netaddr.IPPort
-	Fd           uint64
-	Timestamp    uint64
-	Duration     time.Duration
-	L7Request    *l7.RequestData
-	TrafficStats *TrafficStats
+	Type          EventType
+	Reason        EventReason
+	Pid           uint32
+	SrcAddr       netaddr.IPPort
+	DstAddr       netaddr.IPPort
+	ActualDstAddr netaddr.IPPort
+	Fd            uint64
+	Timestamp     uint64
+	Duration      time.Duration
+	L7Request     *l7.RequestData
+	TrafficStats  *TrafficStats
 }
 
 type perfMapType uint8
@@ -78,6 +79,7 @@ const (
 
 type Tracer struct {
 	disableL7Tracing bool
+	hostNetNs        netns.NsHandle
 
 	collection *ebpf.Collection
 	readers    map[string]*perf.Reader
@@ -85,12 +87,13 @@ type Tracer struct {
 	uprobes    map[string]*ebpf.Program
 }
 
-func NewTracer(disableL7Tracing bool) *Tracer {
+func NewTracer(hostNetNs netns.NsHandle, disableL7Tracing bool) *Tracer {
 	if disableL7Tracing {
 		klog.Infoln("L7 tracing is disabled")
 	}
 	return &Tracer{
 		disableL7Tracing: disableL7Tracing,
+		hostNetNs:        hostNetNs,
 
 		readers: map[string]*perf.Reader{},
 		uprobes: map[string]*ebpf.Program{},
@@ -118,55 +121,6 @@ func (t *Tracer) Close() {
 		_ = r.Close()
 	}
 	t.collection.Close()
-}
-
-func (t *Tracer) init(ch chan<- Event) error {
-	pids, err := proc.ListPids()
-	if err != nil {
-		return fmt.Errorf("failed to list pids: %w", err)
-	}
-	for _, pid := range pids {
-		ch <- Event{Type: EventTypeProcessStart, Pid: pid}
-	}
-
-	fds, sockets := readFds(pids)
-	for _, fd := range fds {
-		ch <- Event{Type: EventTypeFileOpen, Pid: fd.pid, Fd: fd.fd}
-	}
-
-	listens := map[uint64]bool{}
-	for _, s := range sockets {
-		if s.Listen {
-			listens[uint64(s.pid)<<32|uint64(s.SAddr.Port())] = true
-		}
-	}
-
-	ebpfConnectionsMap := t.collection.Maps["active_connections"]
-	timestamp := uint64(time.Now().UnixNano())
-	for _, s := range sockets {
-		typ := EventTypeConnectionOpen
-		if s.Listen {
-			typ = EventTypeListenOpen
-		} else if listens[uint64(s.pid)<<32|uint64(s.SAddr.Port())] || s.DAddr.Port() > s.SAddr.Port() { // inbound
-			continue
-		}
-		ch <- Event{
-			Type:      typ,
-			Pid:       s.pid,
-			Timestamp: timestamp,
-			Fd:        s.fd,
-			SrcAddr:   s.SAddr,
-			DstAddr:   s.DAddr,
-		}
-		if typ == EventTypeConnectionOpen {
-			id := ConnectionId{FD: s.fd, PID: s.pid}
-			conn := Connection{Timestamp: timestamp}
-			if err := ebpfConnectionsMap.Update(id, conn, ebpf.UpdateNoExist); err != nil {
-				klog.Warningln(err)
-			}
-		}
-	}
-	return nil
 }
 
 func (t *Tracer) ActiveConnectionsIterator() *ebpf.MapIterator {
@@ -364,8 +318,10 @@ type tcpEvent struct {
 	BytesReceived uint64
 	SPort         uint16
 	DPort         uint16
+	Aport         uint16
 	SAddr         [16]byte
 	DAddr         [16]byte
+	AAddr         [16]byte
 }
 
 type fileEvent struct {
@@ -457,13 +413,14 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 				continue
 			}
 			event = Event{
-				Type:      v.Type,
-				Pid:       v.Pid,
-				SrcAddr:   ipPort(v.SAddr, v.SPort),
-				DstAddr:   ipPort(v.DAddr, v.DPort),
-				Fd:        v.Fd,
-				Timestamp: v.Timestamp,
-				Duration:  time.Duration(v.Duration),
+				Type:          v.Type,
+				Pid:           v.Pid,
+				SrcAddr:       ipPort(v.SAddr, v.SPort),
+				DstAddr:       ipPort(v.DAddr, v.DPort),
+				ActualDstAddr: ipPort(v.AAddr, v.Aport),
+				Fd:            v.Fd,
+				Timestamp:     v.Timestamp,
+				Duration:      time.Duration(v.Duration),
 			}
 			if v.Type == EventTypeConnectionClose {
 				event.TrafficStats = &TrafficStats{

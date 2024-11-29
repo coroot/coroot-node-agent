@@ -41,6 +41,7 @@ struct trace_event_raw_sys_exit__stub {
 
 #include "proc.c"
 #include "file.c"
+#include "tcp/conntrack.c"
 #include "tcp/state.c"
 #include "tcp/retransmit.c"
 #include "l7/l7.c"

@@ -44,8 +44,6 @@ type Registry struct {
 	tracer *ebpftracer.Tracer
 	events chan ebpftracer.Event
 
-	hostConntrack *Conntrack
-
 	containersById       map[ContainerID]*Container
 	containersByCgroupId map[string]*Container
 	containersByPid      map[uint32]*Container
@@ -96,17 +94,10 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo) (*
 	if err := JournaldInit(); err != nil {
 		klog.Warningln(err)
 	}
-	ct, err := NewConntrack(hostNetNs)
-	if err != nil {
-		return nil, err
-	}
 
 	r := &Registry{
-		reg:    reg,
-		events: make(chan ebpftracer.Event, 10000),
-
-		hostConntrack: ct,
-
+		reg:                  reg,
+		events:               make(chan ebpftracer.Event, 10000),
 		containersById:       map[ContainerID]*Container{},
 		containersByCgroupId: map[string]*Container{},
 		containersByPid:      map[uint32]*Container{},
@@ -114,7 +105,7 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo) (*
 
 		processInfoCh: processInfoCh,
 
-		tracer: ebpftracer.NewTracer(*flags.DisableL7Tracing),
+		tracer: ebpftracer.NewTracer(hostNetNs, *flags.DisableL7Tracing),
 
 		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate),
 	}
@@ -253,14 +244,14 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 
 			case ebpftracer.EventTypeConnectionOpen:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, e.Timestamp, false, e.Duration)
+					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, e.ActualDstAddr, e.Timestamp, false, e.Duration)
 					c.attachTlsUprobes(r.tracer, e.Pid)
 				} else {
 					klog.Infoln("TCP connection from unknown container", e)
 				}
 			case ebpftracer.EventTypeConnectionError:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, 0, true, e.Duration)
+					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, e.ActualDstAddr, 0, true, e.Duration)
 				} else {
 					klog.Infoln("TCP connection error from unknown container", e)
 				}
@@ -345,16 +336,12 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 			c.cgroup = cg
 			c.metadata = md
 			c.runLogParser("")
-			if c.nsConntrack != nil {
-				_ = c.nsConntrack.Close()
-				c.nsConntrack = nil
-			}
 		}
 		r.containersByPid[pid] = c
 		r.containersByCgroupId[cg.Id] = c
 		return c
 	}
-	c, err := NewContainer(id, cg, md, r.hostConntrack, pid, r)
+	c, err := NewContainer(id, cg, md, pid, r)
 	if err != nil {
 		klog.Warningf("failed to create container pid=%d cg=%s id=%s: %s", pid, cg.Id, id, err)
 		return nil
