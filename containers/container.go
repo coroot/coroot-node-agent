@@ -137,10 +137,6 @@ type Container struct {
 
 	logParsers map[string]*LogParser
 
-	hostConntrack *Conntrack
-	nsConntrack   *Conntrack
-	lbConntracks  []*Conntrack
-
 	registry *Registry
 
 	lock sync.RWMutex
@@ -148,7 +144,7 @@ type Container struct {
 	done chan struct{}
 }
 
-func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, hostConntrack *Conntrack, pid uint32, registry *Registry) (*Container, error) {
+func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid uint32, registry *Registry) (*Container, error) {
 	netNs, err := proc.GetNetNs(pid)
 	if err != nil {
 		return nil, err
@@ -177,24 +173,10 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 
 		logParsers: map[string]*LogParser{},
 
-		hostConntrack: hostConntrack,
-
 		registry: registry,
 
 		done: make(chan struct{}),
 	}
-
-	for _, n := range md.networks {
-		if nsHandle := FindNetworkLoadBalancerNs(n.NetworkID); nsHandle.IsOpen() {
-			if ct, err := NewConntrack(nsHandle); err != nil {
-				klog.Warningln(err)
-			} else {
-				c.lbConntracks = append(c.lbConntracks, ct)
-			}
-			_ = nsHandle.Close()
-		}
-	}
-
 	c.runLogParser("")
 
 	go func() {
@@ -216,12 +198,6 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, host
 func (c *Container) Close() {
 	for _, p := range c.logParsers {
 		p.Stop()
-	}
-	for _, ct := range c.lbConntracks {
-		_ = ct.Close()
-	}
-	if c.nsConntrack != nil {
-		_ = c.nsConntrack.Close()
 	}
 	close(c.done)
 }
@@ -519,7 +495,7 @@ func (c *Container) onListenClose(pid uint32, addr netaddr.IPPort) {
 	}
 }
 
-func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPPort, timestamp uint64, failed bool, duration time.Duration) {
+func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst, actualDst netaddr.IPPort, timestamp uint64, failed bool, duration time.Duration) {
 	if common.PortFilter.ShouldBeSkipped(dst.Port()) {
 		return
 	}
@@ -530,23 +506,20 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 	if dst.IP().IsLoopback() && !p.isHostNs() {
 		return
 	}
-	actualDst, err := c.getActualDestination(p, src, dst)
-	if err != nil {
-		if !common.IsNotExist(err) {
-			klog.Warningf("cannot open NetNs for pid %d: %s", pid, err)
+	if actualDst.Port() == 0 {
+		if a := lookupCiliumConntrackTable(src, dst); a != nil {
+			actualDst = *a
+		} else {
+			actualDst = dst
 		}
-		return
 	}
-	switch {
-	case actualDst == nil:
-		actualDst = &dst
-	case actualDst.IP().IsLoopback() && !p.isHostNs():
+	if actualDst.IP().IsLoopback() && !p.isHostNs() {
 		return
 	}
 	if common.ConnectionFilter.ShouldBeSkipped(dst.IP(), actualDst.IP()) {
 		return
 	}
-	key := common.NewDestinationKey(dst, *actualDst, c.registry.getFQDN(dst.IP()))
+	key := common.NewDestinationKey(dst, actualDst, c.registry.getFQDN(dst.IP()))
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if failed {
@@ -569,36 +542,6 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst netaddr.IPP
 		c.connectionsByPidFd[PidFd{Pid: pid, Fd: fd}] = connection
 	}
 	c.lastConnectionAttempts[key.Destination()] = time.Now()
-}
-
-func (c *Container) getActualDestination(p *Process, src, dst netaddr.IPPort) (*netaddr.IPPort, error) {
-	if actualDst := lookupCiliumConntrackTable(src, dst); actualDst != nil {
-		return actualDst, nil
-	}
-	for _, lb := range c.lbConntracks {
-		if actualDst := lb.GetActualDestination(src, dst); actualDst != nil {
-			return actualDst, nil
-		}
-	}
-	actualDst := c.hostConntrack.GetActualDestination(src, dst)
-	if actualDst != nil {
-		return actualDst, nil
-	}
-	if !p.isHostNs() {
-		if c.nsConntrack == nil {
-			netNs, err := proc.GetNetNs(p.Pid)
-			if err != nil {
-				return nil, err
-			}
-			defer netNs.Close()
-			c.nsConntrack, err = NewConntrack(netNs)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return c.nsConntrack.GetActualDestination(src, dst), nil
-	}
-	return nil, nil
 }
 
 func (c *Container) onConnectionClose(e ebpftracer.Event) {

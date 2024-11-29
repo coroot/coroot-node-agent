@@ -1,4 +1,3 @@
-#define IPPROTO_TCP 6
 #define MAX_CONNECTIONS 1000000
 
 struct tcp_event {
@@ -11,8 +10,10 @@ struct tcp_event {
     __u64 bytes_received;
     __u16 sport;
     __u16 dport;
+    __u16 aport;
     __u8 saddr[16];
     __u8 daddr[16];
+    __u8 aaddr[16];
 };
 
 struct {
@@ -167,8 +168,16 @@ int inet_sock_set_state(void *ctx)
     __builtin_memcpy(&e.saddr, &args.saddr_v6, sizeof(e.saddr));
     __builtin_memcpy(&e.daddr, &args.daddr_v6, sizeof(e.saddr));
 
-    bpf_perf_event_output(ctx, map, BPF_F_CURRENT_CPU, &e, sizeof(e));
+    struct ipPort src = {};
+    __builtin_memcpy(&src.ip, &args.saddr_v6, sizeof(args.saddr_v6));
+    src.port = args.sport;
 
+    struct ipPort *actualDst = bpf_map_lookup_elem(&actual_destinations, &src);
+    if (actualDst) {
+        e.aport = actualDst->port;
+        __builtin_memcpy(&e.aaddr, &actualDst->ip, sizeof(e.aaddr));
+    }
+    bpf_perf_event_output(ctx, map, BPF_F_CURRENT_CPU, &e, sizeof(e));
     return 0;
 }
 

@@ -327,7 +327,7 @@ func runTracer(t *testing.T, verbose bool) (func() *Event, func()) {
 	assert.NoError(t, common.SetKernelVersion(string(bytes.Split(uname.Release[:], []byte{0})[0])))
 
 	go func() {
-		tt := NewTracer(false)
+		tt := NewTracer(0, false)
 		err := tt.Run(events)
 		require.NoError(t, err)
 		<-done
