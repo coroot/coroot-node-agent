@@ -137,6 +137,8 @@ type Container struct {
 
 	logParsers map[string]*LogParser
 
+	tracer *tracing.Tracer
+
 	registry *Registry
 
 	lock sync.RWMutex
@@ -172,6 +174,8 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		mounts: map[string]proc.MountInfo{},
 
 		logParsers: map[string]*LogParser{},
+
+		tracer: tracing.GetContainerTracer(string(id)),
 
 		registry: registry,
 
@@ -649,7 +653,7 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	}
 	stats := c.l7Stats.get(r.Protocol, conn.DestinationKey)
 
-	trace := tracing.NewTrace(string(c.id), conn.DestinationKey.ActualDestinationIfKnown())
+	trace := c.tracer.NewTrace(conn.DestinationKey.ActualDestinationIfKnown())
 	switch r.Protocol {
 	case l7.ProtocolHTTP:
 		stats.observe(r.Status.Http(), "", r.Duration)
