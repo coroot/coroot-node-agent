@@ -25,7 +25,10 @@ const (
 )
 
 var (
-	tracer func(containerId string) trace.Tracer
+	batcher             sdktrace.TracerProviderOption
+	commonResourceAttrs []attribute.KeyValue
+	agentVersion        string
+	initialized         bool
 )
 
 func Init(machineId, hostname, version string) {
@@ -54,43 +57,54 @@ func Init(machineId, hostname, version string) {
 		klog.Exitln(err)
 	}
 
-	batcher := sdktrace.WithBatcher(exporter)
+	batcher = sdktrace.WithBatcher(exporter)
+	commonResourceAttrs = []attribute.KeyValue{semconv.HostName(hostname), semconv.HostID(machineId)}
+	agentVersion = version
+	initialized = true
+}
 
-	tracer = func(containerId string) trace.Tracer {
-		provider := sdktrace.NewTracerProvider(
-			batcher,
-			sdktrace.WithResource(resource.NewWithAttributes(
-				semconv.SchemaURL,
-				semconv.HostName(hostname),
-				semconv.HostID(machineId),
+type Tracer struct {
+	otel trace.Tracer
+}
+
+func GetContainerTracer(containerId string) *Tracer {
+	if !initialized {
+		return &Tracer{otel: nil}
+	}
+	provider := sdktrace.NewTracerProvider(
+		batcher,
+		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			append(
+				commonResourceAttrs,
 				semconv.ServiceName(common.ContainerIdToOtelServiceName(containerId)),
 				semconv.ContainerID(containerId),
-			)),
-		)
-		return provider.Tracer("coroot-node-agent", trace.WithInstrumentationVersion(version))
-	}
+			)...,
+		)),
+	)
+	return &Tracer{otel: provider.Tracer("coroot-node-agent", trace.WithInstrumentationVersion(agentVersion))}
 }
 
-type Trace struct {
-	containerId string
-	destination common.HostPort
-	commonAttrs []attribute.KeyValue
-}
-
-func NewTrace(containerId string, destination common.HostPort) *Trace {
-	if tracer == nil {
-		return nil
-	}
-	return &Trace{containerId: containerId, destination: destination, commonAttrs: []attribute.KeyValue{
+func (t *Tracer) NewTrace(destination common.HostPort) *Trace {
+	return &Trace{tracer: t, destination: destination, commonAttrs: []attribute.KeyValue{
 		semconv.NetPeerName(destination.Host()),
 		semconv.NetPeerPort(int(destination.Port())),
 	}}
 }
 
+type Trace struct {
+	tracer      *Tracer
+	destination common.HostPort
+	commonAttrs []attribute.KeyValue
+}
+
 func (t *Trace) createSpan(name string, duration time.Duration, error bool, attrs ...attribute.KeyValue) {
+	if t.tracer.otel == nil {
+		return
+	}
 	end := time.Now()
 	start := end.Add(-duration)
-	_, span := tracer(t.containerId).Start(nil, name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
+	_, span := t.tracer.otel.Start(nil, name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
 	span.SetAttributes(attrs...)
 	span.SetAttributes(t.commonAttrs...)
 	if error {
