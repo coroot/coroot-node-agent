@@ -10,16 +10,24 @@ import (
 )
 
 func TestParseHttp(t *testing.T) {
-	m, p := ParseHttp([]byte(`HEAD /1 HTTP/1.1\nHost: 127.0.0.1\nUser-Agent: curl/8.0.1\nAccept: */*\n\nxzxxxxxxzx`))
-	assert.Equal(t, "HEAD", m)
-	assert.Equal(t, "/1", p)
+	var m, u, p string
 
-	m, p = ParseHttp([]byte(`GET /too-long-uri`))
+	m, u, p = ParseHttp([]byte(`HEAD /1 HTTP/1.1\nHost: 127.0.0.1\nUser-Agent: curl/8.0.1\nAccept: */*\n\nxzxxxxxxzx`))
+	assert.Equal(t, "HEAD", m)
+	assert.Equal(t, "/1", u)
+
+	m, u, p = ParseHttp([]byte(`GET /greeting?name=foo-svc HTTP/1.1\n\n`))
 	assert.Equal(t, "GET", m)
-	assert.Equal(t, "/too-long-uri...", p)
+	assert.Equal(t, "/greeting?name=foo-svc", u)
+	assert.Equal(t, "/greeting", p)
+
+	m, u, p = ParseHttp([]byte(`POST /v1/profiles?container.id=%2Fdocker%2Fcoroot-local-loo-svc-1&host.id=b0d275fb46fa48c6820be57edaa22cf5 HTTP/1.1\n{{}}\n`))
+	assert.Equal(t, "POST", m)
+	assert.Equal(t, "/v1/profiles", p)
+
 }
 
-func Test_parseMemcached(t *testing.T) {
+func TestParseMemcached(t *testing.T) {
 	cmd, items := ParseMemcached(append([]byte(`incr 1111 2222`), '\r', '\n'))
 	assert.Equal(t, "incr", cmd)
 	assert.Equal(t, []string{"1111"}, items)

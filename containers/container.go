@@ -681,8 +681,8 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	switch r.Protocol {
 	case l7.ProtocolHTTP:
 		stats.observe(r.Status.Http(), "", r.Duration)
-		method, path := l7.ParseHttp(r.Payload)
-		trace.HttpRequest(method, path, r.Status, r.Duration)
+		method, uri, path := l7.ParseHttp(r.Payload)
+		trace.HttpRequest(method, uri, path, r.Status, r.Duration)
 	case l7.ProtocolHTTP2:
 		if conn.http2Parser == nil {
 			conn.http2Parser = l7.NewHttp2Parser()
