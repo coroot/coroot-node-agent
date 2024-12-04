@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"regexp"
@@ -210,14 +211,30 @@ func NewDestinationKey(dst, actualDst netaddr.IPPort, fqdn string) DestinationKe
 	}
 }
 
-var ec2NodeRegex = regexp.MustCompile(`ip-\d+-\d+-\d+-\d+\.ec2`)
-var externalDomainWithSuffix = regexp.MustCompile(`(.+\.(com|net|org|io))\..+`)
-
 func NormalizeFQDN(fqdn string, requestType string) string {
 	if requestType == "TypePTR" {
 		return "IP.in-addr.arpa"
 	}
-	fqdn = ec2NodeRegex.ReplaceAllLiteralString(fqdn, "IP.ec2")
-	fqdn = externalDomainWithSuffix.ReplaceAllString(fqdn, "$1.search_path_suffix")
+	if strings.HasPrefix(fqdn, "ip-") {
+		if idx := strings.Index(fqdn, "."); idx > 0 && strings.HasPrefix(fqdn[idx+1:], "ec2") {
+			return "IP.ec2" + fqdn[idx+4:]
+		}
+	}
+	buf := bytes.NewBuffer(nil)
+	partsCount := 0
+	for i, r := range fqdn {
+		if r != '.' {
+			buf.WriteRune(r)
+		} else {
+			if partsCount > 0 && len(fqdn) > i {
+				switch string(buf.Bytes()) {
+				case "com", "net", "org", "io":
+					return fqdn[:i] + ".search_path_suffix"
+				}
+			}
+			buf.Reset()
+			partsCount++
+		}
+	}
 	return fqdn
 }
