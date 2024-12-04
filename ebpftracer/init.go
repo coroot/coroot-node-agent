@@ -17,11 +17,6 @@ const (
 	IPProtoTCP uint8 = 6
 )
 
-type file struct {
-	pid uint32
-	fd  uint64
-}
-
 type sock struct {
 	pid uint32
 	fd  uint64
@@ -100,10 +95,7 @@ func (t *Tracer) init(ch chan<- Event) error {
 		return err
 	}
 	nss := map[string]map[string]sock{}
-	var (
-		files []file
-		socks []sock
-	)
+	var socks []sock
 
 	for _, pid := range pids {
 		ns, err := proc.GetNetNs(pid)
@@ -151,14 +143,11 @@ func (t *Tracer) init(ch chan<- Event) error {
 					socks = append(socks, s)
 				}
 			case strings.HasPrefix(fd.Dest, "/"):
-				files = append(files, file{pid: pid, fd: fd.Fd})
+				ch <- Event{Type: EventTypeFileOpen, Pid: pid, Fd: fd.Fd, Log: strings.HasPrefix(fd.Dest, "/var/log/")}
 			}
 		}
 	}
 
-	for _, fd := range files {
-		ch <- Event{Type: EventTypeFileOpen, Pid: fd.pid, Fd: fd.fd}
-	}
 	listens := map[uint64]bool{}
 	for _, s := range socks {
 		if s.Listen {

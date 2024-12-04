@@ -134,7 +134,8 @@ type Container struct {
 	oomKills                 int
 	pythonThreadLockWaitTime time.Duration
 
-	mounts map[string]proc.MountInfo
+	mounts     map[string]proc.MountInfo
+	seenMounts map[uint64]struct{}
 
 	logParsers map[string]*LogParser
 
@@ -172,7 +173,8 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		l7Stats:                  L7Stats{},
 		dnsStats:                 &L7Metrics{},
 
-		mounts: map[string]proc.MountInfo{},
+		mounts:     map[string]proc.MountInfo{},
+		seenMounts: map[uint64]struct{}{},
 
 		logParsers: map[string]*LogParser{},
 
@@ -424,13 +426,24 @@ func (c *Container) onProcessExit(pid uint32, oomKill bool) {
 	}
 }
 
-func (c *Container) onFileOpen(pid uint32, fd uint64) {
+func (c *Container) onFileOpen(pid uint32, fd uint64, mnt uint64, log bool) {
+	if mnt > 0 && !log {
+		c.lock.Lock()
+		_, ok := c.seenMounts[mnt]
+		c.lock.Unlock()
+		if ok {
+			return
+		}
+	}
 	mntId, logPath := resolveFd(pid, fd)
 	func() {
 		if mntId == "" {
 			return
 		}
 		c.lock.Lock()
+		if mnt > 0 {
+			c.seenMounts[mnt] = struct{}{}
+		}
 		_, ok := c.mounts[mntId]
 		c.lock.Unlock()
 		if ok {
