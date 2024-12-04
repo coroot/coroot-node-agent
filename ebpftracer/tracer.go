@@ -65,6 +65,8 @@ type Event struct {
 	Duration      time.Duration
 	L7Request     *l7.RequestData
 	TrafficStats  *TrafficStats
+	Mnt           uint64
+	Log           bool
 }
 
 type perfMapType uint8
@@ -328,6 +330,8 @@ type fileEvent struct {
 	Type EventType
 	Pid  uint32
 	Fd   uint64
+	Mnt  uint64
+	Log  uint64
 }
 
 type l7Event struct {
@@ -398,7 +402,7 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 				klog.Warningln("failed to read msg:", err)
 				continue
 			}
-			event = Event{Type: v.Type, Pid: v.Pid, Fd: v.Fd}
+			event = Event{Type: v.Type, Pid: v.Pid, Fd: v.Fd, Mnt: v.Mnt, Log: v.Log > 0}
 		case perfMapTypeProcEvents:
 			v := &procEvent{}
 			if err := binary.Read(bytes.NewBuffer(rec.RawSample), binary.LittleEndian, v); err != nil {

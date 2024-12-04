@@ -228,7 +228,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 
 			case ebpftracer.EventTypeFileOpen:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					c.onFileOpen(e.Pid, e.Fd)
+					c.onFileOpen(e.Pid, e.Fd, e.Mnt, e.Log)
 				}
 
 			case ebpftracer.EventTypeListenOpen:
