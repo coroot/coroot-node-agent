@@ -10,7 +10,7 @@ var (
 
 func SetKernelVersion(version string) error {
 	v, err := VersionFromString(version)
-	if err != nil || v.Minor == 0 {
+	if err != nil || v.Major == 0 {
 		return fmt.Errorf("invalid kernel version: %s", version)
 	}
 	kernelVersion = v
