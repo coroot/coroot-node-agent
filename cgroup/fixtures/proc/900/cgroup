@@ -1,0 +1,2 @@
+1:name=systemd:/system.slice/python-app.service
+7:cpu,cpuacct:/

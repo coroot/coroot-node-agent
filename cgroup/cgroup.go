@@ -107,15 +107,13 @@ func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
 			cg.subsystems[cgType] = path.Join(baseCgroupPath, parts[2])
 		}
 	}
-	if p := cg.subsystems["name=systemd"]; p != "" {
-		cg.Id = p
-		cg.Version = V1
-	} else if p = cg.subsystems["cpu"]; p != "" {
-		cg.Id = p
-		cg.Version = V1
-	} else {
-		cg.Id = cg.subsystems[""]
+	if cg.Id = cg.subsystems[""]; cg.Id != "" {
 		cg.Version = V2
+	} else if cg.Id = cg.subsystems["cpu"]; cg.Id != "" {
+		cg.Version = V1
+	}
+	if (cg.Id == "" || cg.Id == "/") && cg.subsystems["name=systemd"] != "/" {
+		cg.Id = cg.subsystems["name=systemd"]
 	}
 	if cg.ContainerType, cg.ContainerId, err = containerByCgroup(cg.Id); err != nil {
 		return nil, err
