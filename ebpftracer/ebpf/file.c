@@ -18,10 +18,6 @@ struct path {
     __u64 mnt;
 };
 
-struct nameidata {
-    struct path path;
-};
-
 struct file_info {
     __u64 mnt;
     __u64 log;
@@ -49,32 +45,20 @@ struct trace_event_raw_sys_enter_openat__stub {
 	long int flags;
 };
 
-static __always_inline
-int do_open(struct pt_regs *ctx) {
+SEC("kprobe/path_get")
+int path_get(struct pt_regs *ctx) {
     __u64 id = bpf_get_current_pid_tgid();
-    struct nameidata nd;
-    if (bpf_probe_read_kernel(&nd, sizeof(nd), (void *)PT_REGS_PARM1(ctx)) != 0) {
-        return 0;
-    }
     struct file_info *i = bpf_map_lookup_elem(&open_file_info, &id);
     if (!i) {
         return 0;
     }
-    i->mnt = nd.path.mnt;
+    struct path p;
+    if (bpf_probe_read_kernel(&p, sizeof(p), (void *)PT_REGS_PARM1(ctx)) != 0) {
+        return 0;
+    }
+    i->mnt = p.mnt;
     return 0;
 }
-
-#if __KERNEL_FROM >= 507
-SEC("kprobe/do_open")
-int do_open_kprobe(struct pt_regs *ctx) {
-    return do_open(ctx);
-}
-#else
-SEC("kprobe/do_last")
-int do_last_kprobe(struct pt_regs *ctx) {
-    return do_open(ctx);
-}
-#endif
 
 static __always_inline
 int trace_enter_open(long int flags, char *filename)
