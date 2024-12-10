@@ -44,13 +44,9 @@ struct {
     __uint(max_entries, 10240);
 } actual_destinations SEC(".maps");
 
-SEC("kprobe/__nf_conntrack_hash_insert")
-int nf_conntrack_hash_insert(struct pt_regs *ctx)
+static __always_inline
+int handle_ct(struct pt_regs *ctx, struct nf_conn conn)
 {
-    struct nf_conn conn;
-    if (bpf_probe_read(&conn, sizeof(conn), (void *)PT_REGS_PARM1(ctx)) != 0) {
-        return 0;
-    }
     struct nf_conntrack_tuple orig = conn.tuplehash[0].tuple;
     struct nf_conntrack_tuple repl = conn.tuplehash[1].tuple;
 
@@ -83,3 +79,23 @@ int nf_conntrack_hash_insert(struct pt_regs *ctx)
     bpf_map_update_elem(&actual_destinations, &src, &actualDst, BPF_ANY);
     return 0;
 }
+
+#if __KERNEL_FROM >= 503
+SEC("kprobe/nf_confirm")
+int nf_confirm(struct pt_regs *ctx) {
+    struct nf_conn conn;
+    if (bpf_probe_read(&conn, sizeof(conn), (void *)PT_REGS_PARM3(ctx)) != 0) {
+        return 0;
+    }
+    return handle_ct(ctx, conn);
+}
+#else
+SEC("kprobe/__nf_conntrack_hash_insert")
+int nf_conntrack_hash_insert(struct pt_regs *ctx) {
+    struct nf_conn conn;
+    if (bpf_probe_read(&conn, sizeof(conn), (void *)PT_REGS_PARM1(ctx)) != 0) {
+        return 0;
+    }
+    return handle_ct(ctx, conn);
+}
+#endif
