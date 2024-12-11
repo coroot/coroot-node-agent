@@ -6,6 +6,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/coroot/coroot-node-agent/common"
 )
 
 type CPUStat struct {
@@ -26,15 +28,15 @@ func (cg Cgroup) cpuStatV1() (*CPUStat, error) {
 	if err != nil {
 		return nil, err
 	}
-	usageNs, err := readIntFromFile(path.Join(cgRoot, "cpuacct", cg.subsystems["cpuacct"], "cpuacct.usage"))
+	usageNs, err := common.ReadIntFromFile(path.Join(cgRoot, "cpuacct", cg.subsystems["cpuacct"], "cpuacct.usage"))
 	if err != nil {
 		return nil, err
 	}
-	periodUs, err := readIntFromFile(path.Join(cgRoot, "cpu", cg.subsystems["cpu"], "cpu.cfs_period_us"))
+	periodUs, err := common.ReadIntFromFile(path.Join(cgRoot, "cpu", cg.subsystems["cpu"], "cpu.cfs_period_us"))
 	if err != nil {
 		return nil, err
 	}
-	quotaUs, err := readIntFromFile(path.Join(cgRoot, "cpu", cg.subsystems["cpu"], "cpu.cfs_quota_us"))
+	quotaUs, err := common.ReadIntFromFile(path.Join(cgRoot, "cpu", cg.subsystems["cpu"], "cpu.cfs_quota_us"))
 	if err != nil {
 		return nil, err
 	}

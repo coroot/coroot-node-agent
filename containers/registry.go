@@ -105,7 +105,7 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo) (*
 
 		processInfoCh: processInfoCh,
 
-		tracer: ebpftracer.NewTracer(hostNetNs, *flags.DisableL7Tracing),
+		tracer: ebpftracer.NewTracer(hostNetNs, selfNetNs, *flags.DisableL7Tracing),
 
 		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate),
 	}

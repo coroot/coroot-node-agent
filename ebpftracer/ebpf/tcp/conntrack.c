@@ -80,22 +80,11 @@ int handle_ct(struct pt_regs *ctx, struct nf_conn conn)
     return 0;
 }
 
-#if __KERNEL_FROM >= 503
-SEC("kprobe/nf_confirm")
-int nf_confirm(struct pt_regs *ctx) {
-    struct nf_conn conn;
-    if (bpf_probe_read(&conn, sizeof(conn), (void *)PT_REGS_PARM3(ctx)) != 0) {
-        return 0;
-    }
-    return handle_ct(ctx, conn);
-}
-#else
-SEC("kprobe/__nf_conntrack_hash_insert")
-int nf_conntrack_hash_insert(struct pt_regs *ctx) {
+SEC("kprobe/nf_ct_deliver_cached_events")
+int nf_ct_deliver_cached_events(struct pt_regs *ctx) {
     struct nf_conn conn;
     if (bpf_probe_read(&conn, sizeof(conn), (void *)PT_REGS_PARM1(ctx)) != 0) {
         return 0;
     }
     return handle_ct(ctx, conn);
 }
-#endif
