@@ -2,6 +2,8 @@ package cgroup
 
 import (
 	"path"
+
+	"github.com/coroot/coroot-node-agent/common"
 )
 
 const maxMemory = 1 << 62
@@ -24,7 +26,7 @@ func (cg *Cgroup) memoryStatV1() (*MemoryStat, error) {
 	if err != nil {
 		return nil, err
 	}
-	limit, err := readUintFromFile(path.Join(cgRoot, "memory", cg.subsystems["memory"], "memory.limit_in_bytes"))
+	limit, err := common.ReadUintFromFile(path.Join(cgRoot, "memory", cg.subsystems["memory"], "memory.limit_in_bytes"))
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +53,7 @@ func (cg *Cgroup) memoryStatV2() (*MemoryStat, error) {
 	if err != nil {
 		return nil, err
 	}
-	limit, _ := readUintFromFile(path.Join(cgRoot, cg.subsystems[""], "memory.max"))
+	limit, _ := common.ReadUintFromFile(path.Join(cgRoot, cg.subsystems[""], "memory.max"))
 	return &MemoryStat{
 		RSS:   vars["anon"] + vars["file_mapped"],
 		Cache: vars["file"],

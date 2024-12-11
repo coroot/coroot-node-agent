@@ -20,6 +20,7 @@ import (
 	"github.com/cilium/ebpf/perf"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
+	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/vishvananda/netns"
 	"golang.org/x/sys/unix"
 	"inet.af/netaddr"
@@ -82,6 +83,7 @@ const (
 type Tracer struct {
 	disableL7Tracing bool
 	hostNetNs        netns.NsHandle
+	selfNetNs        netns.NsHandle
 
 	collection *ebpf.Collection
 	readers    map[string]*perf.Reader
@@ -89,13 +91,14 @@ type Tracer struct {
 	uprobes    map[string]*ebpf.Program
 }
 
-func NewTracer(hostNetNs netns.NsHandle, disableL7Tracing bool) *Tracer {
+func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Tracer {
 	if disableL7Tracing {
 		klog.Infoln("L7 tracing is disabled")
 	}
 	return &Tracer{
 		disableL7Tracing: disableL7Tracing,
 		hostNetNs:        hostNetNs,
+		selfNetNs:        selfNetNs,
 
 		readers: map[string]*perf.Reader{},
 		uprobes: map[string]*ebpf.Program{},
@@ -103,6 +106,9 @@ func NewTracer(hostNetNs netns.NsHandle, disableL7Tracing bool) *Tracer {
 }
 
 func (t *Tracer) Run(events chan<- Event) error {
+	if err := proc.ExecuteInNetNs(t.hostNetNs, t.selfNetNs, ensureConntrackEventsAreEnabled); err != nil {
+		return err
+	}
 	if err := t.ebpf(events); err != nil {
 		return err
 	}
@@ -257,6 +263,10 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 				continue
 			}
 			l, err = link.Kprobe(programSpec.AttachTo, program, nil)
+			if err != nil && programSpec.SectionName == "kprobe/nf_ct_deliver_cached_events" {
+				klog.Warningln("nf_conntrack may not be in use:", err)
+				continue
+			}
 		}
 		if err != nil {
 			t.Close()
@@ -474,4 +484,20 @@ func isCtxExtraPaddingRequired(traceFsPath string) bool {
 		}
 	}
 	return false
+}
+
+const nfConntrackEventsParameterPath = "/proc/sys/net/netfilter/nf_conntrack_events"
+
+func ensureConntrackEventsAreEnabled() error {
+	v, err := common.ReadUintFromFile(nfConntrackEventsParameterPath)
+	if err != nil {
+		return err
+	}
+	if v != 1 {
+		klog.Infof("%s = %d, setting to 1", nfConntrackEventsParameterPath, v)
+		if err = os.WriteFile(nfConntrackEventsParameterPath, []byte("1"), 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
