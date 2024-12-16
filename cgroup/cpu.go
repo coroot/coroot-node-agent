@@ -16,14 +16,19 @@ type CPUStat struct {
 	LimitCores           float64
 }
 
-func (cg Cgroup) CpuStat() (*CPUStat, error) {
+func (cg Cgroup) CpuStat() *CPUStat {
 	if cg.Version == V1 {
-		return cg.cpuStatV1()
+		st, _ := cg.cpuStatV1()
+		return st
 	}
-	return cg.cpuStatV2()
+	st, _ := cg.cpuStatV2()
+	return st
 }
 
 func (cg Cgroup) cpuStatV1() (*CPUStat, error) {
+	if cg.subsystems["cpu"] == "/" || cg.subsystems["cpuacct"] == "/" {
+		return nil, nil
+	}
 	throttling, err := readVariablesFromFile(path.Join(cgRoot, "cpu", cg.subsystems["cpu"], "cpu.stat"))
 	if err != nil {
 		return nil, err

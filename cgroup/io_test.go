@@ -11,8 +11,7 @@ func TestCgroup_IOStat(t *testing.T) {
 	cgRoot = "fixtures/cgroup"
 
 	cg, _ := NewFromProcessCgroupFile(path.Join("fixtures/proc/200/cgroup"))
-	stat, err := cg.IOStat()
-	assert.Nil(t, err)
+	stat := cg.IOStat()
 	assert.Equal(t,
 		map[string]IOStat{
 			"8:0":  {ReadOps: 0, WriteOps: 281, ReadBytes: 0, WrittenBytes: 4603904},
@@ -24,8 +23,7 @@ func TestCgroup_IOStat(t *testing.T) {
 		stat)
 
 	cg, _ = NewFromProcessCgroupFile(path.Join("fixtures/proc/400/cgroup"))
-	stat, err = cg.IOStat()
-	assert.Nil(t, err)
+	stat = cg.IOStat()
 	assert.Equal(t,
 		map[string]IOStat{
 			"252:0": {ReadOps: 22, WriteOps: 57111, ReadBytes: 11, WrittenBytes: 630538240},
@@ -33,4 +31,8 @@ func TestCgroup_IOStat(t *testing.T) {
 		},
 		stat)
 
+	cg, _ = NewFromProcessCgroupFile(path.Join("fixtures/proc/1000/cgroup"))
+	stat, err := cg.ioStatV1()
+	assert.NoError(t, err)
+	assert.Nil(t, stat)
 }
