@@ -16,14 +16,19 @@ type IOStat struct {
 	WrittenBytes uint64
 }
 
-func (cg *Cgroup) IOStat() (map[string]IOStat, error) {
+func (cg *Cgroup) IOStat() map[string]IOStat {
 	if cg.Version == V1 {
-		return cg.ioStatV1()
+		st, _ := cg.ioStatV1()
+		return st
 	}
-	return cg.ioStatV2()
+	st, _ := cg.ioStatV2()
+	return st
 }
 
 func (cg *Cgroup) ioStatV1() (map[string]IOStat, error) {
+	if cg.subsystems["blkio"] == "/" {
+		return nil, nil
+	}
 	ops, err := readBlkioStatFile(path.Join(cgRoot, "blkio", cg.subsystems["blkio"], "blkio.throttle.io_serviced"))
 	if err != nil {
 		return nil, err

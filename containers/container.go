@@ -230,7 +230,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	ch <- counter(metrics.Restarts, float64(c.restarts))
 
-	if cpu, err := c.cgroup.CpuStat(); err == nil {
+	if cpu := c.cgroup.CpuStat(); cpu != nil {
 		if cpu.LimitCores > 0 {
 			ch <- gauge(metrics.CPULimit, cpu.LimitCores)
 		}
@@ -244,7 +244,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		ch <- counter(metrics.DiskDelay, float64(c.delays.disk)/float64(time.Second))
 	}
 
-	if s, err := c.cgroup.MemoryStat(); err == nil {
+	if s := c.cgroup.MemoryStat(); s != nil {
 		ch <- gauge(metrics.MemoryRss, float64(s.RSS))
 		ch <- gauge(metrics.MemoryCache, float64(s.Cache))
 		if s.Limit > 0 {
@@ -257,7 +257,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	if disks, err := node.GetDisks(); err == nil {
-		ioStat, _ := c.cgroup.IOStat()
+		ioStat := c.cgroup.IOStat()
 		for majorMinor, mounts := range c.getMounts() {
 			dev := disks.GetParentBlockDevice(majorMinor)
 			if dev == nil {
@@ -268,11 +268,13 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 				ch <- gauge(metrics.DiskSize, float64(fsStat.CapacityBytes), dls...)
 				ch <- gauge(metrics.DiskUsed, float64(fsStat.UsedBytes), dls...)
 				ch <- gauge(metrics.DiskReserved, float64(fsStat.ReservedBytes), dls...)
-				if io, ok := ioStat[majorMinor]; ok {
-					ch <- counter(metrics.DiskReadOps, float64(io.ReadOps), dls...)
-					ch <- counter(metrics.DiskReadBytes, float64(io.ReadBytes), dls...)
-					ch <- counter(metrics.DiskWriteOps, float64(io.WriteOps), dls...)
-					ch <- counter(metrics.DiskWriteBytes, float64(io.WrittenBytes), dls...)
+				if ioStat != nil {
+					if io, ok := ioStat[majorMinor]; ok {
+						ch <- counter(metrics.DiskReadOps, float64(io.ReadOps), dls...)
+						ch <- counter(metrics.DiskReadBytes, float64(io.ReadBytes), dls...)
+						ch <- counter(metrics.DiskWriteOps, float64(io.WriteOps), dls...)
+						ch <- counter(metrics.DiskWriteBytes, float64(io.WrittenBytes), dls...)
+					}
 				}
 			}
 		}

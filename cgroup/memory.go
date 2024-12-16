@@ -14,14 +14,19 @@ type MemoryStat struct {
 	Limit uint64
 }
 
-func (cg *Cgroup) MemoryStat() (*MemoryStat, error) {
+func (cg *Cgroup) MemoryStat() *MemoryStat {
 	if cg.Version == V1 {
-		return cg.memoryStatV1()
+		st, _ := cg.memoryStatV1()
+		return st
 	}
-	return cg.memoryStatV2()
+	st, _ := cg.memoryStatV2()
+	return st
 }
 
 func (cg *Cgroup) memoryStatV1() (*MemoryStat, error) {
+	if cg.subsystems["memory"] == "/" {
+		return nil, nil
+	}
 	vars, err := readVariablesFromFile(path.Join(cgRoot, "memory", cg.subsystems["memory"], "memory.stat"))
 	if err != nil {
 		return nil, err
