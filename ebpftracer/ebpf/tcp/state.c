@@ -1,4 +1,5 @@
 #define MAX_CONNECTIONS 1000000
+#define MAX_PAYLOAD_SIZE 1024 // must be power of 2
 
 struct tcp_event {
     __u64 fd;
@@ -82,6 +83,29 @@ struct {
     __uint(max_entries, MAX_CONNECTIONS);
 } active_connections SEC(".maps");
 
+struct l7_request_key {
+    __u64 fd;
+    __u32 pid;
+    __u16 is_tls;
+    __s16 stream_id;
+};
+
+struct l7_request {
+    __u64 ns;
+    __u8 protocol;
+    __u8 partial;
+    __u8 request_type;
+    __s32 request_id;
+    __u64 payload_size;
+    char payload[MAX_PAYLOAD_SIZE];
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(struct l7_request_key));
+    __uint(value_size, sizeof(struct l7_request));
+    __uint(max_entries, 32768);
+} active_l7_requests SEC(".maps");
 
 SEC("tracepoint/sock/inet_sock_set_state")
 int inet_sock_set_state(void *ctx)
@@ -214,6 +238,18 @@ int sys_exit_connect(struct trace_event_raw_sys_exit__stub* ctx) {
         conn.timestamp = bpf_ktime_get_ns();
         bpf_map_update_elem(&active_connections, &cid, &conn, BPF_ANY);
     }
+
+    struct l7_request_key k = {
+        .fd = cid.fd,
+        .pid = cid.pid,
+        .is_tls = 0,
+        .stream_id = -1,
+    };
+    bpf_map_delete_elem(&active_l7_requests, &k);
+
+    k.is_tls = 1;
+    bpf_map_delete_elem(&active_l7_requests, &k);
+
     bpf_map_delete_elem(&fd_by_pid_tgid, &id);
     return 0;
 }
