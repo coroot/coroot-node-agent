@@ -1,17 +1,18 @@
-#define PROTOCOL_UNKNOWN    0
-#define PROTOCOL_HTTP	    1
-#define PROTOCOL_POSTGRES	2
-#define PROTOCOL_REDIS	    3
-#define PROTOCOL_MEMCACHED  4
-#define PROTOCOL_MYSQL      5
-#define PROTOCOL_MONGO      6
-#define PROTOCOL_KAFKA      7
-#define PROTOCOL_CASSANDRA  8
-#define PROTOCOL_RABBITMQ   9
-#define PROTOCOL_NATS      10
-#define PROTOCOL_HTTP2	   11
-#define PROTOCOL_DUBBO2    12
-#define PROTOCOL_DNS       13
+#define PROTOCOL_UNKNOWN     0
+#define PROTOCOL_HTTP	     1
+#define PROTOCOL_POSTGRES    2
+#define PROTOCOL_REDIS	     3
+#define PROTOCOL_MEMCACHED   4
+#define PROTOCOL_MYSQL       5
+#define PROTOCOL_MONGO       6
+#define PROTOCOL_KAFKA       7
+#define PROTOCOL_CASSANDRA   8
+#define PROTOCOL_RABBITMQ    9
+#define PROTOCOL_NATS       10
+#define PROTOCOL_HTTP2	    11
+#define PROTOCOL_DUBBO2     12
+#define PROTOCOL_DNS        13
+#define PROTOCOL_CLICKHOUSE 14
 
 #define STATUS_UNKNOWN  0
 #define STATUS_OK       200
@@ -25,7 +26,6 @@
 #define METHOD_HTTP2_CLIENT_FRAMES  5
 #define METHOD_HTTP2_SERVER_FRAMES  6
 
-#define MAX_PAYLOAD_SIZE 1024 // must be power of 2
 #define TRUNCATE_PAYLOAD_SIZE(size) ({                                  \
     size = MIN(size, MAX_PAYLOAD_SIZE-1);                               \
     asm volatile ("%0 &= %1" : "+r"(size) : "i"(MAX_PAYLOAD_SIZE-1));   \
@@ -53,6 +53,7 @@
 #include "http2.c"
 #include "dubbo2.c"
 #include "dns.c"
+#include "clickhouse.c"
 
 struct l7_event {
     __u64 fd;
@@ -95,36 +96,12 @@ struct {
     __uint(max_entries, 10240);
 } active_reads SEC(".maps");
 
-struct l7_request_key {
-    __u64 fd;
-    __u32 pid;
-    __u16 is_tls;
-    __s16 stream_id;
-};
-
-struct l7_request {
-    __u64 ns;
-    __u8 protocol;
-    __u8 partial;
-    __u8 request_type;
-    __s32 request_id;
-    __u64 payload_size;
-    char payload[MAX_PAYLOAD_SIZE];
-};
-
 struct {
      __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
      __type(key, int);
      __type(value, struct l7_request);
      __uint(max_entries, 1);
 } l7_request_heap SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_LRU_HASH);
-    __uint(key_size, sizeof(struct l7_request_key));
-    __uint(value_size, sizeof(struct l7_request));
-    __uint(max_entries, 32768);
-} active_l7_requests SEC(".maps");
 
 struct {
      __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -315,6 +292,8 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         COPY_PAYLOAD(e->payload, size, payload);
         send_event(ctx, e, cid, conn);
         return 0;
+    } else if (is_clickhouse_query(payload, size)) {
+        req->protocol = PROTOCOL_CLICKHOUSE;
     } else if (is_dubbo2_request(payload, size)) {
         req->protocol = PROTOCOL_DUBBO2;
     } else if (is_dns_request(payload, size, &k.stream_id)) {
@@ -464,8 +443,6 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     e->protocol = req->protocol;
     e->payload_size = req->payload_size;
     COPY_PAYLOAD(e->payload, req->payload_size, req->payload);
-
-    bpf_map_delete_elem(&active_l7_requests, &k);
     if (e->protocol == PROTOCOL_HTTP) {
         response = is_http_response(payload, &e->status);
     } else if (e->protocol == PROTOCOL_POSTGRES) {
@@ -485,24 +462,20 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     } else if (e->protocol == PROTOCOL_MONGO) {
         response = is_mongo_response(payload, ret, req->partial);
         if (response == 2) { // partial
-            struct l7_request *r = bpf_map_lookup_elem(&l7_request_heap, &zero);
-            if (!r) {
-                return 0;
-            }
-            r->partial = 1;
-            r->protocol = e->protocol;
-            r->ns = req->ns;
-            r->payload_size = req->payload_size;
-            COPY_PAYLOAD(r->payload, req->payload_size, req->payload);
-            bpf_map_update_elem(&active_l7_requests, &k, r, BPF_ANY);
-            return 0;
+            req->partial = 1;
+            return 0; // keeping the query in the map
         }
     } else if (e->protocol == PROTOCOL_KAFKA) {
         response = is_kafka_response(payload, req->request_id);
+    } else if (e->protocol == PROTOCOL_CLICKHOUSE) {
+        response = is_clickhouse_response(payload, &e->status);
+        if (!response) {
+            return 0; // keeping the query in the map
+        }
     } else if (e->protocol == PROTOCOL_DUBBO2) {
         response = is_dubbo2_response(payload, &e->status);
     }
-
+    bpf_map_delete_elem(&active_l7_requests, &k);
     if (!response) {
         return 0;
     }

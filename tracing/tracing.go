@@ -204,3 +204,13 @@ func (t *Trace) RedisQuery(cmd, args string, error bool, duration time.Duration)
 		semconv.DBStatement(statement),
 	)
 }
+
+func (t *Trace) ClickhouseQuery(query string, error bool, duration time.Duration) {
+	if t == nil {
+		return
+	}
+	t.createSpan("query", duration, error,
+		semconv.DBSystemClickhouse,
+		semconv.DBStatement(query),
+	)
+}

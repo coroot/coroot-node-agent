@@ -720,6 +720,10 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		stats.observe(r.Status.String(), r.Method.String(), 0)
 	case l7.ProtocolDubbo2:
 		stats.observe(r.Status.String(), "", r.Duration)
+	case l7.ProtocolClickhouse:
+		stats.observe(r.Status.String(), "", r.Duration)
+		query := l7.ParseClickhouse(r.Payload)
+		trace.ClickhouseQuery(query, r.Status.Error(), r.Duration)
 	}
 	return nil
 }
