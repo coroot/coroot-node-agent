@@ -22,6 +22,7 @@ const (
 	ProtocolDubbo2     Protocol = 12
 	ProtocolDNS        Protocol = 13
 	ProtocolClickhouse Protocol = 14
+	ProtocolZookeeper  Protocol = 15
 )
 
 func (p Protocol) String() string {
@@ -54,6 +55,8 @@ func (p Protocol) String() string {
 		return "DNS"
 	case ProtocolClickhouse:
 		return "ClickHouse"
+	case ProtocolZookeeper:
+		return "Zookeeper"
 	}
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }
@@ -142,6 +145,16 @@ func (s Status) DNS() string {
 		return "refused"
 	}
 	return ""
+}
+
+func (s Status) Zookeeper() string {
+	if s <= -1 && s >= -9 {
+		return "failed"
+	}
+	if s == -123 { //ZK_ERR_RECONFIG_DISABLED
+		return "failed"
+	}
+	return "ok"
 }
 
 func (s Status) Error() bool {

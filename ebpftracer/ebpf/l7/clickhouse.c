@@ -12,9 +12,7 @@
 static __always_inline
 int is_clickhouse_query(char *buf, __u64 buf_size) {
     __u8 b[CLICKHOUSE_QUERY_ID_SIZE+3];
-    if (bpf_probe_read(&b, sizeof(b), (void *)buf) < 0) {
-        return 0;
-    }
+    bpf_read(buf, b);
     if (b[0] != CLICKHOUSE_CLIENT_CODE_QUERY) {
         return 0;
     }
@@ -33,11 +31,9 @@ int is_clickhouse_query(char *buf, __u64 buf_size) {
 }
 
 static __always_inline
-int is_clickhouse_response(char *buf, __u32 *status) {
+int is_clickhouse_response(char *buf, __s32 *status) {
     __u8 code = 0;
-    if (bpf_probe_read(&code, sizeof(code), (void *)buf) < 0) {
-        return 0;
-    }
+    bpf_read(buf, code);
     if (code == CLICKHOUSE_SERVER_CODE_DATA || code == CLICKHOUSE_SERVER_CODE_END_OF_STREAM) {
         *status = STATUS_OK;
         return 1;
