@@ -13,6 +13,7 @@
 #define PROTOCOL_DUBBO2     12
 #define PROTOCOL_DNS        13
 #define PROTOCOL_CLICKHOUSE 14
+#define PROTOCOL_ZOOKEEPER  15
 
 #define STATUS_UNKNOWN  0
 #define STATUS_OK       200
@@ -54,12 +55,13 @@
 #include "dubbo2.c"
 #include "dns.c"
 #include "clickhouse.c"
+#include "zookeeper.c"
 
 struct l7_event {
     __u64 fd;
     __u64 connection_timestamp;
     __u32 pid;
-    __u32 status;
+    __s32 status;
     __u64 duration;
     __u8 protocol;
     __u8 method;
@@ -294,6 +296,8 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         return 0;
     } else if (is_clickhouse_query(payload, size)) {
         req->protocol = PROTOCOL_CLICKHOUSE;
+    } else if (is_zk_request(payload, total_size)) {
+        req->protocol = PROTOCOL_ZOOKEEPER;
     } else if (is_dubbo2_request(payload, size)) {
         req->protocol = PROTOCOL_DUBBO2;
     } else if (is_dns_request(payload, size, &k.stream_id)) {
@@ -472,6 +476,8 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         if (!response) {
             return 0; // keeping the query in the map
         }
+    } else if (e->protocol == PROTOCOL_ZOOKEEPER) {
+        response = is_zk_response(payload, total_size, &e->status);
     } else if (e->protocol == PROTOCOL_DUBBO2) {
         response = is_dubbo2_response(payload, &e->status);
     }

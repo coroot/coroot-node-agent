@@ -348,7 +348,7 @@ type l7Event struct {
 	Fd                  uint64
 	ConnectionTimestamp uint64
 	Pid                 uint32
-	Status              uint32
+	Status              int32
 	Duration            uint64
 	Protocol            uint8
 	Method              uint8

@@ -214,3 +214,22 @@ func (t *Trace) ClickhouseQuery(query string, error bool, duration time.Duration
 		semconv.DBStatement(query),
 	)
 }
+
+func (t *Trace) ZookeeperRequest(op string, args string, status l7.Status, duration time.Duration) {
+	if t == nil {
+		return
+	}
+	if op == "" {
+		return
+	}
+	statement := op
+	if args != "" {
+		statement += " " + args
+	}
+	t.createSpan(op, duration, status.Zookeeper() != "ok",
+		semconv.DBSystemKey.String("zookeeper"),
+		semconv.DBOperation(op),
+		semconv.DBStatementKey.String(statement),
+		attribute.Key("zookeeper.status_code").Int(int(status)),
+	)
+}

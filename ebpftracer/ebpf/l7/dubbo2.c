@@ -40,7 +40,7 @@ int is_dubbo2_request(char *buf, __u64 buf_size) {
 
 
 static __always_inline
-int is_dubbo2_response(char *buf, __u32 *status) {
+int is_dubbo2_response(char *buf, __s32 *status) {
     __u8 b[16];
     bpf_read(buf, b);
     if (b[0] != DUBBO_MAGIC_HIGH || b[1] != DUBBO_MAGIC_LOW) {

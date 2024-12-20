@@ -34,7 +34,7 @@ int is_cassandra_request(char *buf, __u64 buf_size, __s16 *stream_id) {
 }
 
 static __always_inline
-int is_cassandra_response(char *buf, __u64 buf_size, __s16 *stream_id, __u32 *status) {
+int is_cassandra_response(char *buf, __u64 buf_size, __s16 *stream_id, __s32 *status) {
     struct cassandra_header h = {};
     if (buf_size < sizeof(h)) {
         return 0;

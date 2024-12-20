@@ -117,6 +117,7 @@ var (
 		l7.ProtocolDubbo2:     {Name: "container_dubbo_requests_total", Help: "Total number of outbound DUBBO requests"},
 		l7.ProtocolDNS:        {Name: "container_dns_requests_total", Help: "Total number of outbound DNS requests"},
 		l7.ProtocolClickhouse: {Name: "container_clickhouse_queries_total", Help: "Total number of outbound ClickHouse queries"},
+		l7.ProtocolZookeeper:  {Name: "container_zookeeper_requests_total", Help: "Total number of outbound Zookeeper requests"},
 	}
 	L7Latency = map[l7.Protocol]prometheus.HistogramOpts{
 		l7.ProtocolHTTP:       {Name: "container_http_requests_duration_seconds_total", Help: "Histogram of the response time for each outbound HTTP request"},
@@ -130,6 +131,7 @@ var (
 		l7.ProtocolDubbo2:     {Name: "container_dubbo_requests_duration_seconds_total", Help: "Histogram of the response time for each outbound DUBBO request"},
 		l7.ProtocolDNS:        {Name: "container_dns_requests_duration_seconds_total", Help: "Histogram of the response time for each outbound DNS request"},
 		l7.ProtocolClickhouse: {Name: "container_clickhouse_queries_duration_seconds_total", Help: "Histogram of the execution time for each outbound ClickHouse query"},
+		l7.ProtocolZookeeper:  {Name: "container_zookeeper_requests_duration_seconds_total", Help: "Histogram of the execution time for each outbound Zookeeper request"},
 	}
 )
 

@@ -31,7 +31,7 @@ int is_postgres_query(char *buf, __u64 buf_size, __u8 *request_type) {
 }
 
 static __always_inline
-int is_postgres_response(char *buf, __u64 buf_size, __u32 *status) {
+int is_postgres_response(char *buf, __u64 buf_size, __s32 *status) {
     char cmd;
     int length;
     bpf_read(buf, cmd);

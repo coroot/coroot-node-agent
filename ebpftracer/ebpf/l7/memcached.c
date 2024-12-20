@@ -49,7 +49,7 @@ int is_memcached_query(char *buf, __u64 buf_size) {
 }
 
 static __always_inline
-int is_memcached_response(char *buf, __u64 buf_size, __u32 *status) {
+int is_memcached_response(char *buf, __u64 buf_size, __s32 *status) {
     char r[3];
     bpf_read(buf, r);
     char end[2];

@@ -35,7 +35,7 @@ int is_mysql_query(char *buf, __u64 buf_size, __u8 *request_type) {
 }
 
 static __always_inline
-int is_mysql_response(char *buf, __u64 buf_size, __u8 request_type, __u32 *statement_id, __u32 *status) {
+int is_mysql_response(char *buf, __u64 buf_size, __u8 request_type, __u32 *statement_id, __s32 *status) {
     __u8 b[5];
     bpf_read(buf, b);
     if (b[3] < 1) { // sequence must be > 0

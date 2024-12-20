@@ -33,7 +33,7 @@ int is_http_request(char *buf) {
 }
 
 static __always_inline
-int is_http_response(char *buf, __u32 *status) {
+int is_http_response(char *buf, __s32 *status) {
     char b[16];
     if (bpf_probe_read_str(&b, sizeof(b), (void *)buf) < 16) {
         return 0;
