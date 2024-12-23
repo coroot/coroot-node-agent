@@ -491,6 +491,12 @@ const nfConntrackEventsParameterPath = "/proc/sys/net/netfilter/nf_conntrack_eve
 func ensureConntrackEventsAreEnabled() error {
 	v, err := common.ReadUintFromFile(nfConntrackEventsParameterPath)
 	if err != nil {
+		if common.IsNotExist(err) {
+			klog.Warningf(
+				"unable to check the value of %s, it appears that nf_conntrack is not loaded: %s",
+				nfConntrackEventsParameterPath, err)
+			return nil
+		}
 		return err
 	}
 	if v != 1 {
