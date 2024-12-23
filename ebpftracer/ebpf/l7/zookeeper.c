@@ -49,11 +49,19 @@ int is_zk_request(char *buf, __u64 buf_size) {
 }
 
 static __always_inline
-int is_zk_response(char *buf, __u64 buf_size, __s32 *status) {
+int is_zk_response(char *buf, __u64 buf_size, __s32 *status, __u8 partial) {
+    if (partial == 0 && buf_size == 4) { //partial read
+        return 2;
+    }
     struct zk_response_header resp = {};
-    bpf_read(buf, resp);
-    if (bpf_ntohl(resp.length)+4 != buf_size) {
-        return 0;
+    if (partial) {
+        bpf_read(buf, resp.xid);
+        bpf_read(buf+12, resp.err_code);
+    } else {
+        bpf_read(buf, resp);
+        if (bpf_ntohl(resp.length)+4 != buf_size) {
+            return 0;
+        }
     }
     __s32 xid = bpf_ntohl(resp.xid);
     if (xid < 0 && xid != -1 && xid != -2) {
