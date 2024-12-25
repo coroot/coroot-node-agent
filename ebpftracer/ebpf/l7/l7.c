@@ -477,7 +477,11 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
             return 0; // keeping the query in the map
         }
     } else if (e->protocol == PROTOCOL_ZOOKEEPER) {
-        response = is_zk_response(payload, total_size, &e->status);
+        response = is_zk_response(payload, total_size, &e->status, req->partial);
+        if (response == 2) { // partial
+            req->partial = 1;
+            return 0; // keeping the query in the map
+        }
     } else if (e->protocol == PROTOCOL_DUBBO2) {
         response = is_dubbo2_response(payload, &e->status);
     }
