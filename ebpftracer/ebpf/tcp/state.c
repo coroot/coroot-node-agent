@@ -160,6 +160,7 @@ int inet_sock_set_state(void *ctx)
             timestamp = conn->timestamp;
             type = EVENT_TYPE_CONNECTION_OPEN;
         } else if (args.newstate == BPF_TCP_CLOSE) {
+            bpf_map_delete_elem(&connection_id_by_socket, &args.skaddr);
             bpf_map_delete_elem(&active_connections, cid);
             type = EVENT_TYPE_CONNECTION_ERROR;
         }

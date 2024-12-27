@@ -559,7 +559,12 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst, actualDst 
 			Timestamp:      timestamp,
 		}
 		c.activeConnections[ConnectionKey{src: src, dst: dst}] = connection
-		c.connectionsByPidFd[PidFd{Pid: pid, Fd: fd}] = connection
+		k := PidFd{Pid: pid, Fd: fd}
+		prev := c.connectionsByPidFd[k]
+		if prev != nil {
+			prev.Closed = time.Now()
+		}
+		c.connectionsByPidFd[k] = connection
 	}
 	c.lastConnectionAttempts[key.Destination()] = time.Now()
 }
@@ -569,6 +574,9 @@ func (c *Container) onConnectionClose(e ebpftracer.Event) {
 	conn := c.connectionsByPidFd[PidFd{Pid: e.Pid, Fd: e.Fd}]
 	c.lock.Unlock()
 	if conn != nil {
+		if conn.Timestamp != 0 && conn.Timestamp != e.Timestamp {
+			return
+		}
 		if conn.Closed.IsZero() {
 			if e.TrafficStats != nil {
 				c.lock.Lock()
