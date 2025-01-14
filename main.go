@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	version = "unknown"
+	version = flags.Version
 )
 
 func uname() (string, string, error) {

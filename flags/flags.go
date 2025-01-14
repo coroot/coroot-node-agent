@@ -1,6 +1,7 @@
 package flags
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -39,6 +40,9 @@ var (
 
 	ScrapeInterval = kingpin.Flag("scrape-interval", "How often to gather metrics from the agent").Default("15s").Envar("SCRAPE_INTERVAL").Duration()
 	WalDir         = kingpin.Flag("wal-dir", "Path to where the agent stores data (e.g. the metrics Write-Ahead Log)").Default("/tmp/coroot-node-agent").Envar("WAL_DIR").String()
+
+	agentVersion = kingpin.Flag("version", "Print version and exit").Default("false").Bool()
+	Version      = "unknown"
 )
 
 func GetString(fl *string) string {
@@ -55,6 +59,11 @@ func init() {
 
 	kingpin.HelpFlag.Short('h').Hidden()
 	kingpin.Parse()
+
+	if *agentVersion {
+		fmt.Println("Version:", Version)
+		os.Exit(0)
+	}
 
 	if *CollectorEndpoint != nil {
 		u := *CollectorEndpoint
