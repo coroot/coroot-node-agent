@@ -9,6 +9,7 @@ import (
 
 func TestCgroup_CpuStat(t *testing.T) {
 	cgRoot = "fixtures/cgroup"
+	cg2Root = "fixtures/cgroup"
 
 	cg, _ := NewFromProcessCgroupFile(path.Join("fixtures/proc/100/cgroup"))
 	s := cg.CpuStat()
@@ -36,4 +37,11 @@ func TestCgroup_CpuStat(t *testing.T) {
 	s, err := cg.cpuStatV1()
 	assert.NoError(t, err)
 	assert.Nil(t, s)
+
+	cg2Root = "fixtures/cgroup/unified"
+	cg, _ = NewFromProcessCgroupFile(path.Join("fixtures/proc/550/cgroup"))
+	s = cg.CpuStat()
+	assert.Equal(t, 0., s.LimitCores)
+	assert.Equal(t, 0., s.ThrottledTimeSeconds)
+	assert.Equal(t, 151.439967, s.UsageSeconds)
 }

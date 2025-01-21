@@ -9,6 +9,7 @@ import (
 
 func TestCgroup_IOStat(t *testing.T) {
 	cgRoot = "fixtures/cgroup"
+	cg2Root = "fixtures/cgroup"
 
 	cg, _ := NewFromProcessCgroupFile(path.Join("fixtures/proc/200/cgroup"))
 	stat := cg.IOStat()
