@@ -21,6 +21,7 @@ const (
 	CloudProviderHetzner      CloudProvider = "Hetzner"
 	CloudProviderDigitalOcean CloudProvider = "DigitalOcean"
 	CloudProviderAlibaba      CloudProvider = "Alibaba"
+	CloudProviderScaleway     CloudProvider = "Scaleway"
 	CloudProviderUnknown      CloudProvider = ""
 )
 
@@ -61,6 +62,8 @@ func getCloudProvider() CloudProvider {
 			return CloudProviderHetzner
 		case "Alibaba Cloud":
 			return CloudProviderAlibaba
+		case "Scaleway":
+			return CloudProviderScaleway
 		}
 	}
 	return CloudProviderUnknown
@@ -82,6 +85,8 @@ func GetInstanceMetadata() *CloudMetadata {
 		return getDigitalOceanMetadata()
 	case CloudProviderAlibaba:
 		return getAlibabaMetadata()
+	case CloudProviderScaleway:
+		return getScalewayMetadata()
 	}
 	return nil
 }
