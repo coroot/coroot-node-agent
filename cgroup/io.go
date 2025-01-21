@@ -1,7 +1,7 @@
 package cgroup
 
 import (
-	"io/ioutil"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -17,16 +17,17 @@ type IOStat struct {
 }
 
 func (cg *Cgroup) IOStat() map[string]IOStat {
-	if cg.Version == V1 {
-		st, _ := cg.ioStatV1()
+	blkio := cg.subsystems["blkio"]
+	if blkio == "" {
+		st, _ := cg.ioStatV2()
 		return st
 	}
-	st, _ := cg.ioStatV2()
+	st, _ := cg.ioStatV1()
 	return st
 }
 
 func (cg *Cgroup) ioStatV1() (map[string]IOStat, error) {
-	if cg.subsystems["blkio"] == "/" {
+	if cg.subsystems["blkio"] == "" {
 		return nil, nil
 	}
 	ops, err := readBlkioStatFile(path.Join(cgRoot, "blkio", cg.subsystems["blkio"], "blkio.throttle.io_serviced"))
@@ -62,7 +63,10 @@ func (cg *Cgroup) ioStatV1() (map[string]IOStat, error) {
 }
 
 func (cg *Cgroup) ioStatV2() (map[string]IOStat, error) {
-	payload, err := ioutil.ReadFile(path.Join(cgRoot, cg.subsystems[""], "io.stat"))
+	if cg.subsystems[""] == "" {
+		return nil, nil
+	}
+	payload, err := os.ReadFile(path.Join(cg2Root, cg.subsystems[""], "io.stat"))
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +107,7 @@ type blkioVariable struct {
 }
 
 func readBlkioStatFile(filePath string) ([]blkioVariable, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}

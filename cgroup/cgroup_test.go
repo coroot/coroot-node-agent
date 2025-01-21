@@ -11,7 +11,6 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 	cg, err := NewFromProcessCgroupFile(path.Join("fixtures/proc/100/cgroup"))
 	assert.Nil(t, err)
 	assert.Equal(t, "/system.slice/docker.service", cg.Id)
-	assert.Equal(t, V1, cg.Version)
 	assert.Equal(t, "/system.slice/docker.service", cg.ContainerId)
 	assert.Equal(t, ContainerTypeSystemdService, cg.ContainerType)
 
@@ -20,15 +19,9 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 			"blkio":        "/system.slice/docker.service",
 			"cpu":          "/system.slice/docker.service",
 			"cpuacct":      "/system.slice/docker.service",
-			"cpuset":       "/",
 			"devices":      "/system.slice/docker.service",
-			"freezer":      "/",
-			"hugetlb":      "/",
 			"memory":       "/system.slice/docker.service",
 			"name=systemd": "/system.slice/docker.service",
-			"net_cls":      "/",
-			"net_prio":     "/",
-			"perf_event":   "/",
 			"pids":         "/system.slice/docker.service",
 		},
 		cg.subsystems,
@@ -36,49 +29,42 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 
 	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/200/cgroup"))
 	assert.Nil(t, err)
-	assert.Equal(t, V1, cg.Version)
 	assert.Equal(t, "/docker/b43d92bf1e5c6f78bb9b7bc6f40721280299855ba692092716e3a1b6c0b86f3f", cg.Id)
 	assert.Equal(t, "b43d92bf1e5c6f78bb9b7bc6f40721280299855ba692092716e3a1b6c0b86f3f", cg.ContainerId)
 	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
 
 	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/300/cgroup"))
 	assert.Nil(t, err)
-	assert.Equal(t, V1, cg.Version)
 	assert.Equal(t, "/kubepods/burstable/pod6a4ce4a0-ba47-11ea-b2a7-0cc47ac5979e/17db96a24ae1e9dd57143e62b1cb0d2d35e693c65c774c7470e87b0572e07c1a", cg.Id)
 	assert.Equal(t, "17db96a24ae1e9dd57143e62b1cb0d2d35e693c65c774c7470e87b0572e07c1a", cg.ContainerId)
 	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
 
 	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/400/cgroup"))
 	assert.Nil(t, err)
-	assert.Equal(t, V2, cg.Version)
 	assert.Equal(t, "/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod8712f785_1a3e_41ec_a00b_e2dcc77431cb.slice/docker-73051af271105c07e1f493b34856a77e665e3b0b4fc72f76c807dfbffeb881bd.scope", cg.Id)
 	assert.Equal(t, "73051af271105c07e1f493b34856a77e665e3b0b4fc72f76c807dfbffeb881bd", cg.ContainerId)
 	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
 
 	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/600/cgroup"))
 	assert.Nil(t, err)
-	assert.Equal(t, V1, cg.Version)
 	assert.Equal(t, "/system.slice/springboot.service", cg.Id)
 	assert.Equal(t, "/system.slice/springboot.service", cg.ContainerId)
 	assert.Equal(t, ContainerTypeSystemdService, cg.ContainerType)
 
 	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/700/cgroup"))
 	assert.Nil(t, err)
-	assert.Equal(t, V2, cg.Version)
 	assert.Equal(t, "/podruntime/runtime", cg.Id)
 	assert.Equal(t, "/talos/runtime", cg.ContainerId)
 	assert.Equal(t, ContainerTypeTalosRuntime, cg.ContainerType)
 
 	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/800/cgroup"))
 	assert.Nil(t, err)
-	assert.Equal(t, V2, cg.Version)
 	assert.Equal(t, "/system.slice/docker-cf87ba651579c9231db817909e7865e5747bd7abcac0c57ce23cf4abbaee046b.scope", cg.Id)
 	assert.Equal(t, "cf87ba651579c9231db817909e7865e5747bd7abcac0c57ce23cf4abbaee046b", cg.ContainerId)
 	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
 
 	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/900/cgroup"))
 	assert.Nil(t, err)
-	assert.Equal(t, V1, cg.Version)
 	assert.Equal(t, "/system.slice/python-app.service", cg.Id)
 	assert.Equal(t, "/system.slice/python-app.service", cg.ContainerId)
 	assert.Equal(t, ContainerTypeSystemdService, cg.ContainerType)
@@ -89,7 +75,6 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 	}()
 	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/500/cgroup"))
 	assert.Nil(t, err)
-	assert.Equal(t, V2, cg.Version)
 	assert.Equal(t, "/system.slice/docker-ba7b10d15d16e10e3de7a2dcd408a3d971169ae303f46cfad4c5453c6326fee2.scope", cg.Id)
 	assert.Equal(t, "ba7b10d15d16e10e3de7a2dcd408a3d971169ae303f46cfad4c5453c6326fee2", cg.ContainerId)
 	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
