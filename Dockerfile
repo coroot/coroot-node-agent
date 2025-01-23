@@ -13,8 +13,11 @@ FROM registry.access.redhat.com/ubi9/ubi
 ARG VERSION=unknown
 LABEL name="coroot-node-agent" \
       vendor="Coroot, Inc." \
+      maintainer="Coroot, Inc." \
       version=${VERSION} \
-      summary="Coroot Node Agent."
+      release="1" \
+      summary="Coroot Node Agent." \
+      description="Coroot Node Agent container image."
 
 COPY LICENSE /licenses/LICENSE
 
