@@ -24,6 +24,8 @@ func guessApplicationType(cmdline []byte) string {
 		return "envoy"
 	case bytes.Contains(cmdline, []byte("org.elasticsearch.bootstrap")):
 		return "elasticsearch"
+	case bytes.Contains(cmdline, []byte("org.opensearch.bootstrap")):
+		return "opensearch"
 	case bytes.Contains(cmdline, []byte("kafka.Kafka")) || bytes.Contains(cmdline, []byte("io.confluent.support.metrics.SupportedKafka")):
 		return "kafka"
 	case bytes.HasSuffix(cmd, []byte("mongod")):
@@ -107,6 +109,13 @@ func guessApplicationType(cmdline []byte) string {
 		return "nats"
 	case bytes.HasSuffix(cmd, []byte("java")):
 		return "java"
+	case bytes.Contains(cmd, []byte("victoria-metrics")) ||
+		bytes.Contains(cmd, []byte("vmstorage")) ||
+		bytes.Contains(cmd, []byte("vminsert")) ||
+		bytes.Contains(cmd, []byte("vmselect")):
+		return "victoria-metrics"
+	case bytes.Contains(cmd, []byte("victoria-logs")):
+		return "victoria-logs"
 	case phpCmd.Match(cmd):
 		return "php"
 	case pythonCmd.Match(cmd):
