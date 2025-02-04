@@ -123,6 +123,11 @@ func TestContainerByCgroup(t *testing.T) {
 	as.Equal("49f9e8e5395d57c1083996c09e2e6f042d5fe1ec0310facab32f94912b35ce59", id)
 	as.Nil(err)
 
+	typ, id, err = containerByCgroup("/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-podea19ff5d_943a_4466_a07e_a71e9e50cc62.slice/crio-21572039dd8398ff8272b031fa5422a40165145ab37f2f8794e1e7f844fe8118.scope/container")
+	as.Equal(typ, ContainerTypeCrio)
+	as.Equal("21572039dd8398ff8272b031fa5422a40165145ab37f2f8794e1e7f844fe8118", id)
+	as.Nil(err)
+
 	typ, id, err = containerByCgroup("/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod3e61c214bc3ed9ff81e21474dd6cba17.slice/cri-containerd-c74b0f5062f0bc726cae1e9369ad4a95deed6b298d247f0407475adb23fa3190")
 	as.Equal(typ, ContainerTypeContainerd)
 	as.Equal("c74b0f5062f0bc726cae1e9369ad4a95deed6b298d247f0407475adb23fa3190", id)

@@ -21,7 +21,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const MinTrafficStatsUpdateInterval = 5 * time.Second
+const (
+	MinTrafficStatsUpdateInterval = 5 * time.Second
+	IgnoredContainersCacheTTL     = 15 * time.Second
+)
 
 var (
 	selfNetNs                = netns.None()
@@ -44,11 +47,12 @@ type Registry struct {
 	tracer *ebpftracer.Tracer
 	events chan ebpftracer.Event
 
-	containersById       map[ContainerID]*Container
-	containersByCgroupId map[string]*Container
-	containersByPid      map[uint32]*Container
-	ip2fqdn              map[netaddr.IP]string
-	ip2fqdnLock          sync.RWMutex
+	containersById         map[ContainerID]*Container
+	containersByCgroupId   map[string]*Container
+	containersByPid        map[uint32]*Container
+	containersByPidIgnored map[uint32]*time.Time
+	ip2fqdn                map[netaddr.IP]string
+	ip2fqdnLock            sync.RWMutex
 
 	processInfoCh chan<- ProcessInfo
 
@@ -79,29 +83,30 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := cgroup.Init(); err != nil {
+	if err = cgroup.Init(); err != nil {
 		return nil, err
 	}
-	if err := DockerdInit(); err != nil {
+	if err = DockerdInit(); err != nil {
 		klog.Warningln(err)
 	}
-	if err := ContainerdInit(); err != nil {
+	if err = ContainerdInit(); err != nil {
 		klog.Warningln(err)
 	}
-	if err := CrioInit(); err != nil {
+	if err = CrioInit(); err != nil {
 		klog.Warningln(err)
 	}
-	if err := JournaldInit(); err != nil {
+	if err = JournaldInit(); err != nil {
 		klog.Warningln(err)
 	}
 
 	r := &Registry{
-		reg:                  reg,
-		events:               make(chan ebpftracer.Event, 10000),
-		containersById:       map[ContainerID]*Container{},
-		containersByCgroupId: map[string]*Container{},
-		containersByPid:      map[uint32]*Container{},
-		ip2fqdn:              map[netaddr.IP]string{},
+		reg:                    reg,
+		events:                 make(chan ebpftracer.Event, 10000),
+		containersById:         map[ContainerID]*Container{},
+		containersByCgroupId:   map[string]*Container{},
+		containersByPid:        map[uint32]*Container{},
+		containersByPidIgnored: map[uint32]*time.Time{},
+		ip2fqdn:                map[netaddr.IP]string{},
 
 		processInfoCh: processInfoCh,
 
@@ -158,6 +163,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					c.onProcessExit(pid, false)
 				}
 			}
+			r.containersByPidIgnored = map[uint32]*time.Time{}
 			activeIPs := map[netaddr.IP]struct{}{}
 			for id, c := range r.containersById {
 				for dst := range c.lastConnectionAttempts {
@@ -287,10 +293,16 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 }
 
 func (r *Registry) getOrCreateContainer(pid uint32) *Container {
-	if c, seen := r.containersByPid[pid]; c != nil {
+	if c := r.containersByPid[pid]; c != nil {
 		return c
-	} else if seen { // ignored
-		return nil
+	} else {
+		if t := r.containersByPidIgnored[pid]; t != nil {
+			if time.Since(*t) < IgnoredContainersCacheTTL {
+				return nil
+			} else {
+				delete(r.containersByPidIgnored, pid)
+			}
+		}
 	}
 	cg, err := proc.ReadCgroup(pid)
 	if err != nil {
@@ -326,7 +338,8 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 			klog.InfoS("ignoring without persisting", "cg", cg.Id, "pid", pid)
 		} else {
 			klog.InfoS("ignoring", "cg", cg.Id, "pid", pid)
-			r.containersByPid[pid] = nil
+			t := time.Now()
+			r.containersByPidIgnored[pid] = &t
 		}
 		return nil
 	}
