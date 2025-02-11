@@ -67,6 +67,10 @@ func IsIpPrivate(ip netaddr.IP) bool {
 	return false
 }
 
+func IsIpExternal(ip netaddr.IP) bool {
+	return !ip.IsLoopback() && !IsIpPrivate(ip)
+}
+
 type connectionFilter struct {
 	whitelist map[string]netaddr.IPPrefix
 }
@@ -196,11 +200,11 @@ func (dk DestinationKey) String() string {
 }
 
 var (
-	awsS3FQDN = regexp.MustCompile(`.+s3.*.amazonaws.com`)
+	awsServicesFQDN = regexp.MustCompile(`.+\.amazonaws\.com`)
 )
 
 func NewDestinationKey(dst, actualDst netaddr.IPPort, fqdn string) DestinationKey {
-	if awsS3FQDN.MatchString(fqdn) {
+	if IsIpExternal(actualDst.IP()) && awsServicesFQDN.MatchString(fqdn) {
 		return DestinationKey{
 			destination: HostPortWithEmptyIP(fqdn, dst.Port()),
 		}
