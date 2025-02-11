@@ -27,14 +27,19 @@ func TestConnectionFilter(t *testing.T) {
 }
 
 func TestDestinationKey(t *testing.T) {
-	d := netaddr.IPPortFrom(netaddr.MustParseIP("10.10.10.10"), 443)
-	ad := netaddr.IPPortFrom(netaddr.MustParseIP("127.0.0.1"), 443)
+	d := netaddr.IPPortFrom(netaddr.MustParseIP("1.1.1.1"), 443)
+	ad := netaddr.IPPortFrom(netaddr.MustParseIP("2.2.2.2"), 443)
 
-	assert.Equal(t, "10.10.10.10:443 (127.0.0.1:443)", NewDestinationKey(d, ad, "").String())
+	assert.Equal(t, "1.1.1.1:443 (2.2.2.2:443)", NewDestinationKey(d, ad, "").String())
 
 	assert.Equal(t,
 		"aa.bb.s3.amazonaws.com:443 ()",
 		NewDestinationKey(d, ad, "aa.bb.s3.amazonaws.com").String(),
+	)
+
+	assert.Equal(t,
+		"dynamodb.us-east-2.amazonaws.com:443 ()",
+		NewDestinationKey(d, ad, "dynamodb.us-east-2.amazonaws.com").String(),
 	)
 
 	assert.Equal(t,
