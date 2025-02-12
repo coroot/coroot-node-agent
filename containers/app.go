@@ -18,6 +18,16 @@ func guessApplicationType(cmdline []byte) string {
 	}
 	cmd := bytes.TrimSuffix(bytes.Fields(parts[0])[0], []byte{':'})
 	switch {
+	case bytes.HasSuffix(cmd, []byte("coroot")):
+		return "coroot-community-edition"
+	case bytes.HasSuffix(cmd, []byte("coroot-ee")):
+		return "coroot-enterprise-edition"
+	case bytes.HasSuffix(cmd, []byte("coroot-node-agent")):
+		return "coroot-node-agent"
+	case bytes.HasSuffix(cmd, []byte("coroot-cluster-agent")):
+		return "coroot-cluster-agent"
+	case bytes.HasSuffix(cmd, []byte("coroot-operator")):
+		return "coroot-operator"
 	case bytes.HasSuffix(cmd, []byte("memcached")):
 		return "memcached"
 	case bytes.HasSuffix(cmd, []byte("envoy")):
