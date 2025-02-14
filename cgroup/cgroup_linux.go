@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"strings"
 
 	"github.com/vishvananda/netns"
 	"golang.org/x/sys/unix"
@@ -38,7 +39,14 @@ func Init() error {
 		}
 	}
 	if _, err := os.Stat(path.Join(cgRoot, "unified")); err == nil {
-		cg2Root = path.Join(cgRoot, "unified")
+		if data, err := os.ReadFile("/proc/self/mounts"); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.Contains(line, "cgroup/unified") {
+					cg2Root = path.Join(cgRoot, "unified")
+					break
+				}
+			}
+		}
 	}
 	klog.Infoln("cgroup v2 root is", cg2Root)
 	return nil
