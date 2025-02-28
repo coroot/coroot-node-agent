@@ -118,7 +118,7 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) []link.Link {
 
 func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
 	isGolangApp := false
-	if t.disableL7Tracing {
+	if t.disableL7Tracing || t.disableGoTlsUprobes {
 		return nil, isGolangApp
 	}
 

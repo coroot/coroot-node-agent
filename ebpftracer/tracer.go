@@ -81,9 +81,10 @@ const (
 )
 
 type Tracer struct {
-	disableL7Tracing bool
-	hostNetNs        netns.NsHandle
-	selfNetNs        netns.NsHandle
+	disableL7Tracing    bool
+	disableGoTlsUprobes bool
+	hostNetNs           netns.NsHandle
+	selfNetNs           netns.NsHandle
 
 	collection *ebpf.Collection
 	readers    map[string]*perf.Reader
@@ -91,14 +92,15 @@ type Tracer struct {
 	uprobes    map[string]*ebpf.Program
 }
 
-func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Tracer {
+func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing, disableGoTlsUprobes bool) *Tracer {
 	if disableL7Tracing {
 		klog.Infoln("L7 tracing is disabled")
 	}
 	return &Tracer{
-		disableL7Tracing: disableL7Tracing,
-		hostNetNs:        hostNetNs,
-		selfNetNs:        selfNetNs,
+		disableL7Tracing:    disableL7Tracing,
+		disableGoTlsUprobes: disableGoTlsUprobes,
+		hostNetNs:           hostNetNs,
+		selfNetNs:           selfNetNs,
 
 		readers: map[string]*perf.Reader{},
 		uprobes: map[string]*ebpf.Program{},
