@@ -7,6 +7,7 @@ import (
 	"debug/elf"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -183,12 +184,7 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
 		log("no text section", nil)
 		return nil, isGolangApp
 	}
-	textSectionData, err := textSection.Data()
-	if err != nil {
-		log("failed to read text section", err)
-		return nil, isGolangApp
-	}
-	textSectionLen := uint64(len(textSectionData) - 1)
+	textReader := textSection.Open()
 
 	exe, err := link.OpenExecutable(path)
 	if err != nil {
@@ -233,11 +229,17 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
 			}
 			links = append(links, l)
 			sStart := s.Value - textSection.Addr
-			sEnd := sStart + s.Size
-			if sEnd > textSectionLen {
-				continue
+			_, err = textReader.Seek(int64(sStart), io.SeekStart)
+			if err != nil {
+				log("failed to seek", err)
+				return nil, isGolangApp
 			}
-			sBytes := textSectionData[sStart:sEnd]
+			sBytes := make([]byte, s.Size)
+			_, err = textReader.Read(sBytes)
+			if err != nil {
+				log("failed to read", err)
+				return nil, isGolangApp
+			}
 			returnOffsets := getReturnOffsets(ef.Machine, sBytes)
 			if len(returnOffsets) == 0 {
 				log("failed to attach read_exit uprobe", fmt.Errorf("no return offsets found"))
