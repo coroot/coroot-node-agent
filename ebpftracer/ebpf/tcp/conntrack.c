@@ -56,9 +56,6 @@ int handle_ct(struct pt_regs *ctx, struct nf_conn conn)
     struct ipPort src = {};
     struct ipPort actualDst = {};
     if (repl.src.l3num == AF_INET) {
-        if (orig.dst.addr.ip[0] == repl.src.addr.ip[0]) {
-            return 0;
-        }
         src.ip[10] = 0xff;
         src.ip[11] = 0xff;
         __builtin_memcpy(&src.ip[12], &repl.dst.addr.ip, 4);
@@ -67,10 +64,6 @@ int handle_ct(struct pt_regs *ctx, struct nf_conn conn)
         actualDst.ip[11] = 0xff;
         __builtin_memcpy(&actualDst.ip[12], &repl.src.addr.ip, 4);
     } else if (repl.src.l3num == AF_INET6) {
-        if (orig.dst.addr.ip[0] == repl.src.addr.ip[0] && orig.dst.addr.ip[1] == repl.src.addr.ip[1] &&
-            orig.dst.addr.ip[2] == repl.src.addr.ip[2] && orig.dst.addr.ip[3] == repl.src.addr.ip[3]) {
-            return 0;
-        }
         __builtin_memcpy(&src.ip, &repl.dst.addr.ip, 16);
         __builtin_memcpy(&actualDst.ip, &repl.src.addr.ip, 16);
     }
