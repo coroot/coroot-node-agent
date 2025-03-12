@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -199,14 +198,36 @@ func (dk DestinationKey) String() string {
 	return fmt.Sprintf("%s (%s)", dk.Destination(), dk.actualDestination.String())
 }
 
-var (
-	awsServicesFQDN = regexp.MustCompile(`.+\.amazonaws\.com`)
-)
+type Domain struct {
+	FQDN      string
+	SpecifyIP bool
+}
 
-func NewDestinationKey(dst, actualDst netaddr.IPPort, fqdn string) DestinationKey {
-	if IsIpExternal(actualDst.IP()) && awsServicesFQDN.MatchString(fqdn) {
+func (d *Domain) String() string {
+	return fmt.Sprintf("Domain(%s,%t)", d.FQDN, d.SpecifyIP)
+}
+
+func NewDomain(fqdn string, ips []netaddr.IP) *Domain {
+	d := &Domain{FQDN: fqdn, SpecifyIP: true}
+	if len(ips) > 1 {
+		containsPrivateIPs := false
+		for _, ip := range ips {
+			if !IsIpExternal(ip) {
+				containsPrivateIPs = true
+				break
+			}
+		}
+		if !containsPrivateIPs {
+			d.SpecifyIP = false
+		}
+	}
+	return d
+}
+
+func NewDestinationKey(dst, actualDst netaddr.IPPort, domain *Domain) DestinationKey {
+	if IsIpExternal(actualDst.IP()) && domain != nil && !domain.SpecifyIP {
 		return DestinationKey{
-			destination: HostPortWithEmptyIP(fqdn, dst.Port()),
+			destination: HostPortWithEmptyIP(domain.FQDN, dst.Port()),
 		}
 	}
 	return DestinationKey{

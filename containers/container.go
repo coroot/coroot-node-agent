@@ -539,7 +539,7 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst, actualDst 
 	if common.ConnectionFilter.ShouldBeSkipped(dst.IP(), actualDst.IP()) {
 		return
 	}
-	key := common.NewDestinationKey(dst, actualDst, c.registry.getFQDN(dst.IP()))
+	key := common.NewDestinationKey(dst, actualDst, c.registry.getDomain(dst.IP()))
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if failed {
@@ -616,7 +616,7 @@ func (c *Container) updateConnectionTrafficStats(ac *ActiveConnection, sent, rec
 	ac.BytesReceived = received
 }
 
-func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]string {
+func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]*common.Domain {
 	status := r.Status.DNS()
 	if status == "" {
 		return nil
@@ -651,16 +651,17 @@ func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]string {
 		}
 		c.dnsStats.Latency.Observe(r.Duration.Seconds())
 	}
-	ip2fqdn := map[netaddr.IP]string{}
+	ip2fqdn := map[netaddr.IP]*common.Domain{}
 	if fqdn != "" {
+		d := common.NewDomain(fqdn, ips)
 		for _, ip := range ips {
-			ip2fqdn[ip] = fqdn
+			ip2fqdn[ip] = d
 		}
 	}
 	return ip2fqdn
 }
 
-func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) map[netaddr.IP]string {
+func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) map[netaddr.IP]*common.Domain {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
