@@ -51,7 +51,7 @@ type Registry struct {
 	containersByCgroupId   map[string]*Container
 	containersByPid        map[uint32]*Container
 	containersByPidIgnored map[uint32]*time.Time
-	ip2fqdn                map[netaddr.IP]string
+	ip2fqdn                map[netaddr.IP]*common.Domain
 	ip2fqdnLock            sync.RWMutex
 
 	processInfoCh chan<- ProcessInfo
@@ -106,7 +106,7 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo) (*
 		containersByCgroupId:   map[string]*Container{},
 		containersByPid:        map[uint32]*Container{},
 		containersByPidIgnored: map[uint32]*time.Time{},
-		ip2fqdn:                map[netaddr.IP]string{},
+		ip2fqdn:                map[netaddr.IP]*common.Domain{},
 
 		processInfoCh: processInfoCh,
 
@@ -134,7 +134,7 @@ func (r *Registry) Collect(ch chan<- prometheus.Metric) {
 	r.ip2fqdnLock.RLock()
 	defer r.ip2fqdnLock.RUnlock()
 	for ip, fqdn := range r.ip2fqdn {
-		ch <- gauge(metrics.Ip2Fqdn, 1, ip.String(), fqdn)
+		ch <- gauge(metrics.Ip2Fqdn, 1, ip.String(), fqdn.FQDN)
 	}
 }
 
@@ -278,8 +278,8 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				if c := r.containersByPid[e.Pid]; c != nil {
 					ip2fqdn := c.onL7Request(e.Pid, e.Fd, e.Timestamp, e.L7Request)
 					r.ip2fqdnLock.Lock()
-					for ip, fqdn := range ip2fqdn {
-						r.ip2fqdn[ip] = fqdn
+					for ip, domain := range ip2fqdn {
+						r.ip2fqdn[ip] = domain
 					}
 					r.ip2fqdnLock.Unlock()
 				}
@@ -396,7 +396,7 @@ func (r *Registry) updateTrafficStatsIfNecessary() {
 	r.trafficStatsLastUpdated = time.Now()
 }
 
-func (r *Registry) getFQDN(ip netaddr.IP) string {
+func (r *Registry) getDomain(ip netaddr.IP) *common.Domain {
 	r.ip2fqdnLock.RLock()
 	defer r.ip2fqdnLock.RUnlock()
 	return r.ip2fqdn[ip]
