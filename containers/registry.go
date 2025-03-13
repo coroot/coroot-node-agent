@@ -133,8 +133,10 @@ func (r *Registry) Describe(ch chan<- *prometheus.Desc) {
 func (r *Registry) Collect(ch chan<- prometheus.Metric) {
 	r.ip2fqdnLock.RLock()
 	defer r.ip2fqdnLock.RUnlock()
-	for ip, fqdn := range r.ip2fqdn {
-		ch <- gauge(metrics.Ip2Fqdn, 1, ip.String(), fqdn.FQDN)
+	for ip, domain := range r.ip2fqdn {
+		if domain.SpecifyIP {
+			ch <- gauge(metrics.Ip2Fqdn, 1, ip.String(), domain.FQDN)
+		}
 	}
 }
 
