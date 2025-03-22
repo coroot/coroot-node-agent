@@ -1,6 +1,7 @@
 package containers
 
 import (
+	"bytes"
 	"os"
 	"sort"
 	"strings"
@@ -225,9 +226,21 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	defer c.lock.RUnlock()
 
 	if c.metadata.image != "" || c.metadata.systemdTriggeredBy != "" {
-		ch <- gauge(metrics.ContainerInfo, 1, c.metadata.image, c.metadata.systemdTriggeredBy)
-	}
+		pids := maps.Keys(c.processes)
+		sort.Slice(pids, func(i, j int) bool {
+			return pids[i] < pids[j]
+		})
 
+		cmdln := ""
+		if c.processes != nil && len(pids) > 0 {
+			if procc, ok := c.processes[pids[0]]; ok {
+				cmdln = string(proc.GetCmdline(procc.Pid))
+				cmdln = string(bytes.ReplaceAll([]byte(cmdln), []byte{0}, []byte(" ")))
+			}
+		}
+
+		ch <- gauge(metrics.ContainerInfo, 1, c.metadata.image, c.metadata.systemdTriggeredBy, cmdln)
+	}
 	ch <- counter(metrics.Restarts, float64(c.restarts))
 
 	if cpu := c.cgroup.CpuStat(); cpu != nil {
