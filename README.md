@@ -47,8 +47,8 @@ To learn more about automated log clustering, check out the blog post "[Mining m
 identify situations where a container is experiencing a lack of CPU time or waiting for I/O.
 
 The agent gathers per-process counters through [Netlink](https://man7.org/linux/man-pages/man7/netlink.7.html) and aggregates them into per-container metrics:
-* [container_resources_cpu_delay_seconds_total](https://coroot.com/docs/metrics/node-agent#container_resources_cpu_delay_seconds_total)
-* [container_resources_disk_delay_seconds_total](https://coroot.com/docs/metrics/node-agent#container_resources_disk_delay_seconds_total)
+* [container_resources_cpu_delay_seconds_total](https://docs.coroot.com/metrics/node-agent#container_resources_cpu_delay_seconds_total)
+* [container_resources_disk_delay_seconds_total](https://docs.coroot.com/metrics/node-agent#container_resources_disk_delay_seconds_total)
 
 
 <img src="https://coroot.com/static/img/blog/delay_accounting_aggregation.svg" width="800" />
@@ -59,7 +59,7 @@ Related blog posts:
 
 ### Out-of-memory events tracing
 
-The [container_oom_kills_total](https://coroot.com/docs/metrics/node-agent#container_oom_kills_total) metric shows that a container has been terminated by the OOM killer.
+The [container_oom_kills_total](https://docs.coroot.com/metrics/node-agent#container_oom_kills_total) metric shows that a container has been terminated by the OOM killer.
 
 ### Instance meta information
 
@@ -82,17 +82,17 @@ Related blog posts:
 
 ## Installation
 
-The documentation is available at [coroot.com/docs/metric-exporters/node-agent](https://coroot.com/docs/metric-exporters/node-agent/installation).
+Follow the Coroot [documentation](https://docs.coroot.com/)
 
 ## Metrics
 
-The collected metrics are described [here](https://coroot.com/docs/metrics/node-agent).
+The collected metrics are described [here](https://docs.coroot.com/metrics/node-agent).
 
 ## Coroot
 
 The best way to turn metrics to answers about app issues is to use [Coroot](https://github.com/coroot/coroot) - a zero-instrumentation observability tool for microservice architectures. 
 
-A live demo of Coroot is available at [community-demo.coroot.com](https://community-demo.coroot.com)
+A live demo of Coroot is available at [demo.coroot.com](https://demo.coroot.com)
 
 ## Contributing
 To start contributing, check out our [Contributing Guide](https://github.com/coroot/coroot-node-agent/blob/main/CONTRIBUTING.md).
