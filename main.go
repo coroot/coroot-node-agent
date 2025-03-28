@@ -130,17 +130,26 @@ func main() {
 	tracing.Init(machineId, hostname, version)
 	logs.Init(machineId, hostname, version)
 
+	nodeCollector := node.NewCollector(hostname, kv)
+
 	registry := prometheus.NewRegistry()
-	registerer := prometheus.WrapRegistererWith(prometheus.Labels{"machine_id": machineId, "system_uuid": systemUuid}, registry)
 
-	registerer.MustRegister(info("node_agent_info", version))
-
-	if err := registerer.Register(node.NewCollector(hostname, kv)); err != nil {
+	registerer := prometheus.WrapRegistererWith(
+		prometheus.Labels{"machine_id": machineId, "system_uuid": systemUuid},
+		registry,
+	)
+	if err := registerer.Register(nodeCollector); err != nil {
 		klog.Exitln(err)
 	}
+	registerer.MustRegister(info("node_agent_info", version))
 
+	if md := nodeCollector.Metadata(); md != nil {
+		registerer = prometheus.WrapRegistererWith(
+			prometheus.Labels{"az": md.AvailabilityZone, "region": md.Region},
+			registerer,
+		)
+	}
 	processInfoCh := profiling.Init(machineId, hostname)
-
 	cr, err := containers.NewRegistry(registerer, processInfoCh)
 	if err != nil {
 		klog.Exitln(err)

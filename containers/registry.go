@@ -185,7 +185,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 						delete(r.containersByPid, pid)
 					}
 				}
-				if ok := prometheus.WrapRegistererWith(prometheus.Labels{"container_id": string(id)}, r.reg).Unregister(c); !ok {
+				if ok := prometheus.WrapRegistererWith(prometheus.Labels{"container_id": string(c.id), "app_id": c.appId}, r.reg).Unregister(c); !ok {
 					klog.Warningln("failed to unregister container:", id)
 				}
 				delete(r.containersById, id)
@@ -361,9 +361,8 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		klog.Warningf("failed to create container pid=%d cg=%s id=%s: %s", pid, cg.Id, id, err)
 		return nil
 	}
-
-	klog.InfoS("detected a new container", "pid", pid, "cg", cg.Id, "id", id)
-	if err := prometheus.WrapRegistererWith(prometheus.Labels{"container_id": string(id)}, r.reg).Register(c); err != nil {
+	klog.InfoS("detected a new container", "pid", pid, "cg", cg.Id, "id", id, "app", c.appId)
+	if err := prometheus.WrapRegistererWith(prometheus.Labels{"container_id": string(id), "app_id": c.appId}, r.reg).Register(c); err != nil {
 		klog.Warningln("failed to register container:", err)
 		return nil
 	}
