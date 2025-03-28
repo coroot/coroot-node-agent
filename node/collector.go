@@ -162,6 +162,10 @@ func NewCollector(hostname, kernelVersion string) *Collector {
 	}
 }
 
+func (c *Collector) Metadata() *metadata.CloudMetadata {
+	return c.instanceMetadata
+}
+
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	ch <- gauge(infoDesc, 1, c.hostname, c.kernelVersion)
 

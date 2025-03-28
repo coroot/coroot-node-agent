@@ -107,6 +107,7 @@ type ConnectionStats struct {
 
 type Container struct {
 	id       ContainerID
+	appId    string
 	cgroup   *cgroup.Cgroup
 	metadata *ContainerMetadata
 
@@ -154,8 +155,15 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		return nil, err
 	}
 	defer netNs.Close()
+
+	cid := string(id)
+	appId := common.ContainerIdToOtelServiceName(cid)
+	if appId == cid {
+		appId = ""
+	}
 	c := &Container{
 		id:       id,
+		appId:    appId,
 		cgroup:   cg,
 		metadata: md,
 
