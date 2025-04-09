@@ -22,23 +22,44 @@ var (
 	backends6Map *bpf.Map
 )
 
+type ciliumMapDefinition struct {
+	key   bpf.MapKey
+	value bpf.MapValue
+}
+
+var ciliumMaps = map[string]ciliumMapDefinition{
+	lbmap.Backend4MapV2Name: {key: &lbmap.Backend4KeyV3{}, value: &lbmap.Backend4Value{}},
+	lbmap.Backend4MapV3Name: {key: &lbmap.Backend4KeyV3{}, value: &lbmap.Backend4ValueV3{}},
+	lbmap.Backend6MapV2Name: {key: &lbmap.Backend6KeyV3{}, value: &lbmap.Backend6Value{}},
+	lbmap.Backend6MapV3Name: {key: &lbmap.Backend6KeyV3{}, value: &lbmap.Backend6ValueV3{}},
+}
+
 func init() {
 	var err error
 
-	ciliumCt4, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, ctmap.MapNameTCP4Global)))
+	ciliumCt4, err = bpf.OpenMap(
+		proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, ctmap.MapNameTCP4Global)),
+		&ctmap.CtKey4Global{},
+		&ctmap.CtEntry{},
+	)
 	if err != nil {
 		klog.Infoln(err)
 	} else {
 		klog.Infoln("found cilium ebpf-map:", ctmap.MapNameTCP4Global)
 	}
-	ciliumCt6, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, ctmap.MapNameTCP6Global)))
+	ciliumCt6, err = bpf.OpenMap(proc.HostPath(
+		filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, ctmap.MapNameTCP6Global)),
+		&ctmap.CtKey6Global{},
+		&ctmap.CtEntry{},
+	)
 	if err != nil {
 		klog.Infoln(err)
 	} else {
 		klog.Infoln("found cilium ebpf-map:", ctmap.MapNameTCP6Global)
 	}
 	for _, n := range []string{lbmap.Backend4MapV2Name, lbmap.Backend4MapV3Name} {
-		backends4Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, n)))
+		def := ciliumMaps[n]
+		backends4Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), def.key, def.value)
 		if err != nil {
 			klog.Infoln(err)
 		} else {
@@ -47,7 +68,8 @@ func init() {
 		}
 	}
 	for _, n := range []string{lbmap.Backend6MapV2Name, lbmap.Backend6MapV3Name} {
-		backends6Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, n)))
+		def := ciliumMaps[n]
+		backends6Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), def.key, def.value)
 		if err != nil {
 			klog.Infoln(err)
 		} else {
@@ -90,10 +112,7 @@ func lookupCilium4(src, dst netaddr.IPPort) *netaddr.IPPort {
 	}
 	e := v.(*ctmap.CtEntry)
 
-	// https://github.com/cilium/cilium/blob/v1.13.0/bpf/lib/common.h#L819
-	// CtEntity.RxBytes stores `backend_id` if `e.Flags & TUPLE_F_SERVICE`
-	backendId := e.RxBytes
-	backendKey := lbmap.NewBackend4KeyV3(loadbalancer.BackendID(backendId))
+	backendKey := lbmap.NewBackend4KeyV3(loadbalancer.BackendID(e.BackendID))
 	b, err := backends4Map.Lookup(backendKey)
 	if err != nil || b == nil {
 		return nil
@@ -133,8 +152,7 @@ func lookupCilium6(src, dst netaddr.IPPort) *netaddr.IPPort {
 		return nil
 	}
 	e := v.(*ctmap.CtEntry)
-	backendId := e.RxBytes
-	backendKey := lbmap.NewBackend6KeyV3(loadbalancer.BackendID(backendId))
+	backendKey := lbmap.NewBackend6KeyV3(loadbalancer.BackendID(e.BackendID))
 	b, err := backends6Map.Lookup(backendKey)
 	if err != nil || b == nil {
 		return nil

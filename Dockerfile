@@ -1,4 +1,4 @@
-FROM golang:1.23-bullseye AS builder
+FROM golang:1.23.8-bullseye AS builder
 RUN apt update && apt install -y libsystemd-dev
 WORKDIR /tmp/src
 COPY go.mod .
