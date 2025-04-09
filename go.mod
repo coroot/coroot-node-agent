@@ -9,7 +9,7 @@ require (
 	github.com/cilium/cilium v1.17.2
 	github.com/cilium/ebpf v0.17.3
 	github.com/containerd/cgroups v1.0.4
-	github.com/containerd/containerd v1.6.26
+	github.com/containerd/containerd v1.6.38
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/coroot/logparser v1.1.8
 	github.com/docker/docker v27.4.0+incompatible
@@ -51,7 +51,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.8.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/Microsoft/hcsshim v0.9.10 // indirect
+	github.com/Microsoft/hcsshim v0.9.12 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
@@ -68,6 +68,7 @@ require (
 	github.com/cilium/stream v0.0.0-20241203114243-53c3e5d79744 // indirect
 	github.com/cilium/workerpool v1.2.0 // indirect
 	github.com/containerd/continuity v0.3.0 // indirect
+	github.com/containerd/errdefs v0.1.0 // indirect
 	github.com/containerd/fifo v1.0.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/ttrpc v1.1.2 // indirect
@@ -144,7 +145,6 @@ require (
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
-	github.com/opencontainers/runc v1.2.0 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
