@@ -25,20 +25,20 @@ var (
 func init() {
 	var err error
 
-	ciliumCt4, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, ctmap.MapNameTCP4Global)))
+	ciliumCt4, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, ctmap.MapNameTCP4Global)), nil, nil)
 	if err != nil {
 		klog.Infoln(err)
 	} else {
 		klog.Infoln("found cilium ebpf-map:", ctmap.MapNameTCP4Global)
 	}
-	ciliumCt6, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, ctmap.MapNameTCP6Global)))
+	ciliumCt6, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, ctmap.MapNameTCP6Global)), nil, nil)
 	if err != nil {
 		klog.Infoln(err)
 	} else {
 		klog.Infoln("found cilium ebpf-map:", ctmap.MapNameTCP6Global)
 	}
 	for _, n := range []string{lbmap.Backend4MapV2Name, lbmap.Backend4MapV3Name} {
-		backends4Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, n)))
+		backends4Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), nil, nil)
 		if err != nil {
 			klog.Infoln(err)
 		} else {
@@ -47,7 +47,7 @@ func init() {
 		}
 	}
 	for _, n := range []string{lbmap.Backend6MapV2Name, lbmap.Backend6MapV3Name} {
-		backends6Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.DefaultMapRoot, defaults.DefaultMapPrefix, n)))
+		backends6Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), nil, nil)
 		if err != nil {
 			klog.Infoln(err)
 		} else {
