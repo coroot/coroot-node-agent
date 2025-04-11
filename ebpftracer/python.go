@@ -43,13 +43,14 @@ func (t *Tracer) AttachPythonThreadLockProbes(pid uint32) []link.Link {
 			log(libPath, "failed to open executable", err)
 			return nil
 		}
+		options := &link.UprobeOptions{PID: int(pid)}
 		var uprobe, uretprobe link.Link
-		uprobe, lastErr = exe.Uprobe("pthread_cond_timedwait", t.uprobes["pthread_cond_timedwait_enter"], nil)
+		uprobe, lastErr = exe.Uprobe("pthread_cond_timedwait", t.uprobes["pthread_cond_timedwait_enter"], options)
 		if lastErr != nil {
 			continue
 		}
 		links = append(links, uprobe)
-		uretprobe, lastErr = exe.Uretprobe("pthread_cond_timedwait", t.uprobes["pthread_cond_timedwait_exit"], nil)
+		uretprobe, lastErr = exe.Uretprobe("pthread_cond_timedwait", t.uprobes["pthread_cond_timedwait_exit"], options)
 		if lastErr != nil {
 			continue
 		}
