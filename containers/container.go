@@ -349,7 +349,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 			appTypes["golang"] = struct{}{}
 		}
 		switch {
-		case isJvm(cmdline):
+		case proc.IsJvm(cmdline):
 			jvm, jMetrics := jvmMetrics(pid)
 			if len(jMetrics) > 0 && !seenJvms[jvm] {
 				seenJvms[jvm] = true

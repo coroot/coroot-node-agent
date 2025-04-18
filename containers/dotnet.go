@@ -177,7 +177,11 @@ func (m *DotNetMonitor) run(ctx context.Context) {
 }
 
 func (m *DotNetMonitor) connect(ctx context.Context) error {
-	files, _ := filepath.Glob(proc.Path(m.pid, fmt.Sprintf("root/tmp/dotnet-diagnostic-%d-*-socket", proc.GetNsPid(m.pid))))
+	nsPid, err := proc.GetNsPid(m.pid)
+	if err != nil {
+		return err
+	}
+	files, _ := filepath.Glob(proc.Path(m.pid, fmt.Sprintf("root/tmp/dotnet-diagnostic-%d-*-socket", nsPid)))
 
 	if len(files) != 1 {
 		return fmt.Errorf("no socket found")
