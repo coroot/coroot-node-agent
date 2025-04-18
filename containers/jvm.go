@@ -1,7 +1,6 @@
 package containers
 
 import (
-	"bytes"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -14,16 +13,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func isJvm(cmdline []byte) bool {
-	idx := bytes.Index(cmdline, []byte{0})
-	if idx < 0 {
-		return false
-	}
-	return bytes.HasSuffix(cmdline[:idx], []byte("java"))
-}
-
 func jvmMetrics(pid uint32) (string, []prometheus.Metric) {
-	p := proc.Path(pid, "root/tmp/hsperfdata_*/"+strconv.Itoa(int(proc.GetNsPid(pid))))
+	nsPid, err := proc.GetNsPid(pid)
+	if err != nil {
+		if !common.IsNotExist(err) {
+			klog.Warningln(err)
+		}
+		return "", nil
+	}
+	p := proc.Path(pid, "root/tmp/hsperfdata_*/"+strconv.Itoa(int(nsPid)))
 	files, _ := filepath.Glob(p)
 	if len(files) != 1 {
 		return "", nil

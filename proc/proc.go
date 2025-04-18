@@ -2,6 +2,8 @@ package proc
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"path"
 	"strconv"
@@ -28,10 +30,10 @@ func GetCmdline(pid uint32) []byte {
 	return bytes.TrimSuffix(cmdline, []byte{0})
 }
 
-func GetNsPid(pid uint32) uint32 {
+func GetNsPid(pid uint32) (uint32, error) {
 	data, err := os.ReadFile(Path(pid, "status"))
 	if err != nil {
-		return pid
+		return 0, err
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
@@ -39,15 +41,17 @@ func GetNsPid(pid uint32) uint32 {
 			continue
 		}
 		if fields[0] == "NSpid:" {
-			if len(fields) == 3 {
-				if nsPid, err := strconv.ParseUint(fields[2], 10, 32); err == nil {
-					return uint32(nsPid)
-				}
+			if len(fields) != 3 {
+				return 0, errors.New("invalid NSpid value")
 			}
-			return pid
+			nsPid, err := strconv.ParseUint(fields[2], 10, 32)
+			if err != nil {
+				return 0, fmt.Errorf("invalid NSpid value: %w", err)
+			}
+			return uint32(nsPid), nil
 		}
 	}
-	return pid
+	return 0, errors.New("NSpid not found")
 }
 
 func ReadCgroup(pid uint32) (*cgroup.Cgroup, error) {
