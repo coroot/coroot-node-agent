@@ -84,7 +84,7 @@ func Init(hostId, hostName string) chan<- containers.ProcessInfo {
 		},
 		SymbolOptions: symtab.SymbolOptions{
 			GoTableFallback:    true,
-			PythonFullFilePath: false,
+			PythonFullFilePath: true,
 			DemangleOptions:    demangle.DemangleFull,
 		},
 		Metrics: &metrics.Metrics{
