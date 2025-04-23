@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"debug/elf"
-	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -303,7 +302,12 @@ func parseFields(fields []nettrace.MetadataField, parser nettrace.Parser, metric
 	return nil
 }
 
-func dotNetApp(pid uint32) (string, error) {
+func dotNetApp(cmdline []byte, pid uint32) (string, error) {
+	if parts := bytes.Split(cmdline, []byte{0}); len(parts) >= 2 { // dotnet Accounting.dll
+		if bytes.HasSuffix(parts[0], []byte("dotnet")) && bytes.HasSuffix(parts[1], []byte(".dll")) {
+			return strings.TrimSuffix(string(parts[1]), ".dll"), nil
+		}
+	}
 	file, err := elf.Open(proc.Path(pid, "exe"))
 	if err != nil {
 		return "", err
@@ -314,10 +318,6 @@ func dotNetApp(pid uint32) (string, error) {
 		res, _ = file.DynString(elf.DT_RUNPATH)
 	}
 	if len(res) == 1 && res[0] == "$ORIGIN/netcoredeps" {
-		cmdline := proc.GetCmdline(pid)
-		if cmdline == nil {
-			return "", errors.New("failed to read proc cmdline")
-		}
 		firstArg := bytes.Split(cmdline, []byte{0})[0]
 		parts := strings.Split(string(firstArg), "/")
 		app := parts[len(parts)-1]
