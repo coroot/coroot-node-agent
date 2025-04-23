@@ -341,9 +341,14 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		if len(cmdline) == 0 {
 			continue
 		}
-		appType := guessApplicationType(cmdline)
-		if appType != "" {
+		if appType := guessApplicationTypeByCmdline(cmdline); appType != "" {
 			appTypes[appType] = struct{}{}
+		} else {
+			if exe, err := os.Readlink(proc.Path(pid, "exe")); err == nil {
+				if appType = guessApplicationTypeByExe(exe); appType != "" {
+					appTypes[appType] = struct{}{}
+				}
+			}
 		}
 		if process.isGolangApp {
 			appTypes["golang"] = struct{}{}

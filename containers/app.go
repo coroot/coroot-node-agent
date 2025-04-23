@@ -8,10 +8,11 @@ import (
 var (
 	phpCmd    = regexp.MustCompile(`.*php\d*\.?\d*$`)
 	pythonCmd = regexp.MustCompile(`.*python\d*\.?\d*$`)
+	rubyCmd   = regexp.MustCompile(`.*ruby\d*\.?\d*$`)
 	nodejsCmd = regexp.MustCompile(`.*node(js)?\d*\.?\d*$`)
 )
 
-func guessApplicationType(cmdline []byte) string {
+func guessApplicationTypeByCmdline(cmdline []byte) string {
 	parts := bytes.Split(cmdline, []byte{0})
 	if len(parts) == 0 || len(parts[0]) == 0 {
 		return ""
@@ -132,6 +133,22 @@ func guessApplicationType(cmdline []byte) string {
 		return "python"
 	case nodejsCmd.Match(cmd):
 		return "nodejs"
+	case rubyCmd.Match(cmd):
+		return "ruby"
+	}
+	return ""
+}
+
+func guessApplicationTypeByExe(exe string) string {
+	switch {
+	case phpCmd.MatchString(exe):
+		return "php"
+	case pythonCmd.MatchString(exe):
+		return "python"
+	case nodejsCmd.MatchString(exe):
+		return "nodejs"
+	case rubyCmd.MatchString(exe):
+		return "ruby"
 	}
 	return ""
 }

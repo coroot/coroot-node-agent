@@ -65,9 +65,10 @@ func (p *Process) instrument(tracer *ebpftracer.Tracer) {
 			if err != nil {
 				return
 			}
-			if dest != "/" {
-				p.instrumentPython(tracer)
-				if dotNetAppName, err := dotNetApp(p.Pid); err == nil {
+			cmdline := proc.GetCmdline(p.Pid)
+			if dest != "/" && len(cmdline) > 0 {
+				p.instrumentPython(cmdline, tracer)
+				if dotNetAppName, err := dotNetApp(cmdline, p.Pid); err == nil {
 					if dotNetAppName != "" {
 						p.dotNetMonitor = NewDotNetMonitor(p.ctx, p.Pid, dotNetAppName)
 					}
@@ -79,15 +80,11 @@ func (p *Process) instrument(tracer *ebpftracer.Tracer) {
 	}
 }
 
-func (p *Process) instrumentPython(tracer *ebpftracer.Tracer) {
+func (p *Process) instrumentPython(cmdline []byte, tracer *ebpftracer.Tracer) {
 	if p.pythonGilChecked {
 		return
 	}
 	p.pythonGilChecked = true
-	cmdline := proc.GetCmdline(p.Pid)
-	if len(cmdline) == 0 {
-		return
-	}
 	parts := bytes.Split(cmdline, []byte{0})
 	cmd := parts[0]
 	if len(cmd) == 0 {
