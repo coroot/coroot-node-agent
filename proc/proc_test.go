@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,8 +16,8 @@ func init() {
 func TestListPids(t *testing.T) {
 	res, err := ListPids()
 	require.NoError(t, err)
-
-	assert.Equal(t, []uint32{123}, res)
+	sort.Slice(res, func(i, j int) bool { return res[i] < res[j] })
+	assert.Equal(t, []uint32{123, 88451}, res)
 }
 
 func TestGetMountInfo(t *testing.T) {
@@ -29,6 +30,16 @@ func TestGetMountInfo(t *testing.T) {
 		"3129": {MajorMinor: "259:2", MountPoint: "/etc/hostname"},
 		"3130": {MajorMinor: "259:2", MountPoint: "/etc/hosts"},
 	}, res)
+}
+
+func TestGetNsPid(t *testing.T) {
+	nsPid, err := GetNsPid(123)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(1), nsPid)
+
+	nsPid, err = GetNsPid(88451)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(88451), nsPid)
 }
 
 func TestReadFds(t *testing.T) {
