@@ -1,0 +1,61 @@
+Name:	java
+Umask:	0022
+State:	S (sleeping)
+Tgid:	1873966
+Ngid:	0
+Pid:	1873966
+PPid:	1873916
+TracerPid:	0
+Uid:	0	0	0	0
+Gid:	0	0	0	0
+FDSize:	128
+Groups:	0
+NStgid:	1873966	1
+NSpid:	1873966	1
+NSpgid:	1873966	1
+NSsid:	1873966	1
+Kthread:	0
+VmPeak:	 3770720 kB
+VmSize:	 3711328 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	  314892 kB
+VmRSS:	  294088 kB
+RssAnon:	  281768 kB
+RssFile:	   12320 kB
+RssShmem:	       0 kB
+VmData:	  355496 kB
+VmStk:	     144 kB
+VmExe:	       4 kB
+VmLib:	   24412 kB
+VmPTE:	    1004 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+untag_mask:	0xffffffffffffffff
+Threads:	32
+SigQ:	3/30861
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000200000000
+SigCgt:	2000000101005ccf
+CapInh:	0000000000000000
+CapPrm:	00000000a80425fb
+CapEff:	00000000a80425fb
+CapBnd:	00000000a80425fb
+CapAmb:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	0
+Seccomp_filters:	0
+Speculation_Store_Bypass:	thread vulnerable
+SpeculationIndirectBranch:	conditional enabled
+Cpus_allowed:	f
+Cpus_allowed_list:	0-3
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	51
+nonvoluntary_ctxt_switches:	65
+x86_Thread_features:
+x86_Thread_features_locked:

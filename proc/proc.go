@@ -41,10 +41,16 @@ func GetNsPid(pid uint32) (uint32, error) {
 			continue
 		}
 		if fields[0] == "NSpid:" {
-			if len(fields) != 3 {
+			var f string
+			switch len(fields) {
+			case 2:
+				f = fields[1]
+			case 3:
+				f = fields[2]
+			default:
 				return 0, errors.New("invalid NSpid value")
 			}
-			nsPid, err := strconv.ParseUint(fields[2], 10, 32)
+			nsPid, err := strconv.ParseUint(f, 10, 32)
 			if err != nil {
 				return 0, fmt.Errorf("invalid NSpid value: %w", err)
 			}
