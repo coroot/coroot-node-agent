@@ -15,6 +15,8 @@ var (
 	DisablePinger     = kingpin.Flag("disable-pinger", "Don't ping upstreams").Default("false").Envar("DISABLE_PINGER").Bool()
 	DisableL7Tracing  = kingpin.Flag("disable-l7-tracing", "Disable L7 tracing").Default("false").Envar("DISABLE_L7_TRACING").Bool()
 
+	ExcludeHTTPMetricsByPath = kingpin.Flag("exclude-http-metrics-by-path", "Skip HTTP metrics by path").Envar("EXCLUDE_HTTP_METRICS_BY_PATH").Strings()
+
 	ExternalNetworksWhitelist = kingpin.
 					Flag("track-public-network", "Allow track connections to the specified IP networks, all private networks are allowed by default (e.g., Y.Y.Y.Y/mask)").
 					Envar("TRACK_PUBLIC_NETWORK").
