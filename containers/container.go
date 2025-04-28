@@ -694,8 +694,10 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	trace := c.tracer.NewTrace(conn.DestinationKey.ActualDestinationIfKnown())
 	switch r.Protocol {
 	case l7.ProtocolHTTP:
-		stats.observe(r.Status.Http(), "", r.Duration)
 		method, path := l7.ParseHttp(r.Payload)
+		if !common.HttpFilter.ShouldBeSkipped(path) {
+			stats.observe(r.Status.Http(), "", r.Duration)
+		}
 		trace.HttpRequest(method, path, r.Status, r.Duration)
 	case l7.ProtocolHTTP2:
 		if conn.http2Parser == nil {
@@ -703,7 +705,9 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		}
 		requests := conn.http2Parser.Parse(r.Method, r.Payload, uint64(r.Duration))
 		for _, req := range requests {
-			stats.observe(req.Status.Http(), "", req.Duration)
+			if !common.HttpFilter.ShouldBeSkipped(req.Path) {
+				stats.observe(req.Status.Http(), "", req.Duration)
+			}
 			trace.Http2Request(req.Method, req.Path, req.Scheme, req.Status, req.Duration)
 		}
 	case l7.ProtocolPostgres:
