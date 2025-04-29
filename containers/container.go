@@ -697,8 +697,8 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		method, path := l7.ParseHttp(r.Payload)
 		if !common.HttpFilter.ShouldBeSkipped(path) {
 			stats.observe(r.Status.Http(), "", r.Duration)
+			trace.HttpRequest(method, path, r.Status, r.Duration)
 		}
-		trace.HttpRequest(method, path, r.Status, r.Duration)
 	case l7.ProtocolHTTP2:
 		if conn.http2Parser == nil {
 			conn.http2Parser = l7.NewHttp2Parser()
@@ -707,8 +707,8 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		for _, req := range requests {
 			if !common.HttpFilter.ShouldBeSkipped(req.Path) {
 				stats.observe(req.Status.Http(), "", req.Duration)
+				trace.Http2Request(req.Method, req.Path, req.Scheme, req.Status, req.Duration)
 			}
-			trace.Http2Request(req.Method, req.Path, req.Scheme, req.Status, req.Duration)
 		}
 	case l7.ProtocolPostgres:
 		if r.Method != l7.MethodStatementClose {
