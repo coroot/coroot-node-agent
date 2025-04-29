@@ -69,6 +69,12 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 	assert.Equal(t, "/system.slice/python-app.service", cg.ContainerId)
 	assert.Equal(t, ContainerTypeSystemdService, cg.ContainerType)
 
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/2000/cgroup"))
+	assert.Nil(t, err)
+	assert.Equal(t, "/kubepods/burstable/pod8833712d-6e69-4f5c-95f3-aebd020ce2e7/95cbe853416f52d927dec41f1406dd75015ea131244a1ca875a7cd4ebe927ac8", cg.Id)
+	assert.Equal(t, "95cbe853416f52d927dec41f1406dd75015ea131244a1ca875a7cd4ebe927ac8", cg.ContainerId)
+	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
+
 	baseCgroupPath = "/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podc83d0428_58af_41eb_8dba_b9e6eddffe7b.slice/docker-0e612005fd07e7f47e2cd07df99a2b4e909446814d71d0b5e4efc7159dd51252.scope"
 	defer func() {
 		baseCgroupPath = ""
@@ -141,6 +147,11 @@ func TestContainerByCgroup(t *testing.T) {
 	typ, id, err = containerByCgroup("/runtime.slice/kubelet.service")
 	as.Equal(typ, ContainerTypeSystemdService)
 	as.Equal("/runtime.slice/kubelet.service", id)
+	as.Nil(err)
+
+	typ, id, err = containerByCgroup("/reserved.slice/kubelet.service")
+	as.Equal(typ, ContainerTypeSystemdService)
+	as.Equal("/reserved.slice/kubelet.service", id)
 	as.Nil(err)
 
 	typ, id, err = containerByCgroup("/system.slice/system-postgresql.slice/postgresql@9.4-main.service")

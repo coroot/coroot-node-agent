@@ -23,7 +23,7 @@ var (
 	crioIdRegexp        = regexp.MustCompile(`crio-([a-z0-9]{64})`)
 	containerdIdRegexp  = regexp.MustCompile(`cri-containerd[-:]([a-z0-9]{64})`)
 	lxcIdRegexp         = regexp.MustCompile(`/lxc/([^/]+)`)
-	systemSliceIdRegexp = regexp.MustCompile(`(/(system|runtime)\.slice/([^/]+))`)
+	systemSliceIdRegexp = regexp.MustCompile(`(/(system|runtime|reserved)\.slice/([^/]+))`)
 	talosIdRegexp       = regexp.MustCompile(`/(system|podruntime)/([^/]+)`)
 )
 
@@ -66,6 +66,31 @@ type Cgroup struct {
 	ContainerId   string
 
 	subsystems map[string]string
+}
+
+func (cg *Cgroup) getId() string {
+	v2 := cg.subsystems[""]
+	cpu := cg.subsystems["cpu"]
+	mem := cg.subsystems["memory"]
+	name := cg.subsystems["name=systemd"]
+
+	id := v2
+	if strings.HasPrefix(cpu, "/kubepods") {
+		return cpu
+	}
+	if strings.HasPrefix(mem, "/kubepods") {
+		return mem
+	}
+	if id == "" {
+		id = cpu
+	}
+	if id == "" {
+		id = mem
+	}
+	if id == "" {
+		return name
+	}
+	return id
 }
 
 func (cg *Cgroup) CreatedAt() time.Time {
@@ -112,16 +137,8 @@ func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
 			cg.subsystems[cgType] = p
 		}
 	}
-	cg.Id = cg.subsystems[""]
-	if cg.Id == "" {
-		cg.Id = cg.subsystems["cpu"]
-	}
-	if cg.Id == "" {
-		cg.Id = cg.subsystems["memory"]
-	}
-	if cg.Id == "" && cg.subsystems["name=systemd"] != "" {
-		cg.Id = cg.subsystems["name=systemd"]
-	}
+
+	cg.Id = cg.getId()
 	if cg.ContainerType, cg.ContainerId, err = containerByCgroup(cg.Id); err != nil {
 		return nil, err
 	}
@@ -179,7 +196,7 @@ func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 		}
 		return ContainerTypeTalosRuntime, path.Join("/talos/", matches[2]), nil
 	}
-	if prefix == "system.slice" || prefix == "runtime.slice" {
+	if prefix == "system.slice" || prefix == "runtime.slice" || prefix == "reserved.slice" {
 		matches := systemSliceIdRegexp.FindStringSubmatch(cgroupPath)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid systemd cgroup %s", cgroupPath)
