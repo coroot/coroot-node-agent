@@ -345,6 +345,13 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		}
 		return nil
 	}
+	if common.ContainerFilter.ShouldBeSkipped(string(id)) {
+		klog.InfoS("skipping due to user-defined settings", "id", id, "pid", pid)
+		t := time.Now()
+		r.containersByPidIgnored[pid] = &t
+		return nil
+	}
+
 	if c := r.containersById[id]; c != nil {
 		klog.Warningln("id conflict:", id)
 		if cg.CreatedAt().After(c.cgroup.CreatedAt()) {
