@@ -154,6 +154,24 @@ type Collector struct {
 
 func NewCollector(hostname, kernelVersion string) *Collector {
 	md := metadata.GetInstanceMetadata()
+	if md == nil {
+		md = &metadata.CloudMetadata{}
+	}
+	if f := flags.GetString(flags.Provider); f != "" {
+		md.Provider = metadata.CloudProvider(f)
+	}
+	if f := flags.GetString(flags.Region); f != "" {
+		md.Region = f
+	}
+	if f := flags.GetString(flags.AvailabilityZone); f != "" {
+		md.AvailabilityZone = f
+	}
+	if f := flags.GetString(flags.InstanceType); f != "" {
+		md.InstanceType = f
+	}
+	if f := flags.GetString(flags.InstanceLifeCycle); f != "" {
+		md.LifeCycle = f
+	}
 	klog.Infof("instance metadata: %+v", md)
 	return &Collector{
 		hostname:         hostname,
@@ -235,29 +253,11 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 			}
 		}
 	}
-
-	im := metadata.CloudMetadata{}
-	if c.instanceMetadata != nil {
-		im = *c.instanceMetadata
-	}
-	if f := flags.GetString(flags.Provider); f != "" {
-		im.Provider = metadata.CloudProvider(f)
-	}
-	if f := flags.GetString(flags.Region); f != "" {
-		im.Region = f
-	}
-	if f := flags.GetString(flags.AvailabilityZone); f != "" {
-		im.AvailabilityZone = f
-	}
-	if f := flags.GetString(flags.InstanceType); f != "" {
-		im.InstanceType = f
-	}
-	if f := flags.GetString(flags.InstanceLifeCycle); f != "" {
-		im.LifeCycle = f
-	}
 	ch <- gauge(cloudInfoDesc, 1,
-		string(im.Provider), im.AccountId, im.InstanceId, im.InstanceType, im.LifeCycle,
-		im.Region, im.AvailabilityZone, im.AvailabilityZoneId, im.LocalIPv4, im.PublicIPv4,
+		string(c.instanceMetadata.Provider), c.instanceMetadata.AccountId, c.instanceMetadata.InstanceId,
+		c.instanceMetadata.InstanceType, c.instanceMetadata.LifeCycle,
+		c.instanceMetadata.Region, c.instanceMetadata.AvailabilityZone, c.instanceMetadata.AvailabilityZoneId,
+		c.instanceMetadata.LocalIPv4, c.instanceMetadata.PublicIPv4,
 	)
 }
 

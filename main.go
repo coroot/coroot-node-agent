@@ -144,10 +144,14 @@ func main() {
 	registerer.MustRegister(info("node_agent_info", version))
 
 	if md := nodeCollector.Metadata(); md != nil {
-		registerer = prometheus.WrapRegistererWith(
-			prometheus.Labels{"az": md.AvailabilityZone, "region": md.Region},
-			registerer,
-		)
+		region := md.Region
+		az := md.AvailabilityZone
+		if region != "" && az != "" {
+			registerer = prometheus.WrapRegistererWith(
+				prometheus.Labels{"az": md.AvailabilityZone, "region": md.Region},
+				registerer,
+			)
+		}
 	}
 	processInfoCh := profiling.Init(machineId, hostname)
 	cr, err := containers.NewRegistry(registerer, processInfoCh)
