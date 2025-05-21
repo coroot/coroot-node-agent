@@ -323,7 +323,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	for source, p := range c.logParsers {
 		for _, c := range p.parser.GetCounters() {
-			ch <- counter(metrics.LogMessages, float64(c.Messages), source, c.Level.String(), c.Hash, c.Sample)
+			ch <- counter(metrics.LogMessages, float64(c.Messages), source, c.Level.String(), c.Hash, common.TruncateUtf8(c.Sample, *flags.MaxLabelLength))
 		}
 	}
 
