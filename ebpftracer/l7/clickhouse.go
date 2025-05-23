@@ -21,6 +21,9 @@ func ParseClickhouse(payload []byte) string {
 		return ""
 	}
 	if info.ProtocolVersion > 0 {
+		if info.ProtocolVersion > version {
+			return ""
+		}
 		version = info.ProtocolVersion
 	}
 	var s proto.Setting
@@ -36,10 +39,14 @@ func ParseClickhouse(payload []byte) string {
 	if _, err = r.Str(); err != nil { // inter-server secret
 		return ""
 	}
-	if _, err = r.UVarInt(); err != nil { // stage
+	if stage, err := r.UVarInt(); err != nil { // stage
+		return ""
+	} else if stage > 2 { // invalid stage
 		return ""
 	}
-	if _, err = r.UVarInt(); err != nil { // compression
+	if c, err := r.UVarInt(); err != nil { // compression
+		return ""
+	} else if c > 1 { // invalid compression
 		return ""
 	}
 	l, err := r.StrLen()
