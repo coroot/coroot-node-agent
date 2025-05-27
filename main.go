@@ -147,10 +147,7 @@ func main() {
 		region := md.Region
 		az := md.AvailabilityZone
 		if region != "" && az != "" {
-			registerer = prometheus.WrapRegistererWith(
-				prometheus.Labels{"az": md.AvailabilityZone, "region": md.Region},
-				registerer,
-			)
+			registerer = prometheus.WrapRegistererWith(prometheus.Labels{"az": az, "region": region}, registerer)
 		}
 	}
 	processInfoCh := profiling.Init(machineId, hostname)
@@ -163,7 +160,7 @@ func main() {
 	profiling.Start()
 	defer profiling.Stop()
 
-	if err := prom.StartAgent(machineId); err != nil {
+	if err := prom.StartAgent(registry, machineId); err != nil {
 		klog.Exitln(err)
 	}
 
