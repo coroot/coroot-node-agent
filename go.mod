@@ -5,6 +5,7 @@ go 1.23.8
 require (
 	cloud.google.com/go/compute/metadata v0.5.2
 	github.com/ClickHouse/ch-go v0.62.0
+	github.com/NVIDIA/go-nvml v0.12.4-1
 	github.com/agoda-com/opentelemetry-logs-go v0.4.1
 	github.com/cilium/cilium v1.17.2
 	github.com/cilium/ebpf v0.17.3

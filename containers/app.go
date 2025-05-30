@@ -120,6 +120,8 @@ func guessApplicationTypeByCmdline(cmdline []byte) string {
 		return "nats"
 	case bytes.HasSuffix(cmd, []byte("java")):
 		return "java"
+	case bytes.HasSuffix(cmd, []byte("ollama")):
+		return "ollama"
 	case bytes.Contains(cmd, []byte("victoria-metrics")) ||
 		bytes.Contains(cmd, []byte("vmstorage")) ||
 		bytes.Contains(cmd, []byte("vminsert")) ||
