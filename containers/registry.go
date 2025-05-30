@@ -14,6 +14,7 @@ import (
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/flags"
+	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
@@ -59,9 +60,11 @@ type Registry struct {
 	trafficStatsLastUpdated time.Time
 	trafficStatsLock        sync.Mutex
 	trafficStatsUpdateCh    chan *TrafficStatsUpdate
+
+	gpuProcessUsageSampleChan chan gpu.ProcessUsageSample
 }
 
-func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo) (*Registry, error) {
+func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, gpuProcessUsageSampleChan chan gpu.ProcessUsageSample) (*Registry, error) {
 	ns, err := proc.GetSelfNetNs()
 	if err != nil {
 		return nil, err
@@ -113,6 +116,8 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo) (*
 		tracer: ebpftracer.NewTracer(hostNetNs, selfNetNs, *flags.DisableL7Tracing),
 
 		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate),
+
+		gpuProcessUsageSampleChan: gpuProcessUsageSampleChan,
 	}
 	if err = reg.Register(r); err != nil {
 		return nil, err
@@ -204,6 +209,12 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			}
 			if c := r.containersByPid[u.Pid]; c != nil {
 				c.updateTrafficStats(u)
+			}
+		case sample := <-r.gpuProcessUsageSampleChan:
+			if c := r.containersByPid[sample.Pid]; c != nil {
+				if p := c.processes[sample.Pid]; p != nil {
+					p.addGpuUsageSample(sample)
+				}
 			}
 		case e, more := <-ch:
 			if !more {

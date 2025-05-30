@@ -51,6 +51,9 @@ var metrics = struct {
 
 	PythonThreadLockWaitTime *prometheus.Desc
 
+	GpuUsagePercent       *prometheus.Desc
+	GpuMemoryUsagePercent *prometheus.Desc
+
 	Ip2Fqdn *prometheus.Desc
 }{
 	ContainerInfo: metric("container_info", "Meta information about the container", "image", "systemd_triggered_by"),
@@ -100,6 +103,9 @@ var metrics = struct {
 	Ip2Fqdn: metric("ip_to_fqdn", "Mapping IP addresses to FQDNs based on DNS requests initiated by containers", "ip", "fqdn"),
 
 	PythonThreadLockWaitTime: metric("container_python_thread_lock_wait_time_seconds", "Time spent waiting acquiring GIL in seconds"),
+
+	GpuUsagePercent:       metric("container_resources_gpu_usage_percent", "Percent of GPU compute resources used by the container", "gpu_uuid"),
+	GpuMemoryUsagePercent: metric("container_resources_gpu_memory_usage_percent", "Percent of GPU memory used by the container", "gpu_uuid"),
 }
 
 var (
