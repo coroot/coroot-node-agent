@@ -29,6 +29,7 @@ var (
 	gcInterval                = 10 * time.Minute
 	pingTimeout               = 300 * time.Millisecond
 	multilineCollectorTimeout = time.Second
+	gpuStatsWindow            = 15 * time.Second
 )
 
 type ContainerID string
@@ -132,6 +133,8 @@ type Container struct {
 	l7Stats  L7Stats
 	dnsStats *L7Metrics
 
+	gpuStats map[string]*GpuUsage
+
 	oomKills                 int
 	pythonThreadLockWaitTime time.Duration
 
@@ -180,6 +183,8 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		connectionsByPidFd:       map[PidFd]*ActiveConnection{},
 		l7Stats:                  L7Stats{},
 		dnsStats:                 &L7Metrics{},
+
+		gpuStats: map[string]*GpuUsage{},
 
 		mounts:     map[string]proc.MountInfo{},
 		seenMounts: map[uint64]struct{}{},
@@ -370,7 +375,27 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 				process.dotNetMonitor.Collect(ch)
 			}
 		}
+
+		for _, usage := range c.gpuStats {
+			usage.Reset()
+		}
+		if usage := process.getGPUUsage(); usage != nil {
+			for uuid, u := range usage {
+				tu := c.gpuStats[uuid]
+				if tu == nil {
+					tu = &GpuUsage{}
+					c.gpuStats[uuid] = tu
+				}
+				tu.GPU += u.GPU
+				tu.Memory += u.Memory
+			}
+		}
 	}
+	for uuid, usage := range c.gpuStats {
+		ch <- gauge(metrics.GpuUsagePercent, usage.GPU, uuid)
+		ch <- gauge(metrics.GpuMemoryUsagePercent, usage.Memory, uuid)
+	}
+
 	for appType := range appTypes {
 		ch <- gauge(metrics.ApplicationType, 1, appType)
 	}

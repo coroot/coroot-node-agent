@@ -11,6 +11,7 @@ import (
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/coroot/coroot-node-agent/flags"
+	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/proc"
@@ -141,6 +142,14 @@ func main() {
 	if err := registerer.Register(nodeCollector); err != nil {
 		klog.Exitln(err)
 	}
+
+	gpuCollector, err := gpu.NewCollector()
+	if err != nil {
+		klog.Warningln("failed to initialize GPU collector:", err)
+	}
+	if err := registerer.Register(gpuCollector); err != nil {
+		klog.Exitln(err)
+	}
 	registerer.MustRegister(info("node_agent_info", version))
 
 	if md := nodeCollector.Metadata(); md != nil {
@@ -151,7 +160,7 @@ func main() {
 		}
 	}
 	processInfoCh := profiling.Init(machineId, hostname)
-	cr, err := containers.NewRegistry(registerer, processInfoCh)
+	cr, err := containers.NewRegistry(registerer, processInfoCh, gpuCollector.ProcessUsageSampleCh)
 	if err != nil {
 		klog.Exitln(err)
 	}
