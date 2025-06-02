@@ -139,6 +139,7 @@ func (a *Agent) send(fPath string) error {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("Content-Encoding", "snappy")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	t := time.Now()
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -147,6 +148,7 @@ func (a *Agent) send(fPath string) error {
 	if resp.StatusCode >= 300 {
 		return errors.New(resp.Status)
 	}
+	klog.Infof("sent metrics in %s", time.Since(t).Truncate(time.Millisecond))
 	return nil
 }
 
