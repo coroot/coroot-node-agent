@@ -35,8 +35,6 @@ type Agent struct {
 
 	spoolDir     string
 	maxSpoolSize int64
-
-	compressionBuf []byte
 }
 
 func StartAgent(reg *prometheus.Registry, machineId string) error {
@@ -169,9 +167,8 @@ func (a *Agent) scrape() error {
 		return err
 	}
 
-	a.compressionBuf = snappy.Encode(a.compressionBuf, decompressed)
-	err = a.writeToSpool(timestamp, a.compressionBuf)
-	a.compressionBuf = a.compressionBuf[:cap(a.compressionBuf)]
+	compressed := snappy.Encode(nil, decompressed)
+	err = a.writeToSpool(timestamp, compressed)
 	return err
 }
 
