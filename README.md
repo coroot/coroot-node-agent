@@ -5,7 +5,7 @@
 
 The agent gathers metrics related to a node and the containers running on it, and it exposes them in the Prometheus format.
 
-It uses eBPF to track container related events such as TCP connects, so the minimum supported Linux kernel version is 4.16.
+It uses eBPF to track container related events such as TCP connects, so the minimum supported Linux kernel version is 5.1.
 
 <img src="https://coroot.com/static/img/blog/ebpf.svg" width="800" />
 
