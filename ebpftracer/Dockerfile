@@ -5,12 +5,12 @@ RUN apk add llvm clang libbpf-dev linux-headers
 COPY ebpf /tmp/ebpf
 WORKDIR /tmp/ebpf
 
-RUN clang -g -O2 -target bpf -D__KERNEL_FROM=416 -D__TARGET_ARCH_x86 -c ebpf.c -o ebpf416x86.o && llvm-strip --strip-debug ebpf501x86.o
+RUN clang -g -O2 -target bpf -D__KERNEL_FROM=416 -D__TARGET_ARCH_x86 -c ebpf.c -o ebpf416x86.o && llvm-strip --strip-debug ebpf416x86.o
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=420 -D__TARGET_ARCH_x86 -c ebpf.c -o ebpf420x86.o && llvm-strip --strip-debug ebpf420x86.o
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=506 -D__TARGET_ARCH_x86 -c ebpf.c -o ebpf506x86.o && llvm-strip --strip-debug ebpf506x86.o
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=512 -D__TARGET_ARCH_x86 -c ebpf.c -o ebpf512x86.o && llvm-strip --strip-debug ebpf512x86.o
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=512 -D__TARGET_ARCH_x86 -D__CTX_EXTRA_PADDING -c ebpf.c -o ebpf512x86cep.o && llvm-strip --strip-debug ebpf512x86cep.o
-RUN clang -g -O2 -target bpf -D__KERNEL_FROM=416 -D__TARGET_ARCH_arm64 -c ebpf.c -o ebpf416arm64.o && llvm-strip --strip-debug ebpf501arm64.o
+RUN clang -g -O2 -target bpf -D__KERNEL_FROM=416 -D__TARGET_ARCH_arm64 -c ebpf.c -o ebpf416arm64.o && llvm-strip --strip-debug ebpf416arm64.o
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=420 -D__TARGET_ARCH_arm64 -c ebpf.c -o ebpf420arm64.o && llvm-strip --strip-debug ebpf420arm64.o
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=506 -D__TARGET_ARCH_arm64 -c ebpf.c -o ebpf506arm64.o && llvm-strip --strip-debug ebpf506arm64.o
 RUN clang -g -O2 -target bpf -D__KERNEL_FROM=512 -D__TARGET_ARCH_arm64 -c ebpf.c -o ebpf512arm64.o && llvm-strip --strip-debug ebpf512arm64.o
