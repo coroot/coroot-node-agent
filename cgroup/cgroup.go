@@ -25,6 +25,7 @@ var (
 	lxcIdRegexp         = regexp.MustCompile(`/lxc/([^/]+)`)
 	systemSliceIdRegexp = regexp.MustCompile(`(/(system|runtime|reserved)\.slice/([^/]+))`)
 	talosIdRegexp       = regexp.MustCompile(`/(system|podruntime)/([^/]+)`)
+	lxcPayloadRegexp    = regexp.MustCompile(`/lxc\.payload\.([^/]+)`)
 )
 
 type ContainerType uint8
@@ -129,7 +130,14 @@ func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
 			continue
 		}
 		for _, cgType := range strings.Split(parts[1], ",") {
-			p := path.Join(baseCgroupPath, parts[2])
+			cgPath := parts[2]
+			if strings.HasPrefix(parts[2], "/lxc.payload.") {
+				pp := strings.Split(cgPath, "/")
+				if len(parts) > 2 {
+					cgPath = "/" + pp[1]
+				}
+			}
+			p := path.Join(baseCgroupPath, cgPath)
 			switch p {
 			case "/", "/init.scope":
 				continue
@@ -147,24 +155,22 @@ func NewFromProcessCgroupFile(filePath string) (*Cgroup, error) {
 
 func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 	parts := strings.Split(strings.TrimLeft(cgroupPath, "/"), "/")
-	if cgroupPath == "/init" {
-		return ContainerTypeTalosRuntime, "/talos/init", nil
-	}
-	if len(parts) < 2 {
+	if len(parts) == 0 {
 		return ContainerTypeStandaloneProcess, "", nil
 	}
 	prefix := parts[0]
-	if prefix == "user.slice" || prefix == "init.scope" {
+	switch {
+	case cgroupPath == "/init":
+		return ContainerTypeTalosRuntime, "/talos/init", nil
+	case prefix == "user.slice" || prefix == "init.scope":
 		return ContainerTypeStandaloneProcess, "", nil
-	}
-	if prefix == "docker" || (prefix == "system.slice" && strings.HasPrefix(parts[1], "docker-")) {
+	case prefix == "docker" || (prefix == "system.slice" && len(parts) > 1 && strings.HasPrefix(parts[1], "docker-")):
 		matches := dockerIdRegexp.FindStringSubmatch(cgroupPath)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid docker cgroup %s", cgroupPath)
 		}
 		return ContainerTypeDocker, matches[1], nil
-	}
-	if strings.Contains(cgroupPath, "kubepods") {
+	case strings.Contains(cgroupPath, "kubepods"):
 		crioMatches := crioIdRegexp.FindStringSubmatch(cgroupPath)
 		if crioMatches != nil {
 			return ContainerTypeCrio, crioMatches[1], nil
@@ -181,27 +187,33 @@ func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 			return ContainerTypeSandbox, "", nil
 		}
 		return ContainerTypeDocker, matches[1], nil
-	}
-	if prefix == "lxc" {
-		matches := lxcIdRegexp.FindStringSubmatch(cgroupPath)
-		if matches == nil {
-			return ContainerTypeUnknown, "", fmt.Errorf("invalid lxc cgroup %s", cgroupPath)
-		}
-		return ContainerTypeLxc, matches[1], nil
-	}
-	if prefix == "system" || prefix == "podruntime" {
+	case prefix == "system" || prefix == "podruntime":
 		matches := talosIdRegexp.FindStringSubmatch(cgroupPath)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid talos runtime cgroup %s", cgroupPath)
 		}
 		return ContainerTypeTalosRuntime, path.Join("/talos/", matches[2]), nil
-	}
-	if prefix == "system.slice" || prefix == "runtime.slice" || prefix == "reserved.slice" {
+	case prefix == "system.slice" || prefix == "runtime.slice" || prefix == "reserved.slice":
 		matches := systemSliceIdRegexp.FindStringSubmatch(cgroupPath)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid systemd cgroup %s", cgroupPath)
 		}
 		return ContainerTypeSystemdService, strings.Replace(matches[1], "\\x2d", "-", -1), nil
+	case prefix == "lxc":
+		matches := lxcIdRegexp.FindStringSubmatch(cgroupPath)
+		if matches == nil {
+			return ContainerTypeUnknown, "", fmt.Errorf("invalid lxc cgroup %s", cgroupPath)
+		}
+		return ContainerTypeLxc, matches[1], nil
+	case strings.HasPrefix(prefix, "lxc.payload."):
+		matches := lxcPayloadRegexp.FindStringSubmatch(cgroupPath)
+		if matches == nil {
+			return ContainerTypeUnknown, "", fmt.Errorf("invalid lxc payload cgroup %s", cgroupPath)
+		}
+		return ContainerTypeLxc, "/lxc/" + matches[1], nil
+	case len(parts) < 2:
+		return ContainerTypeStandaloneProcess, "", nil
 	}
+
 	return ContainerTypeUnknown, "", fmt.Errorf("unknown container: %s", cgroupPath)
 }
