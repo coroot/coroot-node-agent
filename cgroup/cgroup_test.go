@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewFromProcessCgroupFile(t *testing.T) {
@@ -74,6 +75,12 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 	assert.Equal(t, "/kubepods/burstable/pod8833712d-6e69-4f5c-95f3-aebd020ce2e7/95cbe853416f52d927dec41f1406dd75015ea131244a1ca875a7cd4ebe927ac8", cg.Id)
 	assert.Equal(t, "95cbe853416f52d927dec41f1406dd75015ea131244a1ca875a7cd4ebe927ac8", cg.ContainerId)
 	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
+
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/3000/cgroup"))
+	require.Nil(t, err)
+	assert.Equal(t, "/lxc.payload.first", cg.Id)
+	assert.Equal(t, "/lxc/first", cg.ContainerId)
+	assert.Equal(t, ContainerTypeLxc, cg.ContainerType)
 
 	baseCgroupPath = "/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podc83d0428_58af_41eb_8dba_b9e6eddffe7b.slice/docker-0e612005fd07e7f47e2cd07df99a2b4e909446814d71d0b5e4efc7159dd51252.scope"
 	defer func() {
@@ -177,5 +184,15 @@ func TestContainerByCgroup(t *testing.T) {
 	typ, id, err = containerByCgroup("/init")
 	as.Equal(typ, ContainerTypeTalosRuntime)
 	as.Equal("/talos/init", id)
+	as.Nil(err)
+
+	typ, id, err = containerByCgroup("/lxc.payload.first")
+	as.Equal(typ, ContainerTypeLxc)
+	as.Equal("/lxc/first", id)
+	as.Nil(err)
+
+	typ, id, err = containerByCgroup("/lxc.monitor.first")
+	as.Equal(ContainerTypeStandaloneProcess, typ)
+	as.Equal("", id)
 	as.Nil(err)
 }
