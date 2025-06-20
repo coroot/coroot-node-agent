@@ -57,5 +57,8 @@ int is_http_response(char *buf, __s32 *status) {
         return 0;
     }
     *status = (b[9]-'0')*100 + (b[10]-'0')*10 + (b[11]-'0');
+     if (*status / 100 == 1) {
+        return 2; // Return 2 to indicate a provisional response.
+    }
     return 1;
 }
