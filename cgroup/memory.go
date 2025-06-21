@@ -9,9 +9,11 @@ import (
 const maxMemory = 1 << 62
 
 type MemoryStat struct {
-	RSS   uint64
-	Cache uint64
-	Limit uint64
+	RSS        uint64
+	Cache      uint64
+	Limit      uint64
+	PgFault    uint64
+	PgMajFault uint64
 }
 
 func (cg *Cgroup) MemoryStat() *MemoryStat {
@@ -48,9 +50,11 @@ func (cg *Cgroup) memoryStatV1() (*MemoryStat, error) {
 	//	 mapped_file is accounted only when the memory cgroup is owner of page
 	//	 cache.)
 	return &MemoryStat{
-		RSS:   vars["rss"] + vars["mapped_file"],
-		Cache: vars["cache"],
-		Limit: limit,
+		RSS:        vars["rss"] + vars["mapped_file"],
+		Cache:      vars["cache"],
+		Limit:      limit,
+		PgFault:    vars["pgfault"],
+		PgMajFault: vars["pgmajfault"],
 	}, nil
 }
 
@@ -64,8 +68,10 @@ func (cg *Cgroup) memoryStatV2() (*MemoryStat, error) {
 	}
 	limit, _ := common.ReadUintFromFile(path.Join(cg2Root, cg.subsystems[""], "memory.max"))
 	return &MemoryStat{
-		RSS:   vars["anon"] + vars["file_mapped"],
-		Cache: vars["file"],
-		Limit: limit,
+		RSS:        vars["anon"] + vars["file_mapped"],
+		Cache:      vars["file"],
+		Limit:      limit,
+		PgFault:    vars["pgfault"],
+		PgMajFault: vars["pgmajfault"],
 	}, nil
 }
