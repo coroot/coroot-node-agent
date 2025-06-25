@@ -169,7 +169,7 @@ func main() {
 	profiling.Start()
 	defer profiling.Stop()
 
-	if err := prom.StartAgent(registry, machineId); err != nil {
+	if err := prom.StartAgent(registry, machineId, systemUuid); err != nil {
 		klog.Exitln(err)
 	}
 
