@@ -37,3 +37,6 @@
 2936 3107 0:330 /null /proc/sched_debug rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
 2937 3107 0:334 / /proc/scsi ro,relatime - tmpfs tmpfs ro
 2977 3110 0:335 / /sys/firmware ro,relatime - tmpfs tmpfs ro
+2664 2652 0:422 / /bitnami/postgresql rw,relatime - zfs zfspv-pool/pvc-eac565b8-0041-470f-8af7-5ebfa622d31d rw,xattr,noacl,casesensitive
+2665 2652 0:422 / /bitnami/postgresql rw,relatime foo - zfs zfspv-pool/pvc-eac565b8-0041-470f-8af7-5ebfa622d31d rw,xattr,noacl,casesensitive
+2666 2652 0:422 / /bitnami/postgresql rw,relatime foo foo:bar - zfs zfspv-pool/pvc-eac565b8-0041-470f-8af7-5ebfa622d31d rw,xattr,noacl,casesensitive
