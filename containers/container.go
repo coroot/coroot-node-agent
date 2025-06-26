@@ -263,6 +263,10 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		if s.Limit > 0 {
 			ch <- gauge(metrics.MemoryLimit, float64(s.Limit))
 		}
+		if s.PgFault > 0 {
+			ch <- counter(metrics.MemoryPageFaults, float64(s.PgMajFault), "major")
+			ch <- counter(metrics.MemoryPageFaults, float64(s.PgFault-s.PgMajFault), "minor")
+		}
 	}
 
 	if c.oomKills > 0 {
