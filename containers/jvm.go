@@ -13,7 +13,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func jvmMetrics(pid uint32) (string, []prometheus.Metric) {
+func jvmMetrics(pid uint32, jvmParams JVMParams) (string, []prometheus.Metric) {
 	nsPid, err := proc.GetNsPid(pid)
 	if err != nil {
 		if !common.IsNotExist(err) {
@@ -37,7 +37,12 @@ func jvmMetrics(pid uint32) (string, []prometheus.Metric) {
 	jvm := pd.getString("sun.rt.javaCommand")
 	var res []prometheus.Metric
 
-	res = append(res, gauge(metrics.JvmInfo, 1, jvm, pd.getString("java.property.java.version")))
+	res = append(res, gauge(metrics.JvmInfo, 1, jvm, pd.getString("java.property.java.version"),
+		jvmParams.JavaMaxHeapSize,
+		jvmParams.JavaInitialHeapSize,
+		jvmParams.JavaMaxHeapAsPercentage,
+		jvmParams.JavaInitialHeapAsPercentage,
+		jvmParams.GCType))
 
 	func() {
 		size := float64(0)

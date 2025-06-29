@@ -93,7 +93,7 @@ var metrics = struct {
 
 	ApplicationType: metric("container_application_type", "Type of the application running in the container (e.g. memcached, postgres, mysql)", "application_type"),
 
-	JvmInfo:              metric("container_jvm_info", "Meta information about the JVM", "jvm", "java_version"),
+	JvmInfo:              metric("container_jvm_info", "Meta information about the JVM", "jvm", "java_version", "max_heap_size", "initial_heap_size", "max_heap_percentage", "initial_heap_percentage", "gc_type"),
 	JvmHeapSize:          metric("container_jvm_heap_size_bytes", "Total heap size in bytes", "jvm"),
 	JvmHeapUsed:          metric("container_jvm_heap_used_bytes", "Used heap size in bytes", "jvm"),
 	JvmGCTime:            metric("container_jvm_gc_time_seconds", "Time spent in the given JVM garbage collector in seconds", "jvm", "gc"),

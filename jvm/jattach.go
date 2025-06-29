@@ -86,6 +86,33 @@ func (jvm *JVM) DumpPerfmap() error {
 	return nil
 }
 
+func (jvm *JVM) GetVMFlags() (string, error) {
+	if err := jvm.conn.SetDeadline(time.Now().Add(requestTimeout)); err != nil {
+		return "", err
+	}
+	defer jvm.conn.SetDeadline(time.Time{})
+	msg := strings.Join([]string{"1", "jcmd", "VM.flags", "", "", ""}, "\x00")
+	if _, err := jvm.conn.Write([]byte(msg)); err != nil {
+		return "", err
+	}
+	status := []byte{0}
+	if _, err := jvm.conn.Read(status); err != nil {
+		return "", err
+	}
+	if status[0] != '0' {
+		return "", errors.New("status:" + string(status))
+	}
+	
+	// Read the VM flags output
+	buffer := make([]byte, 32*1024) // 32KB buffer should be enough for VM flags
+	n, err := jvm.conn.Read(buffer)
+	if err != nil {
+		return "", err
+	}
+	
+	return string(buffer[:n]), nil
+}
+
 func waitForSock(p string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), connectionTimeout)
 	defer cancel()
