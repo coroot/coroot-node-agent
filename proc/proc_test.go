@@ -29,6 +29,9 @@ func TestGetMountInfo(t *testing.T) {
 		"3128": {MajorMinor: "259:2", MountPoint: "/etc/resolv.conf"},
 		"3129": {MajorMinor: "259:2", MountPoint: "/etc/hostname"},
 		"3130": {MajorMinor: "259:2", MountPoint: "/etc/hosts"},
+		"2664": {MajorMinor: "0:422", MountPoint: "/bitnami/postgresql"},
+		"2665": {MajorMinor: "0:422", MountPoint: "/bitnami/postgresql"},
+		"2666": {MajorMinor: "0:422", MountPoint: "/bitnami/postgresql"},
 	}, res)
 }
 

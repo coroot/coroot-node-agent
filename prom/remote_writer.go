@@ -1,7 +1,9 @@
 package prom
 
 import (
+	"crypto/md5"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,7 +39,7 @@ type Agent struct {
 	maxSpoolSize int64
 }
 
-func StartAgent(reg *prometheus.Registry, machineId string) error {
+func StartAgent(reg *prometheus.Registry, machineId, systemUuid string) error {
 	if *flags.MetricsEndpoint == nil {
 		return nil
 	}
@@ -47,11 +49,19 @@ func StartAgent(reg *prometheus.Registry, machineId string) error {
 	up.Set(1)
 	reg.MustRegister(up)
 
+	instance := machineId
+	if s := strings.ReplaceAll(systemUuid, "-", ""); s != "" && s != machineId {
+		hash := md5.New()
+		hash.Write([]byte(machineId))
+		hash.Write([]byte(s))
+		instance = hex.EncodeToString(hash.Sum(nil))
+	}
+
 	a := &Agent{
 		reg: reg,
 		url: *flags.MetricsEndpoint,
 		labels: map[string]string{
-			model.InstanceLabel: machineId,
+			model.InstanceLabel: instance,
 			model.JobLabel:      "coroot-node-agent",
 		},
 		httpClient: http.Client{

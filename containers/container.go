@@ -272,12 +272,12 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	if disks, err := node.GetDisks(); err == nil {
 		ioStat := c.cgroup.IOStat()
 		for majorMinor, mounts := range c.getMounts() {
-			dev := disks.GetParentBlockDevice(majorMinor)
-			if dev == nil {
-				continue
+			var device string
+			if dev := disks.GetParentBlockDevice(majorMinor); dev != nil {
+				device = dev.Name
 			}
 			for mountPoint, fsStat := range mounts {
-				dls := []string{mountPoint, dev.Name, c.metadata.volumes[mountPoint]}
+				dls := []string{mountPoint, device, c.metadata.volumes[mountPoint]}
 				ch <- gauge(metrics.DiskSize, float64(fsStat.CapacityBytes), dls...)
 				ch <- gauge(metrics.DiskUsed, float64(fsStat.UsedBytes), dls...)
 				ch <- gauge(metrics.DiskReserved, float64(fsStat.ReservedBytes), dls...)
