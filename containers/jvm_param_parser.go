@@ -17,7 +17,7 @@ type JVMParams struct {
 	GCType                      string // garbage collector type (e.g., G1GC, SerialGC, ParallelGC, etc.)
 }
 
-func ParseJVMParams(cmdline string, pid uint32) JVMParams {
+func ParseJVMParams(pid uint32) JVMParams {
 	// Get VM flags directly from the running JVM
 	vmFlags, err := jvm.GetVMFlags(pid)
 	if err != nil {
