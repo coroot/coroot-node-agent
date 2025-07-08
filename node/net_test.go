@@ -17,6 +17,8 @@ func TestNetDeviceFilter(t *testing.T) {
 		"eno2":            true,
 		"em1":             true,
 		"enx78e7d1ea46da": true,
+		"enP4p65s0":       true,
+		"enP2p33s0":       true,
 
 		"dummy0":          false,
 		"docker0":         false,
