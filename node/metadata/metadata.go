@@ -23,6 +23,7 @@ const (
 	CloudProviderAlibaba      CloudProvider = "Alibaba"
 	CloudProviderScaleway     CloudProvider = "Scaleway"
 	CloudProviderIBM          CloudProvider = "IBM"
+	CloudProviderOracle       CloudProvider = "Oracle"
 	CloudProviderUnknown      CloudProvider = ""
 )
 
@@ -72,6 +73,12 @@ func getCloudProvider() CloudProvider {
 			return CloudProviderIBM
 		}
 	}
+	if vendor, err := os.ReadFile("/sys/class/dmi/id/chassis_asset_tag"); err == nil {
+		if strings.TrimSpace(string(vendor)) == "OracleCloud.com" {
+			return CloudProviderOracle
+		}
+	}
+
 	return CloudProviderUnknown
 }
 
@@ -95,6 +102,8 @@ func GetInstanceMetadata() *CloudMetadata {
 		return getScalewayMetadata()
 	case CloudProviderIBM:
 		return getIBMMetadata()
+	case CloudProviderOracle:
+		return getOracleMetadata()
 	}
 	return nil
 }
