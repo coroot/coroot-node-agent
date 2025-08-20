@@ -982,6 +982,16 @@ func (c *Container) runLogParser(logPath string) {
 		return
 	}
 
+	for pid := range c.processes {
+		if processFlags, err := proc.GetFlags(pid); err == nil {
+			if processFlags.LogMonitoringDisabled {
+				klog.InfoS("skipping log monitoring due to COROOT_LOG_MONITORING=disabled", "cg", c.cgroup.Id)
+				return
+			}
+			break
+		}
+	}
+
 	containerId := string(c.id)
 
 	if logPath != "" {
