@@ -14,10 +14,11 @@ var metrics = struct {
 	CPUDelay      *prometheus.Desc
 	ThrottledTime *prometheus.Desc
 
-	MemoryLimit *prometheus.Desc
-	MemoryRss   *prometheus.Desc
-	MemoryCache *prometheus.Desc
-	OOMKills    *prometheus.Desc
+	MemoryLimit      *prometheus.Desc
+	MemoryRss        *prometheus.Desc
+	MemoryCache      *prometheus.Desc
+	OOMKills         *prometheus.Desc
+	MemoryPageFaults *prometheus.Desc
 
 	DiskDelay      *prometheus.Desc
 	DiskSize       *prometheus.Desc
@@ -65,10 +66,11 @@ var metrics = struct {
 	CPUDelay:      metric("container_resources_cpu_delay_seconds_total", "Total time duration processes of the container have been waiting for a CPU (while being runnable)"),
 	ThrottledTime: metric("container_resources_cpu_throttled_seconds_total", "Total time duration the container has been throttled"),
 
-	MemoryLimit: metric("container_resources_memory_limit_bytes", "Memory limit of the container"),
-	MemoryRss:   metric("container_resources_memory_rss_bytes", "Amount of physical memory used by the container (doesn't include page cache)"),
-	MemoryCache: metric("container_resources_memory_cache_bytes", "Amount of page cache memory allocated by the container"),
-	OOMKills:    metric("container_oom_kills_total", "Total number of times the container was terminated by the OOM killer"),
+	MemoryLimit:      metric("container_resources_memory_limit_bytes", "Memory limit of the container"),
+	MemoryRss:        metric("container_resources_memory_rss_bytes", "Amount of physical memory used by the container (doesn't include page cache)"),
+	MemoryCache:      metric("container_resources_memory_cache_bytes", "Amount of page cache memory allocated by the container"),
+	OOMKills:         metric("container_oom_kills_total", "Total number of times the container was terminated by the OOM killer"),
+	MemoryPageFaults: metric("container_resources_memory_page_faults_total", "Total number of page faults by the container", "type"),
 
 	DiskDelay:      metric("container_resources_disk_delay_seconds_total", "Total time duration processes of the container have been waiting fot I/Os to complete"),
 	DiskSize:       metric("container_resources_disk_size_bytes", "Total capacity of the volume", "mount_point", "device", "volume"),
