@@ -48,8 +48,8 @@ func (cg *Cgroup) memoryStatV1() (*MemoryStat, error) {
 	//	 mapped_file is accounted only when the memory cgroup is owner of page
 	//	 cache.)
 	return &MemoryStat{
-		RSS:   vars["rss"] + vars["mapped_file"],
-		Cache: vars["cache"],
+		RSS:   vars["total_rss"] + vars["total_mapped_file"],
+		Cache: vars["total_cache"],
 		Limit: limit,
 	}, nil
 }
