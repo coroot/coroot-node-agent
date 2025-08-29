@@ -8,21 +8,22 @@ import (
 type Protocol uint8
 
 const (
-	ProtocolHTTP       Protocol = 1
-	ProtocolPostgres   Protocol = 2
-	ProtocolRedis      Protocol = 3
-	ProtocolMemcached  Protocol = 4
-	ProtocolMysql      Protocol = 5
-	ProtocolMongo      Protocol = 6
-	ProtocolKafka      Protocol = 7
-	ProtocolCassandra  Protocol = 8
-	ProtocolRabbitmq   Protocol = 9
-	ProtocolNats       Protocol = 10
-	ProtocolHTTP2      Protocol = 11
-	ProtocolDubbo2     Protocol = 12
-	ProtocolDNS        Protocol = 13
-	ProtocolClickhouse Protocol = 14
-	ProtocolZookeeper  Protocol = 15
+	ProtocolHTTP         Protocol = 1
+	ProtocolPostgres     Protocol = 2
+	ProtocolRedis        Protocol = 3
+	ProtocolMemcached    Protocol = 4
+	ProtocolMysql        Protocol = 5
+	ProtocolMongo        Protocol = 6
+	ProtocolKafka        Protocol = 7
+	ProtocolCassandra    Protocol = 8
+	ProtocolRabbitmq     Protocol = 9
+	ProtocolNats         Protocol = 10
+	ProtocolHTTP2        Protocol = 11
+	ProtocolDubbo2       Protocol = 12
+	ProtocolDNS          Protocol = 13
+	ProtocolClickhouse   Protocol = 14
+	ProtocolZookeeper    Protocol = 15
+	ProtocolFoundationDB Protocol = 16
 )
 
 func (p Protocol) String() string {
@@ -57,6 +58,8 @@ func (p Protocol) String() string {
 		return "ClickHouse"
 	case ProtocolZookeeper:
 		return "Zookeeper"
+	case ProtocolFoundationDB:
+		return "FoundationDB"
 	}
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }

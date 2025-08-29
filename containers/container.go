@@ -779,6 +779,8 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		stats.observe(r.Status.Zookeeper(), "", r.Duration)
 		op, arg := l7.ParseZookeeper(r.Payload)
 		trace.ZookeeperRequest(op, arg, r.Status, r.Duration)
+	case l7.ProtocolFoundationDB:
+		stats.observe(r.Status.String(), "", r.Duration)
 	}
 	return nil
 }
