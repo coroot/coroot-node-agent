@@ -28,6 +28,8 @@ type Process struct {
 	Pid       uint32
 	StartedAt time.Time
 
+	Flags proc.Flags
+
 	netNsId string
 
 	ctx        context.Context
@@ -46,6 +48,7 @@ type Process struct {
 
 func NewProcess(pid uint32, stats *taskstats.Stats, tracer *ebpftracer.Tracer) *Process {
 	p := &Process{Pid: pid, StartedAt: stats.BeginTime}
+	p.Flags, _ = proc.GetFlags(pid)
 	p.ctx, p.cancelFunc = context.WithCancel(context.Background())
 	go p.instrument(tracer)
 	return p

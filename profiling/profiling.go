@@ -215,6 +215,7 @@ func (tf *TargetFinder) start(processInfoCh <-chan containers.ProcessInfo) {
 				target: sd.NewTargetForTesting(cid, 0, sd.DiscoveryTarget{
 					"service_name": common.ContainerIdToOtelServiceName(cid),
 				}),
+				flags: pi.Flags,
 			}
 			tf.lock.Unlock()
 		}
@@ -234,10 +235,6 @@ func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
 	var err error
 	if !pi.initialized {
 		pi.initialized = true
-		if pi.flags, err = proc.GetFlags(pid); err != nil {
-			delete(tf.processes, pid)
-			return nil
-		}
 		if !pi.flags.EbpfProfilingDisabled {
 			cmdline := proc.GetCmdline(pid)
 			if proc.IsJvm(cmdline) {
