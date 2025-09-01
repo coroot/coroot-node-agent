@@ -14,6 +14,7 @@
 #define PROTOCOL_DNS        13
 #define PROTOCOL_CLICKHOUSE 14
 #define PROTOCOL_ZOOKEEPER  15
+#define PROTOCOL_FOUNDATIONDB 16
 
 #define STATUS_UNKNOWN  0
 #define STATUS_OK       200
@@ -56,6 +57,7 @@
 #include "dns.c"
 #include "clickhouse.c"
 #include "zookeeper.c"
+#include "foundationdb.c"
 
 struct l7_event {
     __u64 fd;
@@ -302,6 +304,8 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         req->protocol = PROTOCOL_DUBBO2;
     } else if (is_dns_request(payload, size, &k.stream_id)) {
         req->protocol = PROTOCOL_DNS;
+    } else if (is_foundationdb_request(payload, size)) {
+        req->protocol = PROTOCOL_FOUNDATIONDB;
     }
 
     if (req->protocol == PROTOCOL_UNKNOWN) {
@@ -484,6 +488,11 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         }
     } else if (e->protocol == PROTOCOL_DUBBO2) {
         response = is_dubbo2_response(payload, &e->status);
+    } else if (e->protocol == PROTOCOL_FOUNDATIONDB) {
+        response = is_foundationdb_response(payload, ret, &e->status);
+        if (response == 2) { // partial
+            return 0; // keeping the query in the map
+        }
     }
     bpf_map_delete_elem(&active_l7_requests, &k);
     if (!response) {
