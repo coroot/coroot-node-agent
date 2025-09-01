@@ -716,7 +716,17 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	}
 	stats := c.l7Stats.get(r.Protocol, conn.DestinationKey)
 
-	trace := c.tracer.NewTrace(conn.DestinationKey.ActualDestinationIfKnown())
+	ebpfTracesDisabled := false
+	for _, p := range c.processes {
+		if p.Flags.EbpfTracesDisabled {
+			ebpfTracesDisabled = true
+			break
+		}
+	}
+	var trace *tracing.Trace
+	if !ebpfTracesDisabled {
+		trace = c.tracer.NewTrace(conn.DestinationKey.ActualDestinationIfKnown())
+	}
 	switch r.Protocol {
 	case l7.ProtocolHTTP:
 		method, path := l7.ParseHttp(r.Payload)
@@ -984,13 +994,10 @@ func (c *Container) runLogParser(logPath string) {
 		return
 	}
 
-	for pid := range c.processes {
-		if processFlags, err := proc.GetFlags(pid); err == nil {
-			if processFlags.LogMonitoringDisabled {
-				klog.InfoS("skipping log monitoring due to COROOT_LOG_MONITORING=disabled", "cg", c.cgroup.Id)
-				return
-			}
-			break
+	for _, p := range c.processes {
+		if p.Flags.LogMonitoringDisabled {
+			klog.InfoS("skipping log monitoring due to COROOT_LOG_MONITORING=disabled", "cg", c.cgroup.Id)
+			return
 		}
 	}
 

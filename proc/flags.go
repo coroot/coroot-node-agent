@@ -8,6 +8,7 @@ import (
 
 type Flags struct {
 	EbpfProfilingDisabled bool
+	EbpfTracesDisabled    bool
 	LogMonitoringDisabled bool
 }
 
@@ -36,6 +37,8 @@ func GetFlags(pid uint32) (Flags, error) {
 			flags.EbpfProfilingDisabled = strings.Contains(kv[1], "disabled")
 		case "COROOT_LOG_MONITORING":
 			flags.LogMonitoringDisabled = strings.Contains(kv[1], "disabled")
+		case "COROOT_EBPF_TRACES":
+			flags.EbpfTracesDisabled = strings.Contains(kv[1], "disabled")
 		}
 	}
 	return flags, nil
