@@ -151,7 +151,7 @@ func (t *Trace) HttpRequest(method, path string, status l7.Status, duration time
 	)
 }
 
-func (t *Trace) Http2Request(method, path, scheme string, status l7.Status, duration time.Duration) {
+func (t *Trace) Http2Request(method, path, scheme string, status, grpcStatus l7.Status, duration time.Duration) {
 	if t == nil {
 		return
 	}
@@ -164,11 +164,16 @@ func (t *Trace) Http2Request(method, path, scheme string, status l7.Status, dura
 	if scheme == "" {
 		scheme = "unknown"
 	}
-	t.createSpan(method, duration, status > 400,
+
+	attrs := []attribute.KeyValue{
 		semconv.HTTPURL(fmt.Sprintf("%s://%s%s", scheme, t.destination.String(), path)),
 		semconv.HTTPMethod(method),
 		semconv.HTTPStatusCode(int(status)),
-	)
+	}
+	if grpcStatus >= 0 {
+		attrs = append(attrs, semconv.RPCGRPCStatusCodeKey.Int(int(grpcStatus)))
+	}
+	t.createSpan(method, duration, status > 400 || grpcStatus > 0, attrs...)
 }
 
 func (t *Trace) PostgresQuery(query string, error bool, duration time.Duration) {

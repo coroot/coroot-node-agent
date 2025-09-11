@@ -741,8 +741,12 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		requests := conn.http2Parser.Parse(r.Method, r.Payload, uint64(r.Duration))
 		for _, req := range requests {
 			if !common.HttpFilter.ShouldBeSkipped(req.Path) {
-				stats.observe(req.Status.Http(), "", req.Duration)
-				trace.Http2Request(req.Method, req.Path, req.Scheme, req.Status, req.Duration)
+				status := req.Status.Http()
+				if req.GrpcStatus >= 0 {
+					status = req.GrpcStatus.GRPC()
+				}
+				stats.observe(status, "", req.Duration)
+				trace.Http2Request(req.Method, req.Path, req.Scheme, req.Status, req.GrpcStatus, req.Duration)
 			}
 		}
 	case l7.ProtocolPostgres:

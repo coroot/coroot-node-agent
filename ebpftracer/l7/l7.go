@@ -160,6 +160,46 @@ func (s Status) Zookeeper() string {
 	return "ok"
 }
 
+func (s Status) GRPC() string {
+	switch s {
+	case 0:
+		return "grpc:OK"
+	case 1:
+		return "grpc:CANCELLED"
+	case 2:
+		return "grpc:UNKNOWN"
+	case 3:
+		return "grpc:INVALID_ARGUMENT"
+	case 4:
+		return "grpc:DEADLINE_EXCEEDED"
+	case 5:
+		return "grpc:NOT_FOUND"
+	case 6:
+		return "grpc:ALREADY_EXISTS"
+	case 7:
+		return "grpc:PERMISSION_DENIED"
+	case 8:
+		return "grpc:RESOURCE_EXHAUSTED"
+	case 9:
+		return "grpc:FAILED_PRECONDITION"
+	case 10:
+		return "grpc:ABORTED"
+	case 11:
+		return "grpc:OUT_OF_RANGE"
+	case 12:
+		return "grpc:UNIMPLEMENTED"
+	case 13:
+		return "grpc:INTERNAL"
+	case 14:
+		return "grpc:UNAVAILABLE"
+	case 15:
+		return "grpc:DATA_LOSS"
+	case 16:
+		return "grpc:UNAUTHENTICATED"
+	}
+	return ""
+}
+
 func (s Status) Error() bool {
 	return s == StatusFailed
 }
