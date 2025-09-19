@@ -62,6 +62,7 @@ int sched_process_exit(struct trace_event_raw_sched_process_template__stub *args
         return 0;
     }
 
+    bpf_map_delete_elem(&python_stats, &pid);
     bpf_map_delete_elem(&nodejs_stats, &pid);
     bpf_map_delete_elem(&nodejs_prev_event_loop_iter, &pid);
     bpf_map_delete_elem(&nodejs_current_io_cb, &pid);
