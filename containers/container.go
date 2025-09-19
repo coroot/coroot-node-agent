@@ -134,9 +134,9 @@ type Container struct {
 
 	gpuStats map[string]*GpuUsage
 
-	oomKills                 int
-	pythonThreadLockWaitTime time.Duration
-	nodejsStats              *ebpftracer.NodejsStats
+	oomKills    int
+	nodejsStats *ebpftracer.NodejsStats
+	pythonStats *ebpftracer.PythonStats
 
 	mounts     map[string]proc.MountInfo
 	seenMounts map[uint64]struct{}
@@ -399,8 +399,8 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	for appType := range appTypes {
 		ch <- gauge(metrics.ApplicationType, 1, appType)
 	}
-	if c.pythonThreadLockWaitTime > 0 {
-		ch <- counter(metrics.PythonThreadLockWaitTime, c.pythonThreadLockWaitTime.Seconds())
+	if c.pythonStats != nil {
+		ch <- counter(metrics.PythonThreadLockWaitTime, c.pythonStats.ThreadLockWaitTime.Seconds())
 	}
 	if c.nodejsStats != nil {
 		ch <- counter(metrics.NodejsEventLoopBlockedTime, c.nodejsStats.EventLoopBlockedTime.Seconds())
@@ -848,6 +848,23 @@ func (c *Container) updateNodejsStats(s NodejsStatsUpdate) {
 		c.nodejsStats.EventLoopBlockedTime += delta
 	}
 	p.nodejsPrevStats = &s.Stats
+}
+
+func (c *Container) updatePythonStats(s PythonStatsUpdate) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	p := c.processes[s.Pid]
+	if p == nil || p.pythonPrevStats == nil {
+		return
+	}
+	if delta := s.Stats.ThreadLockWaitTime - p.pythonPrevStats.ThreadLockWaitTime; delta > 0 {
+		if c.pythonStats == nil {
+			c.pythonStats = &ebpftracer.PythonStats{}
+		}
+		c.pythonStats.ThreadLockWaitTime += delta
+	}
+	p.pythonPrevStats = &s.Stats
 }
 
 func (c *Container) getMounts() map[string]map[string]*proc.FSStat {

@@ -44,6 +44,7 @@ type Process struct {
 	pythonGilChecked      bool
 	nodejsChecked         bool
 	nodejsPrevStats       *ebpftracer.NodejsStats
+	pythonPrevStats       *ebpftracer.PythonStats
 
 	gpuUsageSamples []gpu.ProcessUsageSample
 }
@@ -113,6 +114,7 @@ func (p *Process) instrumentPython(cmdline []byte, tracer *ebpftracer.Tracer) {
 	if !pythonCmd.Match(cmd) {
 		return
 	}
+	p.pythonPrevStats = &ebpftracer.PythonStats{}
 	p.uprobes = append(p.uprobes, tracer.AttachPythonThreadLockProbes(p.Pid)...)
 }
 
