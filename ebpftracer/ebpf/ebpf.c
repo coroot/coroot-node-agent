@@ -39,6 +39,7 @@ struct trace_event_raw_sys_exit__stub {
 	long int ret;
 };
 
+#include "nodejs.c"
 #include "proc.c"
 #include "file.c"
 #include "tcp/conntrack.c"

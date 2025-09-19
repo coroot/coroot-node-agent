@@ -57,9 +57,15 @@ SEC("tracepoint/sched/sched_process_exit")
 int sched_process_exit(struct trace_event_raw_sched_process_template__stub *args)
 {
     __u64 id = bpf_get_current_pid_tgid();
-    if (id >> 32 != (__u32)id) { // skipping threads
+    __u64 pid = id >> 32;
+    if (pid != (__u32)id) { // skipping threads
         return 0;
     }
+
+    bpf_map_delete_elem(&nodejs_stats, &pid);
+    bpf_map_delete_elem(&nodejs_prev_event_loop_iter, &pid);
+    bpf_map_delete_elem(&nodejs_current_io_cb, &pid);
+
     struct proc_event e = {
         .type = EVENT_TYPE_PROCESS_EXIT,
         .pid = args->pid,

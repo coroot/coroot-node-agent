@@ -42,6 +42,8 @@ type Process struct {
 	goTlsUprobesChecked   bool
 	openSslUprobesChecked bool
 	pythonGilChecked      bool
+	nodejsChecked         bool
+	nodejsPrevStats       *ebpftracer.NodejsStats
 
 	gpuUsageSamples []gpu.ProcessUsageSample
 }
@@ -84,6 +86,7 @@ func (p *Process) instrument(tracer *ebpftracer.Tracer) {
 			cmdline := proc.GetCmdline(p.Pid)
 			if dest != "/" && len(cmdline) > 0 {
 				p.instrumentPython(cmdline, tracer)
+				p.instrumentNodejs(dest, tracer)
 				if dotNetAppName, err := dotNetApp(cmdline, p.Pid); err == nil {
 					if dotNetAppName != "" {
 						p.dotNetMonitor = NewDotNetMonitor(p.ctx, p.Pid, dotNetAppName)
@@ -111,6 +114,18 @@ func (p *Process) instrumentPython(cmdline []byte, tracer *ebpftracer.Tracer) {
 		return
 	}
 	p.uprobes = append(p.uprobes, tracer.AttachPythonThreadLockProbes(p.Pid)...)
+}
+
+func (p *Process) instrumentNodejs(exe string, tracer *ebpftracer.Tracer) {
+	if p.nodejsChecked {
+		return
+	}
+	p.nodejsChecked = true
+	if !nodejsCmd.MatchString(exe) {
+		return
+	}
+	p.nodejsPrevStats = &ebpftracer.NodejsStats{}
+	p.uprobes = append(p.uprobes, tracer.AttachNodejsProbes(p.Pid, exe)...)
 }
 
 func (p *Process) addGpuUsageSample(sample gpu.ProcessUsageSample) {

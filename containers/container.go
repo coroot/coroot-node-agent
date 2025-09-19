@@ -120,7 +120,6 @@ type Container struct {
 
 	delays      Delays
 	delaysByPid map[uint32]Delays
-	delaysLock  sync.Mutex
 
 	listens map[netaddr.IPPort]map[uint32]*ListenDetails
 
@@ -137,6 +136,7 @@ type Container struct {
 
 	oomKills                 int
 	pythonThreadLockWaitTime time.Duration
+	nodejsStats              *ebpftracer.NodejsStats
 
 	mounts     map[string]proc.MountInfo
 	seenMounts map[uint64]struct{}
@@ -147,7 +147,7 @@ type Container struct {
 
 	registry *Registry
 
-	lock sync.RWMutex
+	lock sync.Mutex
 
 	done chan struct{}
 }
@@ -232,10 +232,10 @@ func (c *Container) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *Container) Collect(ch chan<- prometheus.Metric) {
-	c.registry.updateTrafficStatsIfNecessary()
+	c.registry.updateStatsFromEbpfMapsIfNecessary()
 
-	c.lock.RLock()
-	defer c.lock.RUnlock()
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
 	if c.metadata.image != "" || c.metadata.systemdTriggeredBy != "" {
 		ch <- gauge(metrics.ContainerInfo, 1, c.metadata.image, c.metadata.systemdTriggeredBy)
@@ -401,6 +401,9 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 	if c.pythonThreadLockWaitTime > 0 {
 		ch <- counter(metrics.PythonThreadLockWaitTime, c.pythonThreadLockWaitTime.Seconds())
+	}
+	if c.nodejsStats != nil {
+		ch <- counter(metrics.NodejsEventLoopBlockedTime, c.nodejsStats.EventLoopBlockedTime.Seconds())
 	}
 
 	if c.dnsStats.Requests != nil {
@@ -816,8 +819,6 @@ func (c *Container) onRetransmission(src netaddr.IPPort, dst netaddr.IPPort) boo
 }
 
 func (c *Container) updateDelays() {
-	c.delaysLock.Lock()
-	defer c.delaysLock.Unlock()
 	for pid := range c.processes {
 		stats, err := TaskstatsTGID(pid)
 		if err != nil {
@@ -830,6 +831,23 @@ func (c *Container) updateDelays() {
 		d.disk = stats.BlockIODelay
 		c.delaysByPid[pid] = d
 	}
+}
+
+func (c *Container) updateNodejsStats(s NodejsStatsUpdate) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	p := c.processes[s.Pid]
+	if p == nil || p.nodejsPrevStats == nil {
+		return
+	}
+	if delta := s.Stats.EventLoopBlockedTime - p.nodejsPrevStats.EventLoopBlockedTime; delta > 0 {
+		if c.nodejsStats == nil {
+			c.nodejsStats = &ebpftracer.NodejsStats{}
+		}
+		c.nodejsStats.EventLoopBlockedTime += delta
+	}
+	p.nodejsPrevStats = &s.Stats
 }
 
 func (c *Container) getMounts() map[string]map[string]*proc.FSStat {
