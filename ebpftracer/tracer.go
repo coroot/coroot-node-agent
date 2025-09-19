@@ -135,6 +135,14 @@ func (t *Tracer) ActiveConnectionsIterator() *ebpf.MapIterator {
 	return t.collection.Maps["active_connections"].Iterate()
 }
 
+func (t *Tracer) NodejsStatsIterator() *ebpf.MapIterator {
+	return t.collection.Maps["nodejs_stats"].Iterate()
+}
+
+type NodejsStats struct {
+	EventLoopBlockedTime time.Duration
+}
+
 type ConnectionId struct {
 	FD  uint64
 	PID uint32

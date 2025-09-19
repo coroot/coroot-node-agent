@@ -49,7 +49,8 @@ var metrics = struct {
 	JvmSafepointTime     *prometheus.Desc
 	JvmSafepointSyncTime *prometheus.Desc
 
-	PythonThreadLockWaitTime *prometheus.Desc
+	PythonThreadLockWaitTime   *prometheus.Desc
+	NodejsEventLoopBlockedTime *prometheus.Desc
 
 	GpuUsagePercent       *prometheus.Desc
 	GpuMemoryUsagePercent *prometheus.Desc
@@ -102,7 +103,8 @@ var metrics = struct {
 
 	Ip2Fqdn: metric("ip_to_fqdn", "Mapping IP addresses to FQDNs based on DNS requests initiated by containers", "ip", "fqdn"),
 
-	PythonThreadLockWaitTime: metric("container_python_thread_lock_wait_time_seconds", "Time spent waiting acquiring GIL in seconds"),
+	PythonThreadLockWaitTime:   metric("container_python_thread_lock_wait_time_seconds", "Time spent waiting acquiring GIL in seconds"),
+	NodejsEventLoopBlockedTime: metric("container_nodejs_event_loop_blocked_time_seconds_total", "Total time the Node.js event loop spent blocked"),
 
 	GpuUsagePercent:       metric("container_resources_gpu_usage_percent", "Percent of GPU compute resources used by the container", "gpu_uuid"),
 	GpuMemoryUsagePercent: metric("container_resources_gpu_memory_usage_percent", "Percent of GPU memory used by the container", "gpu_uuid"),
