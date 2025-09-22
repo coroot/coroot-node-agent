@@ -16,7 +16,7 @@ type CPUStat struct {
 	LimitCores           float64
 }
 
-func (cg Cgroup) CpuStat() *CPUStat {
+func (cg *Cgroup) CpuStat() *CPUStat {
 	cpu, cpuacct := cg.subsystems["cpu"], cg.subsystems["cpuacct"]
 	if cpu == "" || cpuacct == "" {
 		st, _ := cg.cpuStatV2()
@@ -26,7 +26,7 @@ func (cg Cgroup) CpuStat() *CPUStat {
 	return st
 }
 
-func (cg Cgroup) cpuStatV1() (*CPUStat, error) {
+func (cg *Cgroup) cpuStatV1() (*CPUStat, error) {
 	if cg.subsystems["cpu"] == "" || cg.subsystems["cpuacct"] == "" {
 		return nil, nil
 	}
@@ -56,7 +56,7 @@ func (cg Cgroup) cpuStatV1() (*CPUStat, error) {
 	return res, nil
 }
 
-func (cg Cgroup) cpuStatV2() (*CPUStat, error) {
+func (cg *Cgroup) cpuStatV2() (*CPUStat, error) {
 	if cg.subsystems[""] == "" {
 		return nil, nil
 	}
