@@ -265,6 +265,15 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
+	if psi := c.cgroup.PSI(); psi != nil {
+		ch <- counter(metrics.PsiCPU, psi.CPUSecondsSome, "some")
+		ch <- counter(metrics.PsiCPU, psi.CPUSecondsFull, "full")
+		ch <- counter(metrics.PsiMemory, psi.MemorySecondsSome, "some")
+		ch <- counter(metrics.PsiMemory, psi.MemorySecondsFull, "full")
+		ch <- counter(metrics.PsiIO, psi.IOSecondsSome, "some")
+		ch <- counter(metrics.PsiIO, psi.IOSecondsFull, "full")
+	}
+
 	if c.oomKills > 0 {
 		ch <- counter(metrics.OOMKills, float64(c.oomKills))
 	}

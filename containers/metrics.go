@@ -19,6 +19,10 @@ var metrics = struct {
 	MemoryCache *prometheus.Desc
 	OOMKills    *prometheus.Desc
 
+	PsiCPU    *prometheus.Desc
+	PsiMemory *prometheus.Desc
+	PsiIO     *prometheus.Desc
+
 	DiskDelay      *prometheus.Desc
 	DiskSize       *prometheus.Desc
 	DiskUsed       *prometheus.Desc
@@ -70,6 +74,10 @@ var metrics = struct {
 	MemoryRss:   metric("container_resources_memory_rss_bytes", "Amount of physical memory used by the container (doesn't include page cache)"),
 	MemoryCache: metric("container_resources_memory_cache_bytes", "Amount of page cache memory allocated by the container"),
 	OOMKills:    metric("container_oom_kills_total", "Total number of times the container was terminated by the OOM killer"),
+
+	PsiCPU:    metric("container_resources_cpu_pressure_waiting_seconds_total", "Total time in seconds tha the container were delayed due to CPU pressure", "kind"),
+	PsiMemory: metric("container_resources_memory_pressure_waiting_seconds_total", "Total time in seconds that the container were delayed due to memory pressure", "kind"),
+	PsiIO:     metric("container_resources_io_pressure_waiting_seconds_total", "Total time in seconds that the container were delayed due to I/O pressure", "kind"),
 
 	DiskDelay:      metric("container_resources_disk_delay_seconds_total", "Total time duration processes of the container have been waiting fot I/Os to complete"),
 	DiskSize:       metric("container_resources_disk_size_bytes", "Total capacity of the volume", "mount_point", "device", "volume"),
