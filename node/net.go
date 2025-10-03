@@ -2,6 +2,7 @@ package node
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/vishvananda/netlink"
@@ -9,10 +10,10 @@ import (
 	"inet.af/netaddr"
 )
 
-var netDeviceFilterRe = regexp.MustCompile(`^(en(P\d+)?p\d+s\d+(f\d+)?|eth\d+|eno\d+|ens\d+|em\d+|bond\d+|p\d+p\d+|enx[0-9a-f]{12})`)
+var netDeviceFilterRe = regexp.MustCompile(`^(en(p\d+)?p\d+s\d+(f\d+)?|eth\d+|eno\d+|ens\d+|em\d+|bond\d+|p\d+p\d+|enx[0-9a-f]+)`)
 
 func netDeviceFilter(name string) bool {
-	return netDeviceFilterRe.MatchString(name)
+	return netDeviceFilterRe.MatchString(strings.ToLower(name))
 }
 
 type NetDeviceInfo struct {
