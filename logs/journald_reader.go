@@ -26,13 +26,16 @@ func NewJournaldReader(journalPaths ...string) (*JournaldReader, error) {
 	var err error
 	for _, journalPath := range journalPaths {
 		if r.journal, err = sdjournal.NewJournalFromDir(journalPath); err != nil {
+			klog.Errorf("failed to get journal at %s: %s", journalPath, err)
 			continue
 		}
 		usage, err := r.journal.GetUsage()
 		if err != nil {
+			klog.Errorf("failed to read journal disk space usage at %s: %s", journalPath, err)
 			continue
 		}
 		if usage == 0 {
+			klog.Errorf("journal at %s is empty", journalPath)
 			r.journal = nil
 			continue
 		}
