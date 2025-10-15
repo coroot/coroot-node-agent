@@ -11,6 +11,10 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	journaldPollTimeout = 100 * time.Millisecond
+)
+
 type JournaldReader struct {
 	journal     *sdjournal.Journal
 	subscribers map[string]chan<- logparser.LogEntry
@@ -60,7 +64,11 @@ func (r *JournaldReader) follow() {
 			return
 		}
 		if c <= 0 {
-			r.journal.Wait(time.Millisecond * 100)
+			t := time.Now()
+			ret := r.journal.Wait(journaldPollTimeout)
+			if ret <= 0 && time.Since(t) < journaldPollTimeout { // inotify can't work due to system limits
+				time.Sleep(journaldPollTimeout)
+			}
 			continue
 		}
 		e, err := r.journal.GetEntry()
