@@ -5,9 +5,6 @@ import (
 	"bytes"
 	"debug/buildinfo"
 	"debug/elf"
-	"errors"
-	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -15,8 +12,6 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/proc"
-	"golang.org/x/arch/arm64/arm64asm"
-	"golang.org/x/arch/x86/x86asm"
 	"k8s.io/klog/v2"
 )
 
@@ -57,6 +52,11 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) []link.Link {
 		return nil
 	}
 	var links []link.Link
+	closeLinks := func() {
+		for _, l := range links {
+			l.Close()
+		}
+	}
 	writeEnter := "openssl_SSL_write_enter"
 	readEnter := "openssl_SSL_read_enter"
 	readExEnter := "openssl_SSL_read_ex_enter"
@@ -94,26 +94,43 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) []link.Link {
 			{symbol: "SSL_read_ex", uretprobe: readExit},
 		}...)
 	}
+
+	ef, err := OpenELFFile(libPath)
+	if err != nil {
+		log("open elf", err)
+		return nil
+	}
+	defer ef.Close()
+
 	for _, p := range progs {
+		s, err := ef.GetSymbol(p.symbol)
+		if err != nil {
+			log("failed to get symbol", err)
+			closeLinks()
+			return nil
+		}
 		if p.uprobe != "" {
-			l, err := exe.Uprobe(p.symbol, t.uprobes[p.uprobe], nil)
+			l, err := s.AttachUprobe(exe, t.uprobes[p.uprobe], pid)
 			if err != nil {
 				log("failed to attach uprobe", err)
+				closeLinks()
 				return nil
 			}
 			links = append(links, l)
 		}
 		if p.uretprobe != "" {
-			l, err := exe.Uretprobe(p.symbol, t.uprobes[p.uretprobe], nil)
+			ls, err := s.AttachUretprobes(exe, t.uprobes[p.uretprobe], pid)
+			links = append(links, ls...)
 			if err != nil {
-				log("failed to attach uretprobe", err)
+				log("failed to attach exit uprobe", err)
+				closeLinks()
 				return nil
 			}
-			links = append(links, l)
 		}
 	}
-
-	log("libssl uprobes attached", nil)
+	if len(links) > 0 {
+		log("libssl uprobes attached", nil)
+	}
 	return links
 }
 
@@ -162,29 +179,12 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
 		return nil, isGolangApp
 	}
 
-	ef, err := elf.Open(path)
+	ef, err := OpenELFFile(path)
 	if err != nil {
 		log("failed to open as elf binary", err)
 		return nil, isGolangApp
 	}
 	defer ef.Close()
-
-	symbols, err := ef.Symbols()
-	if err != nil {
-		if errors.Is(err, elf.ErrNoSymbols) {
-			log("no symbol section", nil)
-			return nil, isGolangApp
-		}
-		log("failed to read symbols", err)
-		return nil, isGolangApp
-	}
-
-	textSection := ef.Section(".text")
-	if textSection == nil {
-		log("no text section", nil)
-		return nil, isGolangApp
-	}
-	textReader := textSection.Open()
 
 	exe, err := link.OpenExecutable(path)
 	if err != nil {
@@ -193,67 +193,43 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
 	}
 
 	var links []link.Link
-	for _, s := range symbols {
-		if elf.ST_TYPE(s.Info) != elf.STT_FUNC || s.Size == 0 {
-			continue
+	closeLinks := func() {
+		for _, l := range links {
+			l.Close()
 		}
-		switch s.Name {
-		case goTlsWriteSymbol, goTlsReadSymbol:
-		default:
-			continue
-		}
-		address := s.Value
-		for _, p := range ef.Progs {
-			if p.Type != elf.PT_LOAD || (p.Flags&elf.PF_X) == 0 {
-				continue
-			}
+	}
 
-			if p.Vaddr <= s.Value && s.Value < (p.Vaddr+p.Memsz) {
-				address = s.Value - p.Vaddr + p.Off
-				break
-			}
-		}
-		switch s.Name {
-		case goTlsWriteSymbol:
-			l, err := exe.Uprobe(s.Name, t.uprobes["go_crypto_tls_write_enter"], &link.UprobeOptions{Address: address})
-			if err != nil {
-				log("failed to attach write_enter uprobe", err)
-				return nil, isGolangApp
-			}
-			links = append(links, l)
-		case goTlsReadSymbol:
-			l, err := exe.Uprobe(s.Name, t.uprobes["go_crypto_tls_read_enter"], &link.UprobeOptions{Address: address})
-			if err != nil {
-				log("failed to attach read_enter uprobe", err)
-				return nil, isGolangApp
-			}
-			links = append(links, l)
-			sStart := s.Value - textSection.Addr
-			_, err = textReader.Seek(int64(sStart), io.SeekStart)
-			if err != nil {
-				log("failed to seek", err)
-				return nil, isGolangApp
-			}
-			sBytes := make([]byte, s.Size)
-			_, err = textReader.Read(sBytes)
-			if err != nil {
-				log("failed to read", err)
-				return nil, isGolangApp
-			}
-			returnOffsets := getReturnOffsets(ef.Machine, sBytes)
-			if len(returnOffsets) == 0 {
-				log("failed to attach read_exit uprobe", fmt.Errorf("no return offsets found"))
-				return nil, isGolangApp
-			}
-			for _, offset := range returnOffsets {
-				l, err := exe.Uprobe(s.Name, t.uprobes["go_crypto_tls_read_exit"], &link.UprobeOptions{Address: address, Offset: uint64(offset)})
-				if err != nil {
-					log("failed to attach read_exit uprobe", err)
-					return nil, isGolangApp
-				}
-				links = append(links, l)
-			}
-		}
+	ws, err := ef.GetSymbol(goTlsWriteSymbol)
+	if err != nil {
+		log("failed to get symbol", err)
+		return nil, isGolangApp
+	}
+	l, err := ws.AttachUprobe(exe, t.uprobes["go_crypto_tls_write_enter"], pid)
+	if err != nil {
+		log("failed to attach write_enter uprobe", err)
+		return nil, isGolangApp
+	}
+	links = append(links, l)
+
+	rs, err := ef.GetSymbol(goTlsReadSymbol)
+	if err != nil {
+		log("failed to get symbol", err)
+		return nil, isGolangApp
+	}
+	l, err = rs.AttachUprobe(exe, t.uprobes["go_crypto_tls_read_enter"], pid)
+	if err != nil {
+		log("failed to attach read_enter uprobe", err)
+		closeLinks()
+		return nil, isGolangApp
+	}
+	links = append(links, l)
+
+	ls, err := rs.AttachUretprobes(exe, t.uprobes["go_crypto_tls_read_exit"], pid)
+	links = append(links, ls...)
+	if err != nil {
+		log("failed to attach read_exit uprobe", err)
+		closeLinks()
+		return nil, isGolangApp
 	}
 	if len(links) == 0 {
 		return nil, isGolangApp
@@ -326,27 +302,4 @@ func getSslLibPathAndVersion(pid uint32) (string, string) {
 		}
 	}
 	return libsslPath, "v" + version
-}
-
-func getReturnOffsets(machine elf.Machine, instructions []byte) []int {
-	var res []int
-	switch machine {
-	case elf.EM_X86_64:
-		for i := 0; i < len(instructions); {
-			ins, err := x86asm.Decode(instructions[i:], 64)
-			if err == nil && ins.Op == x86asm.RET {
-				res = append(res, i)
-			}
-			i += ins.Len
-		}
-	case elf.EM_AARCH64:
-		for i := 0; i < len(instructions); {
-			ins, err := arm64asm.Decode(instructions[i:])
-			if err == nil && ins.Op == arm64asm.RET {
-				res = append(res, i)
-			}
-			i += 4
-		}
-	}
-	return res
 }
