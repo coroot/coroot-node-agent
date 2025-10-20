@@ -453,6 +453,9 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     COPY_PAYLOAD(e->payload, req->payload_size, req->payload);
     if (e->protocol == PROTOCOL_HTTP) {
         response = is_http_response(payload, &e->status);
+        if (response == 2) { 
+            return 0; 
+        }
     } else if (e->protocol == PROTOCOL_POSTGRES) {
         response = is_postgres_response(payload, ret, &e->status);
         if (req->request_type == POSTGRES_FRAME_PARSE) {
