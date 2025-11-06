@@ -14,7 +14,7 @@ import (
 
 var (
 	libcRegexp = regexp.MustCompile(`libc[\.-]`)
-	muslRegexp = regexp.MustCompile(`musl[\.-]`)
+	muslRegexp = regexp.MustCompile(`ld-musl[\.-]`)
 )
 
 func (t *Tracer) AttachPythonThreadLockProbes(pid uint32) []link.Link {
@@ -32,36 +32,53 @@ func (t *Tracer) AttachPythonThreadLockProbes(pid uint32) []link.Link {
 	}
 
 	var (
-		lastErr error
-		links   []link.Link
-		libPath string
+		links []link.Link
+		err   error
 	)
 
-	for _, libPath = range getPthreadLibs(pid) {
-		exe, err := link.OpenExecutable(libPath)
-		if err != nil {
-			log(libPath, "failed to open executable", err)
-			return nil
+	for _, libPath := range getPthreadLibs(pid) {
+		if links, err = t.attachPythonUprobes(libPath, pid); err == nil {
+			log(libPath, "python uprobes attached", nil)
+			return links
+		} else {
+			log(libPath, "failed to attach python uprobes", err)
 		}
-		options := &link.UprobeOptions{PID: int(pid)}
-		var uprobe, uretprobe link.Link
-		uprobe, lastErr = exe.Uprobe("pthread_cond_timedwait", t.uprobes["pthread_cond_timedwait_enter"], options)
-		if lastErr != nil {
-			continue
-		}
-		links = append(links, uprobe)
-		uretprobe, lastErr = exe.Uretprobe("pthread_cond_timedwait", t.uprobes["pthread_cond_timedwait_exit"], options)
-		if lastErr != nil {
-			continue
-		}
-		links = append(links, uretprobe)
-		log(libPath, "python uprobes attached", nil)
-		break
 	}
-	if lastErr != nil {
-		log(libPath, "failed to attach uprobe", lastErr)
+	if len(links) > 0 {
+
 	}
 	return links
+}
+
+func (t *Tracer) attachPythonUprobes(libPath string, pid uint32) ([]link.Link, error) {
+	exe, err := link.OpenExecutable(libPath)
+	if err != nil {
+		return nil, err
+	}
+	ef, err := OpenELFFile(libPath)
+	if err != nil {
+		return nil, err
+	}
+	defer ef.Close()
+
+	s, err := ef.GetSymbol("pthread_cond_timedwait")
+	if err != nil {
+		return nil, err
+	}
+	l, err := s.AttachUprobe(exe, t.uprobes["pthread_cond_timedwait_enter"], pid)
+	if err != nil {
+		return nil, err
+	}
+	links := []link.Link{l}
+	ls, err := s.AttachUretprobes(exe, t.uprobes["pthread_cond_timedwait_exit"], pid)
+	links = append(links, ls...)
+	if err != nil {
+		for _, l := range links {
+			_ = l.Close()
+		}
+		return nil, err
+	}
+	return links, nil
 }
 
 func getPthreadLibs(pid uint32) []string {

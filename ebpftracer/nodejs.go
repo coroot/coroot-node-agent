@@ -25,55 +25,65 @@ func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) []link.Link {
 		klog.InfofDepth(1, "pid=%d lib=%s: %s", pid, libPath, msg)
 	}
 
-	var (
-		lastErr error
-		links   []link.Link
-		libPath string
-	)
-	for _, libPath = range append(getLibuv(pid), proc.Path(pid, "root", exe)) {
-		exe, err := link.OpenExecutable(libPath)
+	for _, libPath := range append(getLibuv(pid), proc.Path(pid, "root", exe)) {
+		if links, err := t.attachNodejsUprobes(libPath, pid); err == nil {
+			log(libPath, "nodejs uprobes attached", nil)
+			return links
+		} else {
+			log(libPath, "failed to attach nodejs uprobes", err)
+		}
+	}
+	return nil
+}
+
+func (t *Tracer) attachNodejsUprobes(libPath string, pid uint32) ([]link.Link, error) {
+	exe, err := link.OpenExecutable(libPath)
+	if err != nil {
+		return nil, err
+	}
+	ef, err := OpenELFFile(libPath)
+	if err != nil {
+		return nil, err
+	}
+	defer ef.Close()
+
+	s, err := ef.GetSymbol("uv__io_poll")
+	if err != nil {
+		return nil, err
+	}
+	l, err := s.AttachUprobe(exe, t.uprobes["uv_io_poll_enter"], pid)
+	if err != nil {
+		return nil, err
+	}
+	var links []link.Link
+	links = append(links, l)
+
+	ls, err := s.AttachUretprobes(exe, t.uprobes["uv_io_poll_exit"], pid)
+	links = append(links, ls...)
+	if err != nil {
+		for _, l := range links {
+			_ = l.Close()
+		}
+		return nil, err
+	}
+
+	for _, cb := range []string{"uv__stream_io", "uv__async_io", "uv__poll_io", "uv__server_io", "uv__udp_io"} {
+		s, err = ef.GetSymbol(cb)
 		if err != nil {
-			log(libPath, "failed to open executable", err)
-			return nil
+			break
 		}
-		options := &link.UprobeOptions{PID: int(pid)}
-		var uprobe, uretprobe link.Link
-		uprobe, lastErr = exe.Uprobe("uv__io_poll", t.uprobes["uv_io_poll_enter"], options)
-		if lastErr != nil {
-			continue
+		l, err = s.AttachUprobe(exe, t.uprobes["uv_io_cb_enter"], pid)
+		if err != nil {
+			break
 		}
-
-		links = append(links, uprobe)
-		uretprobe, lastErr = exe.Uretprobe("uv__io_poll", t.uprobes["uv_io_poll_exit"], options)
-		if lastErr != nil {
-			continue
+		links = append(links, l)
+		ls, err = s.AttachUretprobes(exe, t.uprobes["uv_io_cb_exit"], pid)
+		links = append(links, ls...)
+		if err != nil {
+			break
 		}
-
-		links = append(links, uretprobe)
-
-		for _, cb := range []string{"uv__stream_io", "uv__async_io", "uv__poll_io", "uv__server_io", "uv__udp_io"} {
-			uprobe, lastErr = exe.Uprobe(cb, t.uprobes["uv_io_cb_enter"], options)
-			if lastErr != nil {
-				break
-			}
-			links = append(links, uprobe)
-			uretprobe, lastErr = exe.Uretprobe(cb, t.uprobes["uv_io_cb_exit"], options)
-			if lastErr != nil {
-				break
-			}
-			links = append(links, uretprobe)
-		}
-		if lastErr != nil {
-			continue
-		}
-
-		log(libPath, "nodejs uprobes attached", nil)
-		break
 	}
-	if lastErr != nil {
-		log(libPath, "failed to attach uprobe", lastErr)
-	}
-	return links
+	return links, nil
 }
 
 func getLibuv(pid uint32) []string {
