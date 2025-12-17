@@ -10,7 +10,7 @@ import (
 	"inet.af/netaddr"
 )
 
-var netDeviceFilterRe = regexp.MustCompile(`^(en(p\d+)?p\d+s\d+(f\d+)?|eth\d+|eno\d+|ens\d+|em\d+|bond\d+|p\d+p\d+|enx[0-9a-f]+)`)
+var netDeviceFilterRe = regexp.MustCompile(`^(en(p\d+)?p\d+s\d+(f\d+)?|eth\d+|eno\d+|ens\d+|em\d+|bond\d+|p\d+p\d+|enx[0-9a-f]+|br\d+|vmbr\d+)`)
 
 func netDeviceFilter(name string) bool {
 	return netDeviceFilterRe.MatchString(strings.ToLower(name))

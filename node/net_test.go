@@ -19,6 +19,8 @@ func TestNetDeviceFilter(t *testing.T) {
 	assert.True(t, netDeviceFilter("enP4p65s0"))
 	assert.True(t, netDeviceFilter("enP2p33s0"))
 	assert.True(t, netDeviceFilter("enX0"))
+	assert.True(t, netDeviceFilter("br0"))
+	assert.True(t, netDeviceFilter("vmbr0"))
 
 	assert.False(t, netDeviceFilter("dummy0"))
 	assert.False(t, netDeviceFilter("docker0"))
