@@ -278,8 +278,8 @@ github.com/coreos/pkg v0.0.0-20160727233714-3ac0863d7acf/go.mod h1:E3G3o1h8I7cfc
 github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f/go.mod h1:E3G3o1h8I7cfcXa63jLwjI0eiQQMgzzUDFVpN/nH/eA=
 github.com/coroot/dotnetdiag v1.2.2 h1:PVP/By8o+xhPjfVolJYcjHLbFQInM7pkaD6/otPLc8Q=
 github.com/coroot/dotnetdiag v1.2.2/go.mod h1:veXCMlFzm1yNl7wwJb/ZLxO4WbzhDBoy1VG1XtkH2ls=
-github.com/coroot/logparser v1.1.9 h1:c8R8m5vZtcNqnEiWHZ+uQBcLin18vlIP1VJTL77xjW0=
-github.com/coroot/logparser v1.1.9/go.mod h1:YfYxn9FYBm5GYHHUB4zI22irFAWVDe2bcbOWDHKSmEo=
+github.com/coroot/logparser v1.2.1 h1:NLU4VAgGwqMTtKyRHDpTtE9BtPQJLOhDIuB5yiQdelQ=
+github.com/coroot/logparser v1.2.1/go.mod h1:/7qHU4/I4zWRYIzRchQPehlTzbcMv5HV6cwBqg2zl6I=
 github.com/coroot/pyroscope/ebpf v0.0.0-20250418092207-a70610b6df72 h1:NFEMXMOdUzQFG+OwRVecv/yc75/s8MmLkNquMm6hk3I=
 github.com/coroot/pyroscope/ebpf v0.0.0-20250418092207-a70610b6df72/go.mod h1:IepHM9FJ0n3n3k+ZV23Y7vNAfvWI7LDuLqWPO4rB6sQ=
 github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d/go.mod h1:maD7wRr/U5Z6m/iR4s+kqSMx2CaBsrgA7czyZG/E6dU=
