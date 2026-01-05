@@ -110,7 +110,11 @@ func (p *Process) instrumentPython(cmdline []byte, tracer *ebpftracer.Tracer) {
 	if len(cmd) == 0 {
 		return
 	}
-	cmd = bytes.TrimSuffix(bytes.Fields(cmd)[0], []byte{':'})
+	cmdFields := bytes.Fields(cmd)
+	if len(cmdFields) == 0 {
+		return
+	}
+	cmd = bytes.TrimSuffix(cmdFields[0], []byte{':'})
 	if !pythonCmd.Match(cmd) {
 		return
 	}
