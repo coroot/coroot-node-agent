@@ -215,6 +215,26 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 	return c, nil
 }
 
+func GetPrimaryContainer(pod *v1.Pod) string {
+    if defaultContainer, exists := pod.Annotations["kubectl.kubernetes.io/default-container"]; exists {
+        for _, c := range pod.Spec.Containers {
+            if c.Name == defaultContainer { return defaultContainer }
+        }
+    }
+    
+    if appName, exists := pod.Labels["app.kubernetes.io/name"]; exists {
+        for _, c := range pod.Spec.Containers {
+            if c.Name == appName { return appName }
+        }
+    }
+    
+    if len(pod.Spec.Containers) > 0 {
+        return pod.Spec.Containers[0].Name
+    }
+    
+    return ""
+}
+
 func (c *Container) Close() {
 	for _, p := range c.logParsers {
 		p.Stop()
