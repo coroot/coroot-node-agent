@@ -23,6 +23,7 @@ import (
 	"golang.org/x/exp/maps"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
+	v1 "k8s.io/api/core/v1"
 )
 
 var (
@@ -213,6 +214,34 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 	}()
 
 	return c, nil
+}
+
+func GetPrimaryContainer(pod *v1.Pod) string {
+	if pod == nil {
+		return ""
+	}
+
+	if defaultContainer, exists := pod.Annotations["kubectl.kubernetes.io/default-container"]; exists && defaultContainer != "" {
+		for _, container := range pod.Spec.Containers {
+			if container.Name == defaultContainer {
+				return defaultContainer
+			}
+		}
+	}
+
+	if appName, exists := pod.Labels["app.kubernetes.io/name"]; exists && appName != "" {
+		for _, container := range pod.Spec.Containers {
+			if container.Name == appName {
+				return appName
+			}
+		}
+	}
+
+	if len(pod.Spec.Containers) > 0 {
+		return pod.Spec.Containers[0].Name
+	}
+
+	return ""
 }
 
 func (c *Container) Close() {
