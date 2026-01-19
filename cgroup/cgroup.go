@@ -26,6 +26,8 @@ var (
 	systemSliceIdRegexp = regexp.MustCompile(`(/(system|runtime|reserved|kube|azure)\.slice/([^/]+))`)
 	talosIdRegexp       = regexp.MustCompile(`/(system|podruntime)/([^/]+)`)
 	lxcPayloadRegexp    = regexp.MustCompile(`/lxc\.payload\.([^/]+)`)
+	libpodIdRegexp      = regexp.MustCompile(`libpod-(?:conmon-)?([a-z0-9]{64})`)
+	containerIdRegexp   = regexp.MustCompile(`[a-f0-9]{64}`)
 )
 
 type ContainerType uint8
@@ -40,6 +42,7 @@ const (
 	ContainerTypeSystemdService
 	ContainerTypeSandbox
 	ContainerTypeTalosRuntime
+	ContainerTypeLibpod
 )
 
 func (t ContainerType) String() string {
@@ -56,6 +59,8 @@ func (t ContainerType) String() string {
 		return "lxc"
 	case ContainerTypeSystemdService:
 		return "systemd"
+	case ContainerTypeLibpod:
+		return "libpod"
 	default:
 		return "unknown"
 	}
@@ -211,6 +216,29 @@ func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid lxc payload cgroup %s", cgroupPath)
 		}
 		return ContainerTypeLxc, "/lxc/" + matches[1], nil
+	case prefix == "machine.slice":
+		// Handle Podman/libpod containers
+		// Pattern: /machine.slice/libpod-<ID>.scope or /machine.slice/libpod-conmon-<ID>.scope
+		if strings.Contains(cgroupPath, "libpod-") {
+			// Extract the libpod container ID
+			matches := libpodIdRegexp.FindStringSubmatch(cgroupPath)
+			if matches != nil && len(matches) > 1 {
+				// The first capture group contains the container ID
+				klog.V(4).Infof("Detected Podman container in machine.slice: %s -> %s", cgroupPath, matches[1])
+				return ContainerTypeLibpod, matches[1], nil
+			}
+		}
+	case prefix == "user.slice":
+		// Check if this might be a Podman container running in user session
+		// Look for libpod patterns in user slices as well
+		if strings.Contains(cgroupPath, "libpod-") {
+			matches := libpodIdRegexp.FindStringSubmatch(cgroupPath)
+			if matches != nil && len(matches) > 1 {
+				// The first capture group contains the container ID
+				klog.V(4).Infof("Detected Podman container in user.slice: %s -> %s", cgroupPath, matches[1])
+				return ContainerTypeLibpod, matches[1], nil
+			}
+		}
 	case len(parts) < 2:
 		return ContainerTypeStandaloneProcess, "", nil
 	}
