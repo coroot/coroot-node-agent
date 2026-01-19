@@ -173,7 +173,13 @@ func (p *Process) removeOldGpuUsageSamples(cutoff time.Time) {
 
 func (p *Process) Close() {
 	p.cancelFunc()
-	for _, u := range p.uprobes {
-		_ = u.Close()
+	if len(p.uprobes) > 0 {
+		uprobes := p.uprobes
+		p.uprobes = nil
+		go func() {
+			for _, u := range uprobes {
+				_ = u.Close()
+			}
+		}()
 	}
 }
