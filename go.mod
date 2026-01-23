@@ -3,7 +3,6 @@ module github.com/coroot/coroot-node-agent
 go 1.24.7
 
 require (
-	cloud.google.com/go/compute/metadata v0.5.2
 	github.com/ClickHouse/ch-go v0.62.0
 	github.com/NVIDIA/go-nvml v0.12.4-1
 	github.com/agoda-com/opentelemetry-logs-go v0.4.1
