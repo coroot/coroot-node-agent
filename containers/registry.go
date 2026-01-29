@@ -284,14 +284,10 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
 					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, e.ActualDstAddr, e.Timestamp, false, e.Duration)
 					c.attachTlsUprobes(r.tracer, e.Pid)
-				} else {
-					klog.Infoln("TCP connection from unknown container", e)
 				}
 			case ebpftracer.EventTypeConnectionError:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
 					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, e.ActualDstAddr, 0, true, e.Duration)
-				} else {
-					klog.Infoln("TCP connection error from unknown container", e)
 				}
 			case ebpftracer.EventTypeConnectionClose:
 				if c := r.containersByPid[e.Pid]; c != nil {
@@ -376,6 +372,14 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		t := time.Now()
 		r.containersByPidIgnored[pid] = &t
 		return nil
+	}
+	if cg.ContainerType == cgroup.ContainerTypeSystemdService && *flags.SkipSystemdSystemServices {
+		if md.systemd.IsSystemService() {
+			klog.InfoS("skipping system service", "id", id, "unit", md.systemd.Unit, "type", md.systemd.Type, "triggered_by", md.systemd.TriggeredBy, "pid", pid)
+			t := time.Now()
+			r.containersByPidIgnored[pid] = &t
+			return nil
+		}
 	}
 
 	if c := r.containersById[id]; c != nil {
@@ -542,7 +546,7 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 	switch cg.ContainerType {
 	case cgroup.ContainerTypeSystemdService:
 		md := &ContainerMetadata{}
-		md.systemdTriggeredBy = SystemdTriggeredBy(cg.ContainerId)
+		md.systemd = getSystemdProperties(cg.Id)
 		return md, nil
 	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
 	default:

@@ -162,7 +162,7 @@ func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 	switch {
 	case cgroupPath == "/init":
 		return ContainerTypeTalosRuntime, "/talos/init", nil
-	case prefix == "user.slice" || prefix == "init.scope":
+	case prefix == "user.slice" || prefix == "init.scope" || prefix == "systemd":
 		return ContainerTypeStandaloneProcess, "", nil
 	case prefix == "docker" || (prefix == "system.slice" && len(parts) > 1 && strings.HasPrefix(parts[1], "docker-")):
 		matches := dockerIdRegexp.FindStringSubmatch(cgroupPath)
@@ -194,6 +194,9 @@ func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 		}
 		return ContainerTypeTalosRuntime, path.Join("/talos/", matches[2]), nil
 	case prefix == "system.slice" || prefix == "runtime.slice" || prefix == "reserved.slice" || prefix == "kube.slice" || prefix == "azure.slice":
+		if strings.HasSuffix(cgroupPath, ".scope") {
+			return ContainerTypeStandaloneProcess, "", nil
+		}
 		matches := systemSliceIdRegexp.FindStringSubmatch(cgroupPath)
 		if matches == nil {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid systemd cgroup %s", cgroupPath)

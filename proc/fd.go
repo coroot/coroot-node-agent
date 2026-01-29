@@ -34,7 +34,7 @@ func ReadFds(pid uint32) ([]Fd, error) {
 		}
 		dest, err := os.Readlink(path.Join(fdDir, entry.Name()))
 		if err != nil {
-			if os.IsNotExist(err) {
+			if !os.IsNotExist(err) {
 				klog.Warningf("failed to read link '%s': %s", entry.Name(), err)
 			}
 			continue
