@@ -18,6 +18,23 @@ import (
 var (
 	dbusConn    *dbus.Conn
 	dbusTimeout = time.Second
+
+	systemServicePrefixes = []string{
+		"systemd-",
+		"dbus",
+		"getty",
+		"system-serial",
+		"system-getty",
+		"serial-getty",
+		"snapd",
+		"packagekit",
+		"unattended-upgrades",
+		"multipathd",
+		"qemu-guest-agent",
+		"irqbalance",
+		"networkd-dispatcher",
+		"rpcbind",
+	}
 )
 
 func init() {
@@ -40,12 +57,29 @@ func init() {
 }
 
 type SystemdProperties struct {
+	Unit        string
 	TriggeredBy string
 	Type        string
 }
 
 func (sp SystemdProperties) IsEmpty() bool {
 	return sp.TriggeredBy == "" && sp.Type == ""
+}
+
+func (sp SystemdProperties) IsSystemService() bool {
+	switch sp.Type {
+	case "oneshot", "dbus":
+		return true
+	}
+	if strings.HasSuffix(sp.TriggeredBy, ".timer") {
+		return true
+	}
+	for _, prefix := range systemServicePrefixes {
+		if strings.HasPrefix(sp.Unit, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func getSystemdProperties(id string) SystemdProperties {
@@ -57,6 +91,7 @@ func getSystemdProperties(id string) SystemdProperties {
 	defer cancel()
 	parts := strings.Split(id, "/")
 	unit := parts[len(parts)-1]
+	props.Unit = unit
 	properties, err := dbusConn.GetAllPropertiesContext(ctx, unit)
 	if err != nil {
 		klog.Warningln("failed to get systemd properties:", err)

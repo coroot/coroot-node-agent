@@ -373,6 +373,14 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		r.containersByPidIgnored[pid] = &t
 		return nil
 	}
+	if cg.ContainerType == cgroup.ContainerTypeSystemdService && *flags.SkipSystemdSystemServices {
+		if md.systemd.IsSystemService() {
+			klog.InfoS("skipping system service", "id", id, "unit", md.systemd.Unit, "type", md.systemd.Type, "triggered_by", md.systemd.TriggeredBy, "pid", pid)
+			t := time.Now()
+			r.containersByPidIgnored[pid] = &t
+			return nil
+		}
+	}
 
 	if c := r.containersById[id]; c != nil {
 		klog.Warningln("id conflict:", id)
