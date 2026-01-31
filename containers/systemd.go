@@ -90,7 +90,16 @@ func getSystemdProperties(id string) SystemdProperties {
 	ctx, cancel := context.WithTimeout(context.Background(), dbusTimeout)
 	defer cancel()
 	parts := strings.Split(id, "/")
-	unit := parts[len(parts)-1]
+	var unit string
+	for i := len(parts) - 1; i >= 0; i-- {
+		if strings.HasSuffix(parts[i], ".service") {
+			unit = parts[i]
+			break
+		}
+	}
+	if unit == "" {
+		unit = parts[len(parts)-1]
+	}
 	props.Unit = unit
 	properties, err := dbusConn.GetAllPropertiesContext(ctx, unit)
 	if err != nil {
