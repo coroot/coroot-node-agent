@@ -86,7 +86,7 @@ func (r *JournaldReader) follow() {
 			Level:     logparser.LevelByPriority(e.Fields[sdjournal.SD_JOURNAL_FIELD_PRIORITY]),
 		}
 		r.lock.Lock()
-		ch, ok := r.subscribers[e.Fields[sdjournal.SD_JOURNAL_FIELD_SYSTEMD_CGROUP]]
+		ch, ok := r.subscribers[e.Fields[sdjournal.SD_JOURNAL_FIELD_SYSTEMD_UNIT]]
 		r.lock.Unlock()
 		if !ok {
 			continue
@@ -95,24 +95,24 @@ func (r *JournaldReader) follow() {
 	}
 }
 
-func (r *JournaldReader) Subscribe(cgroup string, ch chan<- logparser.LogEntry) error {
+func (r *JournaldReader) Subscribe(unit string, ch chan<- logparser.LogEntry) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	if _, ok := r.subscribers[cgroup]; ok {
-		return fmt.Errorf(`duplicate subscriber for cgroup %s`, cgroup)
+	if _, ok := r.subscribers[unit]; ok {
+		return fmt.Errorf(`duplicate subscriber for unit %s`, unit)
 	}
-	r.subscribers[cgroup] = ch
+	r.subscribers[unit] = ch
 	return nil
 }
 
-func (r *JournaldReader) Unsubscribe(cgroup string) {
+func (r *JournaldReader) Unsubscribe(unit string) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	if _, ok := r.subscribers[cgroup]; !ok {
-		klog.Warning("unknown subscriber for cgroup", cgroup)
+	if _, ok := r.subscribers[unit]; !ok {
+		klog.Warning("unknown subscriber for unit", unit)
 		return
 	}
-	delete(r.subscribers, cgroup)
+	delete(r.subscribers, unit)
 }
 
 func (r *JournaldReader) Close() {

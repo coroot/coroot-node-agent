@@ -3,7 +3,6 @@ package containers
 import (
 	"fmt"
 
-	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/logparser"
@@ -25,20 +24,20 @@ func JournaldInit() error {
 	return nil
 }
 
-func JournaldSubscribe(cg *cgroup.Cgroup, ch chan<- logparser.LogEntry) error {
+func JournaldSubscribe(unit string, ch chan<- logparser.LogEntry) error {
 	if journaldReader == nil {
 		return fmt.Errorf("journald reader not initialized")
 	}
-	err := journaldReader.Subscribe(cg.Id, ch)
+	err := journaldReader.Subscribe(unit, ch)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func JournaldUnsubscribe(cg *cgroup.Cgroup) {
+func JournaldUnsubscribe(unit string) {
 	if journaldReader == nil {
 		return
 	}
-	journaldReader.Unsubscribe(cg.Id)
+	journaldReader.Unsubscribe(unit)
 }

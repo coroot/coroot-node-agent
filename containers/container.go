@@ -1071,13 +1071,13 @@ func (c *Container) runLogParser(logPath string) {
 	switch c.cgroup.ContainerType {
 	case cgroup.ContainerTypeSystemdService:
 		ch := make(chan logparser.LogEntry)
-		if err := JournaldSubscribe(c.cgroup, ch); err != nil {
+		if err := JournaldSubscribe(c.metadata.systemd.Unit, ch); err != nil {
 			klog.Warningln(err)
 			return
 		}
 		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId), multilineCollectorTimeout, *flags.LogPatternsPerContainer)
 		stop := func() {
-			JournaldUnsubscribe(c.cgroup)
+			JournaldUnsubscribe(c.metadata.systemd.Unit)
 		}
 		klog.InfoS("started journald logparser", "cg", c.cgroup.Id)
 		c.logParsers["journald"] = &LogParser{parser: parser, stop: stop}
