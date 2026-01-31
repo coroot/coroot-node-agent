@@ -91,7 +91,7 @@ func getSystemdProperties(id string) SystemdProperties {
 	defer cancel()
 	parts := strings.Split(id, "/")
 	var unit string
-	for i := len(parts) - 1; i >= 0; i-- {
+	for i := range parts {
 		if strings.HasSuffix(parts[i], ".service") {
 			unit = parts[i]
 			break
