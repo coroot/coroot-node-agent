@@ -87,7 +87,18 @@ type ProcessUsageSample struct {
 	MemoryPercent uint32
 }
 
-func NewCollector() (*Collector, error) {
+// NewDisabledCollector returns a collector that does not initialize NVML
+// and collects no GPU metrics. Use this when GPU monitoring is disabled.
+func NewDisabledCollector() *Collector {
+	return &Collector{
+		ProcessUsageSampleCh: nil,
+	}
+}
+
+func NewCollector(isDisabled bool) (*Collector, error) {
+	if isDisabled {
+		return NewDisabledCollector(), nil
+	}
 	c := &Collector{
 		ProcessUsageSampleCh: make(chan ProcessUsageSample, 100),
 	}
@@ -227,6 +238,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (c *Collector) Close() {
+	if c.iface == nil {
+		return
+	}
 	c.iface.Shutdown()
 }
 
