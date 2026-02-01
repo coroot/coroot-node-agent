@@ -539,7 +539,15 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 		klog.Warningln("empty dockerd container name for:", cg.ContainerId)
 		return ""
 	}
-	return ContainerID("/docker/" + md.name)
+	name := md.name
+	namespace := ""
+	if md.labels["com.coroot.app"] != "" {
+		name = md.labels["com.coroot.app"]
+	}
+	if md.labels["com.coroot.namespace"] != "" {
+		namespace = md.labels["com.coroot.namespace"] + "/"
+	}
+	return ContainerID(fmt.Sprintf("/docker/%s%s", namespace, name))
 }
 
 func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
