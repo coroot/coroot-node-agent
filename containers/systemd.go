@@ -90,9 +90,16 @@ func getSystemdProperties(id string) SystemdProperties {
 	ctx, cancel := context.WithTimeout(context.Background(), dbusTimeout)
 	defer cancel()
 	parts := strings.Split(id, "/")
-	unit := parts[len(parts)-1]
-	props.Unit = unit
-	properties, err := dbusConn.GetAllPropertiesContext(ctx, unit)
+	for _, p := range parts {
+		if strings.HasSuffix(p, ".service") {
+			props.Unit = p
+			break
+		}
+	}
+	if props.Unit == "" {
+		props.Unit = parts[len(parts)-1]
+	}
+	properties, err := dbusConn.GetAllPropertiesContext(ctx, props.Unit)
 	if err != nil {
 		klog.Warningln("failed to get systemd properties:", err)
 		return props
