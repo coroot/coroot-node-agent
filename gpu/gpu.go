@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/klog/v2"
@@ -91,7 +92,9 @@ func NewCollector() (*Collector, error) {
 	c := &Collector{
 		ProcessUsageSampleCh: make(chan ProcessUsageSample, 100),
 	}
-
+	if *flags.DisableGPUMonitoring {
+		return c, nil
+	}
 	libPath, err := findNvidiaMLLib()
 	if err != nil {
 		klog.Infoln(err)
@@ -227,6 +230,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (c *Collector) Close() {
+	if c.iface == nil {
+		return
+	}
 	c.iface.Shutdown()
 }
 
