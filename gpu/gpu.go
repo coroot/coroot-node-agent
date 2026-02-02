@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/klog/v2"
@@ -87,22 +88,13 @@ type ProcessUsageSample struct {
 	MemoryPercent uint32
 }
 
-// NewDisabledCollector returns a collector that does not initialize NVML
-// and collects no GPU metrics. Use this when GPU monitoring is disabled.
-func NewDisabledCollector() *Collector {
-	return &Collector{
-		ProcessUsageSampleCh: nil,
-	}
-}
-
-func NewCollector(isDisabled bool) (*Collector, error) {
-	if isDisabled {
-		return NewDisabledCollector(), nil
-	}
+func NewCollector() (*Collector, error) {
 	c := &Collector{
 		ProcessUsageSampleCh: make(chan ProcessUsageSample, 100),
 	}
-
+	if *flags.DisableGPUMonitoring {
+		return c, nil
+	}
 	libPath, err := findNvidiaMLLib()
 	if err != nil {
 		klog.Infoln(err)

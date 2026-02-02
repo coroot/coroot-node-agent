@@ -143,7 +143,7 @@ func main() {
 		klog.Exitln(err)
 	}
 
-	gpuCollector, err := gpu.NewCollector(*flags.DisableGPUMonitoring)
+	gpuCollector, err := gpu.NewCollector()
 	if err != nil {
 		klog.Warningln("failed to initialize GPU collector:", err)
 	}
