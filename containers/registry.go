@@ -335,6 +335,9 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		}
 		return nil
 	}
+	if strings.HasSuffix(cg.Id, "(deleted)") {
+		return nil
+	}
 	if c := r.containersByCgroupId[cg.Id]; c != nil {
 		r.containersByPid[pid] = c
 		return c
