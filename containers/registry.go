@@ -101,6 +101,10 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, gp
 	if err = CrioInit(); err != nil {
 		klog.Warningln(err)
 	}
+	klog.Infoln("Initializing Podman support")
+	if err = PodmanInit(); err != nil {
+		klog.Warningln(err)
+	}
 	if err = JournaldInit(); err != nil {
 		klog.Warningln(err)
 	}
@@ -491,6 +495,12 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 	case cgroup.ContainerTypeTalosRuntime:
 		return ContainerID(cg.ContainerId)
 	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
+	case cgroup.ContainerTypeLibpod:
+		// Handle Podman/libpod containers
+		if cg.ContainerId == "" {
+			return ""
+		}
+		return ContainerID("/libpod/" + cg.ContainerId)
 	default:
 		return ""
 	}
@@ -551,7 +561,7 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 		md := &ContainerMetadata{}
 		md.systemd = getSystemdProperties(cg.Id)
 		return md, nil
-	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
+	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio, cgroup.ContainerTypeLibpod:
 	default:
 		return &ContainerMetadata{}, nil
 	}
@@ -560,6 +570,9 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 	}
 	if cg.ContainerType == cgroup.ContainerTypeCrio {
 		return CrioInspect(cg.ContainerId)
+	}
+	if cg.ContainerType == cgroup.ContainerTypeLibpod {
+		return PodmanInspect(cg.ContainerId)
 	}
 	var dockerdErr error
 	if dockerdClient != nil {
