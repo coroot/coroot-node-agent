@@ -10,13 +10,13 @@ require (
 	github.com/cilium/ebpf v0.20.0
 	github.com/containerd/cgroups v1.1.0
 	github.com/containerd/containerd v1.7.29
-	github.com/coreos/go-systemd/v22 v22.5.0
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/coroot/logparser v1.2.1
 	github.com/docker/docker v27.4.0+incompatible
 	github.com/florianl/go-conntrack v0.3.0
 	github.com/go-kit/log v0.2.1
 	github.com/gobwas/glob v0.2.3
-	github.com/godbus/dbus/v5 v5.1.0
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/golang/snappy v0.0.4
 	github.com/grafana/pyroscope/ebpf v0.4.9
 	github.com/jpillora/backoff v1.0.0
@@ -40,7 +40,7 @@ require (
 	golang.org/x/arch v0.4.0
 	golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa
 	golang.org/x/net v0.46.0
-	golang.org/x/sys v0.37.0
+	golang.org/x/sys v0.40.0
 	golang.org/x/time v0.12.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
