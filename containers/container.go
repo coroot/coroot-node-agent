@@ -79,6 +79,7 @@ type ActiveConnection struct {
 	Fd             uint64
 	Timestamp      uint64
 	Closed         time.Time
+	connKey        ConnectionKey
 
 	BytesSent     uint64
 	BytesReceived uint64
@@ -602,13 +603,15 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst, actualDst 
 		}
 		stats.Count++
 		stats.TotalTime += duration
+		connKey := ConnectionKey{src: src, dst: dst}
 		connection := &ActiveConnection{
 			DestinationKey: key,
 			Pid:            pid,
 			Fd:             fd,
 			Timestamp:      timestamp,
+			connKey:        connKey,
 		}
-		c.activeConnections[ConnectionKey{src: src, dst: dst}] = connection
+		c.activeConnections[connKey] = connection
 		k := PidFd{Pid: pid, Fd: fd}
 		prev := c.connectionsByPidFd[k]
 		if prev != nil {
@@ -634,6 +637,9 @@ func (c *Container) onConnectionClose(e ebpftracer.Event) {
 				c.lock.Unlock()
 			}
 			conn.Closed = time.Now()
+			// connection cleanup
+			delete(c.activeConnections, conn.connKey)
+			delete(c.connectionsByPidFd, PidFd{Pid: e.Pid, Fd: e.Fd})
 		}
 	}
 }
