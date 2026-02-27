@@ -39,16 +39,17 @@ type ContainerNetwork struct {
 }
 
 type ContainerMetadata struct {
-	name        string
-	labels      map[string]string
-	volumes     map[string]string
-	logPath     string
-	image       string
-	logDecoder  logparser.Decoder
-	hostListens map[string][]netaddr.IPPort
-	networks    map[string]ContainerNetwork
-	env         map[string]string
-	systemd     SystemdProperties
+	name               string
+	labels             map[string]string
+	volumes            map[string]string
+	logPath            string
+	image              string
+	logDecoder         logparser.Decoder
+	hostListens        map[string][]netaddr.IPPort
+	networks           map[string]ContainerNetwork
+	env                map[string]string
+	systemd            SystemdProperties
+	podmanJournaldUnit string
 }
 
 type Delays struct {
@@ -1100,6 +1101,37 @@ func (c *Container) runLogParser(logPath string) {
 		}
 		klog.InfoS("started container logparser", "cg", c.cgroup.Id)
 		c.logParsers["stdout/stderr"] = &LogParser{parser: parser, stop: reader.Stop}
+
+	case cgroup.ContainerTypePodman:
+		if c.metadata.logPath != "" {
+			if c.logParsers["stdout/stderr"] != nil {
+				return
+			}
+			ch := make(chan logparser.LogEntry)
+			parser := logparser.NewParser(ch, c.metadata.logDecoder, logs.OtelLogEmitter(containerId), multilineCollectorTimeout, *flags.LogPatternsPerContainer)
+			reader, err := logs.NewTailReader(proc.HostPath(c.metadata.logPath), ch)
+			if err != nil {
+				klog.Warningln(err)
+				parser.Stop()
+				return
+			}
+			klog.InfoS("started podman logparser", "cg", c.cgroup.Id)
+			c.logParsers["stdout/stderr"] = &LogParser{parser: parser, stop: reader.Stop}
+			return
+		}
+		unit := c.metadata.podmanJournaldUnit
+		if unit == "" {
+			unit = "libpod-" + c.cgroup.ContainerId + ".scope"
+		}
+		ch := make(chan logparser.LogEntry)
+		if err := JournaldSubscribe(unit, ch); err != nil {
+			klog.Warningln(err)
+			return
+		}
+		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId), multilineCollectorTimeout, *flags.LogPatternsPerContainer)
+		stop := func() { JournaldUnsubscribe(unit) }
+		klog.InfoS("started podman journald logparser", "cg", c.cgroup.Id, "unit", unit)
+		c.logParsers["journald"] = &LogParser{parser: parser, stop: stop}
 	}
 }
 

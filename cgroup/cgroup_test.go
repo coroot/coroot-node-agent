@@ -82,6 +82,33 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 	assert.Equal(t, "/lxc/first", cg.ContainerId)
 	assert.Equal(t, ContainerTypeLxc, cg.ContainerType)
 
+	// Podman: rootful via machine.slice
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/4000/cgroup"))
+	require.Nil(t, err)
+	assert.Equal(t, "/machine.slice/libpod-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.scope", cg.Id)
+	assert.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", cg.ContainerId)
+	assert.Equal(t, ContainerTypePodman, cg.ContainerType)
+
+	// Podman: rootless via user.slice
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/4100/cgroup"))
+	require.Nil(t, err)
+	assert.Equal(t, "/user.slice/user-1000.slice/user@1000.service/libpod-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.scope", cg.Id)
+	assert.Equal(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", cg.ContainerId)
+	assert.Equal(t, ContainerTypePodman, cg.ContainerType)
+
+	// Podman: --cgroups=split via system.slice
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/4200/cgroup"))
+	require.Nil(t, err)
+	assert.Equal(t, "/system.slice/myapp.service/libpod-payload-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", cg.Id)
+	assert.Equal(t, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", cg.ContainerId)
+	assert.Equal(t, ContainerTypePodman, cg.ContainerType)
+
+	// Podman: conmon process (should be filtered)
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/4300/cgroup"))
+	require.Nil(t, err)
+	assert.Equal(t, ContainerTypeUnknown, cg.ContainerType)
+	assert.Equal(t, "", cg.ContainerId)
+
 	baseCgroupPath = "/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podc83d0428_58af_41eb_8dba_b9e6eddffe7b.slice/docker-0e612005fd07e7f47e2cd07df99a2b4e909446814d71d0b5e4efc7159dd51252.scope"
 	defer func() {
 		baseCgroupPath = ""
@@ -224,5 +251,53 @@ func TestContainerByCgroup(t *testing.T) {
 	typ, id, err = containerByCgroup("/system.slice/docker-ba7b10d15d16e10e3de7a2dcd408a3d971169ae303f46cfad4c5453c6326fee2.scope")
 	as.Equal(ContainerTypeDocker, typ)
 	as.Equal("ba7b10d15d16e10e3de7a2dcd408a3d971169ae303f46cfad4c5453c6326fee2", id)
+	as.Nil(err)
+
+	// Podman: rootful via machine.slice
+	typ, id, err = containerByCgroup("/machine.slice/libpod-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.scope")
+	as.Equal(ContainerTypePodman, typ)
+	as.Equal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", id)
+	as.Nil(err)
+
+	// Podman: rootful conmon (should be filtered)
+	typ, id, err = containerByCgroup("/machine.slice/libpod-conmon-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.scope")
+	as.Equal(ContainerTypeUnknown, typ)
+	as.Equal("", id)
+	as.Nil(err)
+
+	// Non-libpod machine.slice (e.g. QEMU VM)
+	typ, id, err = containerByCgroup("/machine.slice/qemu-1-fedora.scope")
+	as.Equal(ContainerTypeStandaloneProcess, typ)
+	as.Equal("", id)
+	as.Nil(err)
+
+	// Podman: rootless via user.slice
+	typ, id, err = containerByCgroup("/user.slice/user-1000.slice/user@1000.service/libpod-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.scope")
+	as.Equal(ContainerTypePodman, typ)
+	as.Equal("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", id)
+	as.Nil(err)
+
+	// Podman: rootless conmon (should be filtered)
+	typ, id, err = containerByCgroup("/user.slice/user-1000.slice/user@1000.service/libpod-conmon-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.scope")
+	as.Equal(ContainerTypeUnknown, typ)
+	as.Equal("", id)
+	as.Nil(err)
+
+	// Non-libpod user.slice (existing behavior preserved)
+	typ, id, err = containerByCgroup("/user.slice/user-1000.slice/session-1.scope")
+	as.Equal(ContainerTypeStandaloneProcess, typ)
+	as.Equal("", id)
+	as.Nil(err)
+
+	// Podman: --cgroups=split via system.slice (apollo13 pattern)
+	typ, id, err = containerByCgroup("/system.slice/myapp.service/libpod-payload-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+	as.Equal(ContainerTypePodman, typ)
+	as.Equal("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", id)
+	as.Nil(err)
+
+	// Podman: --cgroups=split conmon (should be filtered)
+	typ, id, err = containerByCgroup("/system.slice/myapp.service/libpod-conmon-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+	as.Equal(ContainerTypeUnknown, typ)
+	as.Equal("", id)
 	as.Nil(err)
 }

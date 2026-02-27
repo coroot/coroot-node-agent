@@ -26,6 +26,8 @@ var (
 	systemSliceIdRegexp = regexp.MustCompile(`(/(system|runtime|reserved|kube|azure)\.slice/([^/]+))`)
 	talosIdRegexp       = regexp.MustCompile(`/(system|podruntime)/([^/]+)`)
 	lxcPayloadRegexp    = regexp.MustCompile(`/lxc\.payload\.([^/]+)`)
+	libpodIdRegexp      = regexp.MustCompile(`libpod-([a-z0-9]{64})\.scope$`)
+	libpodPayloadRegexp = regexp.MustCompile(`libpod-payload-([a-z0-9]{64})`)
 )
 
 type ContainerType uint8
@@ -40,6 +42,7 @@ const (
 	ContainerTypeSystemdService
 	ContainerTypeSandbox
 	ContainerTypeTalosRuntime
+	ContainerTypePodman
 )
 
 func (t ContainerType) String() string {
@@ -56,6 +59,8 @@ func (t ContainerType) String() string {
 		return "lxc"
 	case ContainerTypeSystemdService:
 		return "systemd"
+	case ContainerTypePodman:
+		return "podman"
 	default:
 		return "unknown"
 	}
@@ -162,7 +167,15 @@ func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 	switch {
 	case cgroupPath == "/init":
 		return ContainerTypeTalosRuntime, "/talos/init", nil
-	case prefix == "user.slice" || prefix == "init.scope" || prefix == "systemd":
+	case prefix == "user.slice":
+		if strings.Contains(cgroupPath, "libpod-conmon-") {
+			return ContainerTypeUnknown, "", nil
+		}
+		if matches := libpodIdRegexp.FindStringSubmatch(cgroupPath); matches != nil {
+			return ContainerTypePodman, matches[1], nil
+		}
+		return ContainerTypeStandaloneProcess, "", nil
+	case prefix == "init.scope" || prefix == "systemd":
 		return ContainerTypeStandaloneProcess, "", nil
 	case prefix == "docker" || (prefix == "system.slice" && len(parts) > 1 && strings.HasPrefix(parts[1], "docker-")):
 		matches := dockerIdRegexp.FindStringSubmatch(cgroupPath)
@@ -194,6 +207,12 @@ func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 		}
 		return ContainerTypeTalosRuntime, path.Join("/talos/", matches[2]), nil
 	case prefix == "system.slice" || prefix == "runtime.slice" || prefix == "reserved.slice" || prefix == "kube.slice" || prefix == "azure.slice":
+		if strings.Contains(cgroupPath, "libpod-conmon-") {
+			return ContainerTypeUnknown, "", nil
+		}
+		if matches := libpodPayloadRegexp.FindStringSubmatch(cgroupPath); matches != nil {
+			return ContainerTypePodman, matches[1], nil
+		}
 		if strings.HasSuffix(cgroupPath, ".scope") {
 			return ContainerTypeStandaloneProcess, "", nil
 		}
@@ -214,6 +233,14 @@ func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 			return ContainerTypeUnknown, "", fmt.Errorf("invalid lxc payload cgroup %s", cgroupPath)
 		}
 		return ContainerTypeLxc, "/lxc/" + matches[1], nil
+	case prefix == "machine.slice":
+		if strings.Contains(cgroupPath, "libpod-conmon-") {
+			return ContainerTypeUnknown, "", nil
+		}
+		if matches := libpodIdRegexp.FindStringSubmatch(cgroupPath); matches != nil {
+			return ContainerTypePodman, matches[1], nil
+		}
+		return ContainerTypeStandaloneProcess, "", nil
 	case len(parts) < 2:
 		return ContainerTypeStandaloneProcess, "", nil
 	}
