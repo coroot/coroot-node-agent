@@ -101,6 +101,9 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, gp
 	if err = CrioInit(); err != nil {
 		klog.Warningln(err)
 	}
+	if err = PodmanInit(); err != nil {
+		klog.Warningln(err)
+	}
 	if err = JournaldInit(); err != nil {
 		klog.Warningln(err)
 	}
@@ -490,7 +493,7 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 		return ContainerID(cg.ContainerId)
 	case cgroup.ContainerTypeTalosRuntime:
 		return ContainerID(cg.ContainerId)
-	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
+	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio, cgroup.ContainerTypePodman:
 	default:
 		return ""
 	}
@@ -538,9 +541,12 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 			return ContainerID(fmt.Sprintf("/nomad/%s/%s/%s/%s/%s", namespace, job, group, allocId, task))
 		}
 	}
-	if md.name == "" { // should be "pure" dockerd container here
-		klog.Warningln("empty dockerd container name for:", cg.ContainerId)
+	if md.name == "" {
+		klog.Warningln("empty container name for:", cg.ContainerId)
 		return ""
+	}
+	if cg.ContainerType == cgroup.ContainerTypePodman {
+		return ContainerID("/podman/" + md.name)
 	}
 	return ContainerID("/docker/" + md.name)
 }
@@ -552,7 +558,7 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 		md := &ContainerMetadata{}
 		md.systemd, err = getSystemdProperties(cg.Id)
 		return md, err
-	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
+	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio, cgroup.ContainerTypePodman:
 	default:
 		return &ContainerMetadata{}, nil
 	}
@@ -561,6 +567,9 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 	}
 	if cg.ContainerType == cgroup.ContainerTypeCrio {
 		return CrioInspect(cg.ContainerId)
+	}
+	if cg.ContainerType == cgroup.ContainerTypePodman {
+		return PodmanInspect(cg.ContainerId)
 	}
 	var dockerdErr error
 	if dockerdClient != nil {
