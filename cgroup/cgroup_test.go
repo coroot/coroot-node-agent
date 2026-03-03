@@ -171,6 +171,16 @@ func TestContainerByCgroup(t *testing.T) {
 	as.Equal("/azure.slice/walinuxagent.service", id)
 	as.Nil(err)
 
+	typ, id, err = containerByCgroup("/podruntime.slice/containerd.service")
+	as.Equal(typ, ContainerTypeSystemdService)
+	as.Equal("/podruntime.slice/containerd.service", id)
+	as.Nil(err)
+
+	typ, id, err = containerByCgroup("/podruntime.slice/kubelet.service")
+	as.Equal(typ, ContainerTypeSystemdService)
+	as.Equal("/podruntime.slice/kubelet.service", id)
+	as.Nil(err)
+
 	typ, id, err = containerByCgroup("/system.slice/system-postgresql.slice/postgresql@9.4-main.service")
 	as.Equal(typ, ContainerTypeSystemdService)
 	as.Equal("/system.slice/system-postgresql.slice", id)
