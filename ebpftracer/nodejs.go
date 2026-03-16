@@ -11,7 +11,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) []link.Link {
+func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) *UprobeKey {
 	log := func(libPath, msg string, err error) {
 		if err != nil {
 			for _, s := range []string{"no such file or directory", "no such process", "permission denied"} {
@@ -26,17 +26,23 @@ func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) []link.Link {
 	}
 
 	for _, libPath := range append(getLibuv(pid), proc.Path(pid, "root", exe)) {
-		if links, err := t.attachNodejsUprobes(libPath, pid); err == nil {
+		key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
+			links, err := t.attachNodejsUprobes(libPath)
+			if err != nil {
+				log(libPath, "failed to attach nodejs uprobes", err)
+				return nil
+			}
 			log(libPath, "nodejs uprobes attached", nil)
 			return links
-		} else {
-			log(libPath, "failed to attach nodejs uprobes", err)
+		})
+		if ok {
+			return &key
 		}
 	}
 	return nil
 }
 
-func (t *Tracer) attachNodejsUprobes(libPath string, pid uint32) ([]link.Link, error) {
+func (t *Tracer) attachNodejsUprobes(libPath string) ([]link.Link, error) {
 	exe, err := link.OpenExecutable(libPath)
 	if err != nil {
 		return nil, err
@@ -51,14 +57,14 @@ func (t *Tracer) attachNodejsUprobes(libPath string, pid uint32) ([]link.Link, e
 	if err != nil {
 		return nil, err
 	}
-	l, err := s.AttachUprobe(exe, t.uprobes["uv_io_poll_enter"], pid)
+	l, err := s.AttachUprobe(exe, t.uprobes["uv_io_poll_enter"], 0)
 	if err != nil {
 		return nil, err
 	}
 	var links []link.Link
 	links = append(links, l)
 
-	ls, err := s.AttachUretprobes(exe, t.uprobes["uv_io_poll_exit"], pid)
+	ls, err := s.AttachUretprobes(exe, t.uprobes["uv_io_poll_exit"], 0)
 	links = append(links, ls...)
 	if err != nil {
 		for _, l := range links {
@@ -72,12 +78,12 @@ func (t *Tracer) attachNodejsUprobes(libPath string, pid uint32) ([]link.Link, e
 		if err != nil {
 			break
 		}
-		l, err = s.AttachUprobe(exe, t.uprobes["uv_io_cb_enter"], pid)
+		l, err = s.AttachUprobe(exe, t.uprobes["uv_io_cb_enter"], 0)
 		if err != nil {
 			break
 		}
 		links = append(links, l)
-		ls, err = s.AttachUretprobes(exe, t.uprobes["uv_io_cb_exit"], pid)
+		ls, err = s.AttachUretprobes(exe, t.uprobes["uv_io_cb_exit"], 0)
 		links = append(links, ls...)
 		if err != nil {
 			break

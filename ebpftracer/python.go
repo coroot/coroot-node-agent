@@ -17,7 +17,7 @@ var (
 	muslRegexp = regexp.MustCompile(`ld-musl[\.-]`)
 )
 
-func (t *Tracer) AttachPythonThreadLockProbes(pid uint32) []link.Link {
+func (t *Tracer) AttachPythonThreadLockProbes(pid uint32) *UprobeKey {
 	log := func(libPath, msg string, err error) {
 		if err != nil {
 			for _, s := range []string{"no such file or directory", "no such process", "permission denied"} {
@@ -31,26 +31,24 @@ func (t *Tracer) AttachPythonThreadLockProbes(pid uint32) []link.Link {
 		klog.InfofDepth(1, "pid=%d lib=%s: %s", pid, libPath, msg)
 	}
 
-	var (
-		links []link.Link
-		err   error
-	)
-
 	for _, libPath := range getPthreadLibs(pid) {
-		if links, err = t.attachPythonUprobes(libPath, pid); err == nil {
+		key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
+			links, err := t.attachPythonUprobes(libPath)
+			if err != nil {
+				log(libPath, "failed to attach python uprobes", err)
+				return nil
+			}
 			log(libPath, "python uprobes attached", nil)
 			return links
-		} else {
-			log(libPath, "failed to attach python uprobes", err)
+		})
+		if ok {
+			return &key
 		}
 	}
-	if len(links) > 0 {
-
-	}
-	return links
+	return nil
 }
 
-func (t *Tracer) attachPythonUprobes(libPath string, pid uint32) ([]link.Link, error) {
+func (t *Tracer) attachPythonUprobes(libPath string) ([]link.Link, error) {
 	exe, err := link.OpenExecutable(libPath)
 	if err != nil {
 		return nil, err
@@ -65,12 +63,12 @@ func (t *Tracer) attachPythonUprobes(libPath string, pid uint32) ([]link.Link, e
 	if err != nil {
 		return nil, err
 	}
-	l, err := s.AttachUprobe(exe, t.uprobes["pthread_cond_timedwait_enter"], pid)
+	l, err := s.AttachUprobe(exe, t.uprobes["pthread_cond_timedwait_enter"], 0)
 	if err != nil {
 		return nil, err
 	}
 	links := []link.Link{l}
-	ls, err := s.AttachUretprobes(exe, t.uprobes["pthread_cond_timedwait_exit"], pid)
+	ls, err := s.AttachUretprobes(exe, t.uprobes["pthread_cond_timedwait_exit"], 0)
 	links = append(links, ls...)
 	if err != nil {
 		for _, l := range links {

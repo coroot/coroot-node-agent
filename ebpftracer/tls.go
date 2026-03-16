@@ -24,7 +24,7 @@ var (
 	opensslVersionRe = regexp.MustCompile(`OpenSSL\s(\d\.\d+\.\d+)`)
 )
 
-func (t *Tracer) AttachOpenSslUprobes(pid uint32) []link.Link {
+func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 	if t.disableL7Tracing {
 		return nil
 	}
@@ -46,101 +46,107 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) []link.Link {
 		klog.InfofDepth(1, "pid=%d libssl_version=%s: %s", pid, version, msg)
 	}
 
-	exe, err := link.OpenExecutable(libPath)
-	if err != nil {
-		log("failed to open executable", err)
-		return nil
-	}
-	var links []link.Link
-	closeLinks := func() {
-		for _, l := range links {
-			l.Close()
-		}
-	}
-	writeEnter := "openssl_SSL_write_enter"
-	readEnter := "openssl_SSL_read_enter"
-	readExEnter := "openssl_SSL_read_ex_enter"
-	readExit := "openssl_SSL_read_exit"
-	v, err := common.VersionFromString(version)
-	if err != nil {
-		log("failed to determine version", err)
-		return nil
-	}
-	switch {
-	case v.GreaterOrEqual(common.NewVersion(3, 0, 0)):
-		writeEnter = "openssl_SSL_write_enter_v3_0"
-		readEnter = "openssl_SSL_read_enter_v3_0"
-		readExEnter = "openssl_SSL_read_ex_enter_v3_0"
-	case v.GreaterOrEqual(common.NewVersion(1, 1, 1)):
-		writeEnter = "openssl_SSL_write_enter_v1_1_1"
-		readEnter = "openssl_SSL_read_enter_v1_1_1"
-		readExEnter = "openssl_SSL_read_ex_enter_v1_1_1"
-	}
-
-	type prog struct {
-		symbol    string
-		uprobe    string
-		uretprobe string
-	}
-	progs := []prog{
-		{symbol: "SSL_write", uprobe: writeEnter},
-		{symbol: "SSL_read", uprobe: readEnter},
-		{symbol: "SSL_read", uretprobe: readExit},
-	}
-	if v.GreaterOrEqual(common.NewVersion(1, 1, 1)) {
-		progs = append(progs, []prog{
-			{symbol: "SSL_write_ex", uprobe: writeEnter},
-			{symbol: "SSL_read_ex", uprobe: readExEnter},
-			{symbol: "SSL_read_ex", uretprobe: readExit},
-		}...)
-	}
-
-	ef, err := OpenELFFile(libPath)
-	if err != nil {
-		log("open elf", err)
-		return nil
-	}
-	defer ef.Close()
-
-	for _, p := range progs {
-		s, err := ef.GetSymbol(p.symbol)
+	key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
+		exe, err := link.OpenExecutable(libPath)
 		if err != nil {
-			log("failed to get symbol", err)
-			closeLinks()
+			log("failed to open executable", err)
 			return nil
 		}
-		if p.uprobe != "" {
-			l, err := s.AttachUprobe(exe, t.uprobes[p.uprobe], pid)
+		var links []link.Link
+		closeLinks := func() {
+			for _, l := range links {
+				l.Close()
+			}
+		}
+		writeEnter := "openssl_SSL_write_enter"
+		readEnter := "openssl_SSL_read_enter"
+		readExEnter := "openssl_SSL_read_ex_enter"
+		readExit := "openssl_SSL_read_exit"
+		v, err := common.VersionFromString(version)
+		if err != nil {
+			log("failed to determine version", err)
+			return nil
+		}
+		switch {
+		case v.GreaterOrEqual(common.NewVersion(3, 0, 0)):
+			writeEnter = "openssl_SSL_write_enter_v3_0"
+			readEnter = "openssl_SSL_read_enter_v3_0"
+			readExEnter = "openssl_SSL_read_ex_enter_v3_0"
+		case v.GreaterOrEqual(common.NewVersion(1, 1, 1)):
+			writeEnter = "openssl_SSL_write_enter_v1_1_1"
+			readEnter = "openssl_SSL_read_enter_v1_1_1"
+			readExEnter = "openssl_SSL_read_ex_enter_v1_1_1"
+		}
+
+		type prog struct {
+			symbol    string
+			uprobe    string
+			uretprobe string
+		}
+		progs := []prog{
+			{symbol: "SSL_write", uprobe: writeEnter},
+			{symbol: "SSL_read", uprobe: readEnter},
+			{symbol: "SSL_read", uretprobe: readExit},
+		}
+		if v.GreaterOrEqual(common.NewVersion(1, 1, 1)) {
+			progs = append(progs, []prog{
+				{symbol: "SSL_write_ex", uprobe: writeEnter},
+				{symbol: "SSL_read_ex", uprobe: readExEnter},
+				{symbol: "SSL_read_ex", uretprobe: readExit},
+			}...)
+		}
+
+		ef, err := OpenELFFile(libPath)
+		if err != nil {
+			log("open elf", err)
+			return nil
+		}
+		defer ef.Close()
+
+		for _, p := range progs {
+			s, err := ef.GetSymbol(p.symbol)
 			if err != nil {
-				log("failed to attach uprobe", err)
+				log("failed to get symbol", err)
 				closeLinks()
 				return nil
 			}
-			links = append(links, l)
-		}
-		if p.uretprobe != "" {
-			ls, err := s.AttachUretprobes(exe, t.uprobes[p.uretprobe], pid)
-			links = append(links, ls...)
-			if err != nil {
-				log("failed to attach exit uprobe", err)
-				closeLinks()
-				return nil
+			if p.uprobe != "" {
+				l, err := s.AttachUprobe(exe, t.uprobes[p.uprobe], 0)
+				if err != nil {
+					log("failed to attach uprobe", err)
+					closeLinks()
+					return nil
+				}
+				links = append(links, l)
+			}
+			if p.uretprobe != "" {
+				ls, err := s.AttachUretprobes(exe, t.uprobes[p.uretprobe], 0)
+				links = append(links, ls...)
+				if err != nil {
+					log("failed to attach exit uprobe", err)
+					closeLinks()
+					return nil
+				}
 			}
 		}
+		if len(links) > 0 {
+			log("libssl uprobes attached (global)", nil)
+		}
+		return links
+	})
+	if ok {
+		return &key
 	}
-	if len(links) > 0 {
-		log("libssl uprobes attached", nil)
-	}
-	return links
+	return nil
 }
 
-func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
+func (t *Tracer) AttachGoTlsUprobes(pid uint32) (*UprobeKey, bool) {
 	isGolangApp := false
 	if t.disableL7Tracing {
 		return nil, isGolangApp
 	}
 
-	path := proc.Path(pid, "exe")
+	exePath := proc.Path(pid, "exe")
 
 	var err error
 	var name, version string
@@ -157,14 +163,14 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
 		klog.InfofDepth(1, "pid=%d golang_app=%s golang_version=%s: %s", pid, name, version, msg)
 	}
 
-	bi, err := buildinfo.ReadFile(path)
+	bi, err := buildinfo.ReadFile(exePath)
 	if err != nil {
 		log("failed to read build info", err)
 		return nil, isGolangApp
 	}
 	isGolangApp = true
 
-	name, err = os.Readlink(path)
+	name, err = os.Readlink(exePath)
 	if err != nil {
 		log("failed to read name", err)
 		return nil, isGolangApp
@@ -179,63 +185,69 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) ([]link.Link, bool) {
 		return nil, isGolangApp
 	}
 
-	ef, err := OpenELFFile(path)
-	if err != nil {
-		log("failed to open as elf binary", err)
-		return nil, isGolangApp
-	}
-	defer ef.Close()
-
-	exe, err := link.OpenExecutable(path)
-	if err != nil {
-		log("failed to open executable", err)
-		return nil, isGolangApp
-	}
-
-	var links []link.Link
-	closeLinks := func() {
-		for _, l := range links {
-			l.Close()
+	key, ok := t.AcquireGlobalUprobe(proc.Path(pid, "root", name), func() []link.Link {
+		ef, err := OpenELFFile(exePath)
+		if err != nil {
+			log("failed to open as elf binary", err)
+			return nil
 		}
-	}
+		defer ef.Close()
 
-	ws, err := ef.GetSymbol(goTlsWriteSymbol)
-	if err != nil {
-		log("failed to get symbol", err)
-		return nil, isGolangApp
-	}
-	l, err := ws.AttachUprobe(exe, t.uprobes["go_crypto_tls_write_enter"], pid)
-	if err != nil {
-		log("failed to attach write_enter uprobe", err)
-		return nil, isGolangApp
-	}
-	links = append(links, l)
+		exe, err := link.OpenExecutable(exePath)
+		if err != nil {
+			log("failed to open executable", err)
+			return nil
+		}
 
-	rs, err := ef.GetSymbol(goTlsReadSymbol)
-	if err != nil {
-		log("failed to get symbol", err)
-		return nil, isGolangApp
-	}
-	l, err = rs.AttachUprobe(exe, t.uprobes["go_crypto_tls_read_enter"], pid)
-	if err != nil {
-		log("failed to attach read_enter uprobe", err)
-		closeLinks()
-		return nil, isGolangApp
-	}
-	links = append(links, l)
+		var links []link.Link
+		closeLinks := func() {
+			for _, l := range links {
+				l.Close()
+			}
+		}
 
-	ls, err := rs.AttachUretprobes(exe, t.uprobes["go_crypto_tls_read_exit"], pid)
-	links = append(links, ls...)
-	if err != nil {
-		log("failed to attach read_exit uprobe", err)
-		closeLinks()
-		return nil, isGolangApp
+		ws, err := ef.GetSymbol(goTlsWriteSymbol)
+		if err != nil {
+			log("failed to get symbol", err)
+			return nil
+		}
+		l, err := ws.AttachUprobe(exe, t.uprobes["go_crypto_tls_write_enter"], 0)
+		if err != nil {
+			log("failed to attach write_enter uprobe", err)
+			return nil
+		}
+		links = append(links, l)
+
+		rs, err := ef.GetSymbol(goTlsReadSymbol)
+		if err != nil {
+			log("failed to get symbol", err)
+			return nil
+		}
+		l, err = rs.AttachUprobe(exe, t.uprobes["go_crypto_tls_read_enter"], 0)
+		if err != nil {
+			log("failed to attach read_enter uprobe", err)
+			closeLinks()
+			return nil
+		}
+		links = append(links, l)
+
+		ls, err := rs.AttachUretprobes(exe, t.uprobes["go_crypto_tls_read_exit"], 0)
+		links = append(links, ls...)
+		if err != nil {
+			log("failed to attach read_exit uprobe", err)
+			closeLinks()
+			return nil
+		}
+		if len(links) == 0 {
+			return nil
+		}
+		log("crypto/tls uprobes attached", nil)
+		return links
+	})
+	if ok {
+		return &key, isGolangApp
 	}
-	if len(links) == 0 {
-		return nil, isGolangApp
-	}
-	log("crypto/tls uprobes attached", nil)
-	return links, isGolangApp
+	return nil, isGolangApp
 }
 
 func getSslLibPathAndVersion(pid uint32) (string, string) {

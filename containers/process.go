@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/cilium/ebpf/link"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/proc"
@@ -35,10 +34,11 @@ type Process struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
+	tracer        *ebpftracer.Tracer
 	dotNetMonitor *DotNetMonitor
 	isGolangApp   bool
 
-	uprobes               []link.Link
+	uprobeKeys            []ebpftracer.UprobeKey
 	goTlsUprobesChecked   bool
 	openSslUprobesChecked bool
 	pythonGilChecked      bool
@@ -50,7 +50,7 @@ type Process struct {
 }
 
 func NewProcess(pid uint32, stats *taskstats.Stats, tracer *ebpftracer.Tracer) *Process {
-	p := &Process{Pid: pid, StartedAt: stats.BeginTime}
+	p := &Process{Pid: pid, StartedAt: stats.BeginTime, tracer: tracer}
 	p.Flags, _ = proc.GetFlags(pid)
 	p.ctx, p.cancelFunc = context.WithCancel(context.Background())
 	go p.instrument(tracer)
@@ -118,8 +118,10 @@ func (p *Process) instrumentPython(cmdline []byte, tracer *ebpftracer.Tracer) {
 	if !pythonCmd.Match(cmd) {
 		return
 	}
-	p.pythonPrevStats = &ebpftracer.PythonStats{}
-	p.uprobes = append(p.uprobes, tracer.AttachPythonThreadLockProbes(p.Pid)...)
+	if key := tracer.AttachPythonThreadLockProbes(p.Pid); key != nil {
+		p.pythonPrevStats = &ebpftracer.PythonStats{}
+		p.uprobeKeys = append(p.uprobeKeys, *key)
+	}
 }
 
 func (p *Process) instrumentNodejs(exe string, tracer *ebpftracer.Tracer) {
@@ -130,8 +132,10 @@ func (p *Process) instrumentNodejs(exe string, tracer *ebpftracer.Tracer) {
 	if !nodejsCmd.MatchString(exe) {
 		return
 	}
-	p.nodejsPrevStats = &ebpftracer.NodejsStats{}
-	p.uprobes = append(p.uprobes, tracer.AttachNodejsProbes(p.Pid, exe)...)
+	if key := tracer.AttachNodejsProbes(p.Pid, exe); key != nil {
+		p.nodejsPrevStats = &ebpftracer.NodejsStats{}
+		p.uprobeKeys = append(p.uprobeKeys, *key)
+	}
 }
 
 func (p *Process) addGpuUsageSample(sample gpu.ProcessUsageSample) {
@@ -173,13 +177,8 @@ func (p *Process) removeOldGpuUsageSamples(cutoff time.Time) {
 
 func (p *Process) Close() {
 	p.cancelFunc()
-	if len(p.uprobes) > 0 {
-		uprobes := p.uprobes
-		p.uprobes = nil
-		go func() {
-			for _, u := range uprobes {
-				_ = u.Close()
-			}
-		}()
+	if len(p.uprobeKeys) > 0 {
+		p.tracer.ReleaseGlobalUprobes(p.uprobeKeys)
+		p.uprobeKeys = nil
 	}
 }

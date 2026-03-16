@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cilium/ebpf"
@@ -78,6 +80,16 @@ const (
 	perfMapTypeL7Events   perfMapType = 4
 )
 
+type UprobeKey struct {
+	Dev uint64
+	Ino uint64
+}
+
+type globalUprobe struct {
+	links    []link.Link
+	refcount int
+}
+
 type Tracer struct {
 	disableL7Tracing bool
 	hostNetNs        netns.NsHandle
@@ -87,6 +99,9 @@ type Tracer struct {
 	readers    map[string]*perf.Reader
 	links      []link.Link
 	uprobes    map[string]*ebpf.Program
+
+	globalUprobes     map[UprobeKey]*globalUprobe
+	globalUprobesLock sync.Mutex
 }
 
 func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Tracer {
@@ -98,8 +113,9 @@ func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Trac
 		hostNetNs:        hostNetNs,
 		selfNetNs:        selfNetNs,
 
-		readers: map[string]*perf.Reader{},
-		uprobes: map[string]*ebpf.Program{},
+		readers:       map[string]*perf.Reader{},
+		uprobes:       map[string]*ebpf.Program{},
+		globalUprobes: map[UprobeKey]*globalUprobe{},
 	}
 }
 
@@ -126,7 +142,56 @@ func (t *Tracer) Close() {
 	for _, r := range t.readers {
 		_ = r.Close()
 	}
+	t.globalUprobesLock.Lock()
+	for _, gu := range t.globalUprobes {
+		for _, l := range gu.links {
+			_ = l.Close()
+		}
+	}
+	t.globalUprobes = nil
+	t.globalUprobesLock.Unlock()
 	t.collection.Close()
+}
+
+func (t *Tracer) AcquireGlobalUprobe(path string, attach func() []link.Link) (UprobeKey, bool) {
+	var stat syscall.Stat_t
+	if err := syscall.Stat(path, &stat); err != nil {
+		return UprobeKey{}, false
+	}
+	key := UprobeKey{Dev: stat.Dev, Ino: stat.Ino}
+
+	t.globalUprobesLock.Lock()
+	defer t.globalUprobesLock.Unlock()
+
+	if gu, ok := t.globalUprobes[key]; ok {
+		gu.refcount++
+		return key, true
+	}
+	links := attach()
+	if len(links) == 0 {
+		return UprobeKey{}, false
+	}
+	t.globalUprobes[key] = &globalUprobe{links: links, refcount: 1}
+	return key, true
+}
+
+func (t *Tracer) ReleaseGlobalUprobes(keys []UprobeKey) {
+	t.globalUprobesLock.Lock()
+	defer t.globalUprobesLock.Unlock()
+
+	for _, key := range keys {
+		gu, ok := t.globalUprobes[key]
+		if !ok {
+			continue
+		}
+		gu.refcount--
+		if gu.refcount <= 0 {
+			for _, l := range gu.links {
+				_ = l.Close()
+			}
+			delete(t.globalUprobes, key)
+		}
+	}
 }
 
 func (t *Tracer) ActiveConnectionsIterator() *ebpf.MapIterator {

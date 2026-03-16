@@ -1238,13 +1238,17 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 		return
 	}
 	if !p.openSslUprobesChecked {
-		p.uprobes = append(p.uprobes, tracer.AttachOpenSslUprobes(pid)...)
+		if key := tracer.AttachOpenSslUprobes(pid); key != nil {
+			p.uprobeKeys = append(p.uprobeKeys, *key)
+		}
 		p.openSslUprobesChecked = true
 	}
 	if !p.goTlsUprobesChecked {
-		uprobes, isGolangApp := tracer.AttachGoTlsUprobes(pid)
+		key, isGolangApp := tracer.AttachGoTlsUprobes(pid)
 		p.isGolangApp = isGolangApp
-		p.uprobes = append(p.uprobes, uprobes...)
+		if key != nil {
+			p.uprobeKeys = append(p.uprobeKeys, *key)
+		}
 		p.goTlsUprobesChecked = true
 	}
 }

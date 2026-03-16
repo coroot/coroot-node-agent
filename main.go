@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
@@ -164,10 +168,7 @@ func main() {
 	if err != nil {
 		klog.Exitln(err)
 	}
-	defer cr.Close()
-
 	profiling.Start()
-	defer profiling.Stop()
 
 	if err := prom.StartAgent(registry, machineId, systemUuid); err != nil {
 		klog.Exitln(err)
@@ -175,7 +176,40 @@ func main() {
 
 	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{ErrorLog: logger{}, Registry: registerer}))
 	klog.Infoln("listening on:", *flags.ListenAddress)
-	klog.Errorln(http.ListenAndServe(*flags.ListenAddress, nil))
+
+	srv := &http.Server{Addr: *flags.ListenAddress}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			klog.Exitln(err)
+		}
+	}()
+
+	sig := <-sigCh
+	klog.Infof("received %s, shutting down", sig)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		klog.Warningf("HTTP server shutdown error: %s", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		cr.Close()
+		profiling.Stop()
+	}()
+
+	select {
+	case <-done:
+		klog.Infoln("cleanup completed")
+	case <-time.After(10 * time.Second):
+		klog.Warningln("cleanup timed out, forcing exit")
+	}
 }
 
 func info(name, version string) prometheus.Collector {
