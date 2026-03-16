@@ -2,11 +2,8 @@ package ebpftracer
 
 import (
 	"bufio"
-	"bytes"
 	"debug/buildinfo"
-	"debug/elf"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/cilium/ebpf/link"
@@ -20,16 +17,12 @@ const (
 	goTlsReadSymbol  = "crypto/tls.(*Conn).Read"
 )
 
-var (
-	opensslVersionRe = regexp.MustCompile(`OpenSSL\s(\d\.\d+\.\d+)`)
-)
-
 func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 	if t.disableL7Tracing {
 		return nil
 	}
-	libPath, version := getSslLibPathAndVersion(pid)
-	if libPath == "" || version == "" {
+	libPath := getSslLibPath(pid)
+	if libPath == "" {
 		return nil
 	}
 
@@ -40,10 +33,10 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 					return
 				}
 			}
-			klog.ErrorfDepth(1, "pid=%d libssl_version=%s: %s: %s", pid, version, msg, err)
+			klog.ErrorfDepth(1, "pid=%d: %s: %s", pid, msg, err)
 			return
 		}
-		klog.InfofDepth(1, "pid=%d libssl_version=%s: %s", pid, version, msg)
+		klog.InfofDepth(1, "pid=%d: %s", pid, msg)
 	}
 
 	key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
@@ -58,43 +51,6 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 				l.Close()
 			}
 		}
-		writeEnter := "openssl_SSL_write_enter"
-		readEnter := "openssl_SSL_read_enter"
-		readExEnter := "openssl_SSL_read_ex_enter"
-		readExit := "openssl_SSL_read_exit"
-		v, err := common.VersionFromString(version)
-		if err != nil {
-			log("failed to determine version", err)
-			return nil
-		}
-		switch {
-		case v.GreaterOrEqual(common.NewVersion(3, 0, 0)):
-			writeEnter = "openssl_SSL_write_enter_v3_0"
-			readEnter = "openssl_SSL_read_enter_v3_0"
-			readExEnter = "openssl_SSL_read_ex_enter_v3_0"
-		case v.GreaterOrEqual(common.NewVersion(1, 1, 1)):
-			writeEnter = "openssl_SSL_write_enter_v1_1_1"
-			readEnter = "openssl_SSL_read_enter_v1_1_1"
-			readExEnter = "openssl_SSL_read_ex_enter_v1_1_1"
-		}
-
-		type prog struct {
-			symbol    string
-			uprobe    string
-			uretprobe string
-		}
-		progs := []prog{
-			{symbol: "SSL_write", uprobe: writeEnter},
-			{symbol: "SSL_read", uprobe: readEnter},
-			{symbol: "SSL_read", uretprobe: readExit},
-		}
-		if v.GreaterOrEqual(common.NewVersion(1, 1, 1)) {
-			progs = append(progs, []prog{
-				{symbol: "SSL_write_ex", uprobe: writeEnter},
-				{symbol: "SSL_read_ex", uprobe: readExEnter},
-				{symbol: "SSL_read_ex", uretprobe: readExit},
-			}...)
-		}
 
 		ef, err := OpenELFFile(libPath)
 		if err != nil {
@@ -103,9 +59,27 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 		}
 		defer ef.Close()
 
+		type prog struct {
+			symbol    string
+			uprobe    string
+			uretprobe string
+			optional  bool
+		}
+		progs := []prog{
+			{symbol: "SSL_write", uprobe: "openssl_SSL_write_enter"},
+			{symbol: "SSL_read", uprobe: "openssl_SSL_read_enter"},
+			{symbol: "SSL_read", uretprobe: "openssl_SSL_read_exit"},
+			{symbol: "SSL_write_ex", uprobe: "openssl_SSL_write_enter", optional: true},
+			{symbol: "SSL_read_ex", uprobe: "openssl_SSL_read_ex_enter", optional: true},
+			{symbol: "SSL_read_ex", uretprobe: "openssl_SSL_read_exit", optional: true},
+		}
+
 		for _, p := range progs {
 			s, err := ef.GetSymbol(p.symbol)
 			if err != nil {
+				if p.optional {
+					continue
+				}
 				log("failed to get symbol", err)
 				closeLinks()
 				return nil
@@ -250,68 +224,26 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) (*UprobeKey, bool) {
 	return nil, isGolangApp
 }
 
-func getSslLibPathAndVersion(pid uint32) (string, string) {
+func getSslLibPath(pid uint32) string {
 	f, err := os.Open(proc.Path(pid, "maps"))
 	if err != nil {
-		return "", ""
+		return ""
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
 	scanner.Split(bufio.ScanLines)
-	var libsslPath, libcryptoPath string
 	for scanner.Scan() {
 		parts := strings.Fields(scanner.Text())
 		if len(parts) <= 5 {
 			continue
 		}
 		libPath := parts[5]
-		switch {
-		case libsslPath == "" && strings.Contains(libPath, "libssl.so"):
+		if strings.Contains(libPath, "libssl.so") {
 			fullPath := proc.Path(pid, "root", libPath)
 			if _, err = os.Stat(fullPath); err == nil {
-				libsslPath = fullPath
+				return fullPath
 			}
-		case libcryptoPath == "" && strings.Contains(libPath, "libcrypto.so"):
-			fullPath := proc.Path(pid, "root", libPath)
-			if _, err = os.Stat(fullPath); err == nil {
-				libcryptoPath = fullPath
-			}
-		default:
-			continue
-		}
-		if libsslPath != "" && libcryptoPath != "" {
-			break
 		}
 	}
-	if libsslPath == "" || libcryptoPath == "" {
-		return "", ""
-	}
-
-	ef, err := elf.Open(libcryptoPath)
-	if err != nil {
-		return "", ""
-	}
-	defer ef.Close()
-	rodataSection := ef.Section(".rodata")
-	if rodataSection == nil {
-		return "", ""
-	}
-	rodataSectionData, err := rodataSection.Data()
-	if err != nil {
-		return "", ""
-	}
-	var version string
-	for _, b := range bytes.Split(rodataSectionData, []byte("\x00")) {
-		if len(b) == 0 {
-			continue
-		}
-		s := string(b)
-		if !strings.HasPrefix(s, "OpenSSL") {
-			continue
-		}
-		if m := opensslVersionRe.FindStringSubmatch(s); len(m) > 1 {
-			version = m[1]
-		}
-	}
-	return libsslPath, "v" + version
+	return ""
 }
