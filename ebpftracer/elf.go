@@ -1,6 +1,7 @@
 package ebpftracer
 
 import (
+	"bytes"
 	"debug/elf"
 	"fmt"
 	"io"
@@ -72,7 +73,7 @@ func (s *Symbol) AttachUretprobes(exe *link.Executable, prog *ebpf.Program, pid 
 	}
 	var links []link.Link
 	for _, offset := range returnOffsets {
-		l, err := exe.Uprobe("pthread_cond_timedwait", prog, &link.UprobeOptions{Address: s.Address(), Offset: uint64(offset), PID: int(pid)})
+		l, err := exe.Uprobe(s.Name(), prog, &link.UprobeOptions{Address: s.Address(), Offset: uint64(offset), PID: int(pid)})
 		if err != nil {
 			return links, err
 		}
@@ -130,6 +131,32 @@ func (f *ELFFile) GetSymbol(name string) (*Symbol, error) {
 	return &Symbol{s: es, f: f}, nil
 }
 
+func (f *ELFFile) FindSymbolBySubstrings(substrs ...string) *Symbol {
+	if f.symbols == nil {
+		if err := f.readSymbols(); err != nil {
+			return nil
+		}
+	}
+	for _, s := range f.symbols {
+		if elf.ST_TYPE(s.Info) != elf.STT_FUNC || s.Size == 0 || s.Value == 0 {
+			continue
+		}
+		name := []byte(s.Name)
+		match := true
+		for _, sub := range substrs {
+			if !bytes.Contains(name, []byte(sub)) {
+				match = false
+				break
+			}
+		}
+		if match {
+			es := s
+			return &Symbol{s: &es, f: f}
+		}
+	}
+	return nil
+}
+
 func (f *ELFFile) getTextSectionAndReader() (*elf.Section, io.ReadSeeker, error) {
 	if f.textSection == nil {
 		f.textSection = f.elf.Section(".text")
@@ -139,6 +166,18 @@ func (f *ELFFile) getTextSectionAndReader() (*elf.Section, io.ReadSeeker, error)
 		f.textSectionReader = f.textSection.Open()
 	}
 	return f.textSection, f.textSectionReader, nil
+}
+
+func (f *ELFFile) IsRustBinary() bool {
+	section := f.elf.Section(".comment")
+	if section == nil {
+		return false
+	}
+	data, err := section.Data()
+	if err != nil {
+		return false
+	}
+	return bytes.Contains(data, []byte("rustc version"))
 }
 
 func (f *ELFFile) Close() error {

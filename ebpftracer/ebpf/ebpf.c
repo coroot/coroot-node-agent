@@ -49,5 +49,6 @@ struct trace_event_raw_sys_exit__stub {
 #include "l7/l7.c"
 #include "l7/gotls.c"
 #include "l7/openssl.c"
+#include "l7/rustls.c"
 
 char _license[] SEC("license") = "GPL";

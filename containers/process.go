@@ -37,10 +37,12 @@ type Process struct {
 	tracer        *ebpftracer.Tracer
 	dotNetMonitor *DotNetMonitor
 	isGolangApp   bool
+	isRustApp     bool
 
 	uprobeKeys            []ebpftracer.UprobeKey
 	goTlsUprobesChecked   bool
 	openSslUprobesChecked bool
+	rustlsUprobesChecked  bool
 	pythonGilChecked      bool
 	nodejsChecked         bool
 	nodejsPrevStats       *ebpftracer.NodejsStats
