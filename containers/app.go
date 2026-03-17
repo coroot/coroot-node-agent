@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	phpCmd    = regexp.MustCompile(`.*php\d*\.?\d*$`)
+	phpCmd    = regexp.MustCompile(`.*php(-fpm)?\d*\.?\d*$`)
 	pythonCmd = regexp.MustCompile(`.*python\d*\.?\d*$`)
 	rubyCmd   = regexp.MustCompile(`.*ruby\d*\.?\d*$`)
 	nodejsCmd = regexp.MustCompile(`.*node(js)?\d*\.?\d*$`)
