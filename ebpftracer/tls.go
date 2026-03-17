@@ -224,6 +224,100 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) (*UprobeKey, bool) {
 	return nil, isGolangApp
 }
 
+func (t *Tracer) AttachRustlsUprobes(pid uint32) (*UprobeKey, bool) {
+	isRustApp := false
+	if t.disableL7Tracing {
+		return nil, isRustApp
+	}
+
+	exePath := proc.Path(pid, "exe")
+
+	log := func(msg string, err error) {
+		if err != nil {
+			for _, s := range []string{"not found", "no such file or directory", "no such process", "permission denied"} {
+				if strings.HasSuffix(err.Error(), s) {
+					return
+				}
+			}
+			klog.ErrorfDepth(1, "pid=%d: %s: %s", pid, msg, err)
+			return
+		}
+		klog.InfofDepth(1, "pid=%d: %s", pid, msg)
+	}
+
+	ef, err := OpenELFFile(exePath)
+	if err != nil {
+		return nil, isRustApp
+	}
+	defer ef.Close()
+
+	if !ef.IsRustBinary() {
+		return nil, isRustApp
+	}
+	isRustApp = true
+
+	name, err := os.Readlink(exePath)
+	if err != nil {
+		log("failed to read name", err)
+		return nil, isRustApp
+	}
+
+	writerWrite := ef.FindSymbolBySubstrings("rustls", "Writer", "write")
+	if writerWrite == nil {
+		return nil, isRustApp
+	}
+
+	readerRead := ef.FindSymbolBySubstrings("rustls", "Reader", "read")
+	if readerRead == nil {
+		return nil, isRustApp
+	}
+
+	key, ok := t.AcquireGlobalUprobe(proc.Path(pid, "root", name), func() []link.Link {
+		exe, err := link.OpenExecutable(exePath)
+		if err != nil {
+			log("failed to open executable", err)
+			return nil
+		}
+		var links []link.Link
+		closeLinks := func() {
+			for _, l := range links {
+				l.Close()
+			}
+		}
+		l, err := writerWrite.AttachUprobe(exe, t.uprobes["rustls_write_enter"], 0)
+		if err != nil {
+			log("failed to attach rustls write_enter uprobe", err)
+			return nil
+		}
+		links = append(links, l)
+
+		l, err = readerRead.AttachUprobe(exe, t.uprobes["rustls_read_enter"], 0)
+		if err != nil {
+			log("failed to attach rustls read_enter uprobe", err)
+			closeLinks()
+			return nil
+		}
+		links = append(links, l)
+
+		ls, err := readerRead.AttachUretprobes(exe, t.uprobes["rustls_read_exit"], 0)
+		links = append(links, ls...)
+		if err != nil {
+			log("failed to attach rustls read_exit uprobe", err)
+			closeLinks()
+			return nil
+		}
+
+		if len(links) > 0 {
+			log("rustls uprobes attached", nil)
+		}
+		return links
+	})
+	if ok {
+		return &key, isRustApp
+	}
+	return nil, isRustApp
+}
+
 func getSslLibPath(pid uint32) string {
 	f, err := os.Open(proc.Path(pid, "maps"))
 	if err != nil {

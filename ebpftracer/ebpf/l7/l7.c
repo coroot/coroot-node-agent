@@ -116,6 +116,28 @@ struct {
 } ssl_pending SEC(".maps");
 
 struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(__u64));
+    __uint(max_entries, 10240);
+} rustls_last_read_fd SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(struct ssl_args));
+    __uint(max_entries, 10240);
+} rustls_write_pending SEC(".maps");
+
+#if defined(__TARGET_ARCH_x86)
+#define RUSTLS_RET_IS_OK(x) (PT_REGS_RC(x) == 0)
+#define RUSTLS_RET_SIZE(x) ((x)->dx)
+#elif defined(__TARGET_ARCH_arm64)
+#define RUSTLS_RET_IS_OK(x) (PT_REGS_RC(x) == 0)
+#define RUSTLS_RET_SIZE(x) (((PT_REGS_ARM64 *)(x))->regs[1])
+#endif
+
+struct {
      __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
      __type(key, int);
      __type(value, struct l7_request);
@@ -194,6 +216,16 @@ __u64 read_iovec(char *iovec, __u64 iovlen, __u64 ret, char *buf, __u64 *total_s
 static inline __attribute__((__always_inline__))
 int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, __u64 iovlen) {
     __u64 id = bpf_get_current_pid_tgid();
+    char *plain_buf = 0;
+    __u64 plain_size = 0;
+    if (!is_tls) {
+        struct ssl_args *rw = bpf_map_lookup_elem(&rustls_write_pending, &id);
+        if (rw) {
+            plain_buf = rw->buf;
+            plain_size = rw->size;
+            bpf_map_delete_elem(&rustls_write_pending, &id);
+        }
+    }
     __u32 zero = 0;
     struct connection_id cid = {};
     cid.pid = id >> 32;
@@ -220,6 +252,12 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
 
     if (!is_tls) {
         __sync_fetch_and_add(&conn->bytes_sent, total_size);
+    }
+
+    if (plain_buf) {
+        payload = plain_buf;
+        size = plain_size;
+        is_tls = 1;
     }
 
     struct l7_request *req = bpf_map_lookup_elem(&l7_request_heap, &zero);
@@ -336,6 +374,10 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
 
 static inline __attribute__((__always_inline__))
 int trace_enter_read(__u64 id, __u32 pid, __u64 fd, char *buf, __u64 *ret, __u64 iovlen) {
+    if (bpf_map_lookup_elem(&rustls_pids, &pid)) {
+        bpf_map_update_elem(&rustls_last_read_fd, &id, &fd, BPF_ANY);
+    }
+
     struct connection_id cid = {};
     cid.pid = pid;
     cid.fd = fd;

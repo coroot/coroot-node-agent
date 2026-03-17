@@ -367,6 +367,9 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		if process.isGolangApp {
 			appTypes["golang"] = struct{}{}
 		}
+		if process.isRustApp {
+			appTypes["rust"] = struct{}{}
+		}
 		switch {
 		case proc.IsJvm(cmdline):
 			jvm, jMetrics := jvmMetrics(pid)
@@ -1250,6 +1253,14 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 			p.uprobeKeys = append(p.uprobeKeys, *key)
 		}
 		p.goTlsUprobesChecked = true
+	}
+	if !p.rustlsUprobesChecked {
+		key, isRustApp := tracer.AttachRustlsUprobes(pid)
+		p.isRustApp = isRustApp
+		if key != nil {
+			p.uprobeKeys = append(p.uprobeKeys, *key)
+		}
+		p.rustlsUprobesChecked = true
 	}
 }
 
