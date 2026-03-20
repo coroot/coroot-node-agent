@@ -27,6 +27,13 @@ struct {
     __uint(max_entries, 1024);
 } rustls_pids SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u8));
+    __uint(max_entries, 1024);
+} java_tls_pids SEC(".maps");
+
 struct trace_event_raw_task_newtask__stub {
     __u64 unused;
 #if defined(__CTX_EXTRA_PADDING)
@@ -74,6 +81,7 @@ int sched_process_exit(struct trace_event_raw_sched_process_template__stub *args
     bpf_map_delete_elem(&nodejs_prev_event_loop_iter, &pid);
     bpf_map_delete_elem(&nodejs_current_io_cb, &pid);
     bpf_map_delete_elem(&rustls_pids, &pid);
+    bpf_map_delete_elem(&java_tls_pids, &pid);
 
     struct proc_event e = {
         .type = EVENT_TYPE_PROCESS_EXIT,

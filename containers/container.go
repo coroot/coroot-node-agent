@@ -12,6 +12,7 @@ import (
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"github.com/coroot/coroot-node-agent/flags"
+	"github.com/coroot/coroot-node-agent/jvm"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/pinger"
@@ -1261,6 +1262,18 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 			p.uprobeKeys = append(p.uprobeKeys, *key)
 		}
 		p.rustlsUprobesChecked = true
+	}
+	if !p.javaTlsUprobesChecked {
+		p.javaTlsUprobesChecked = true
+		if jvm.IsJavaProcess(pid) {
+			if !*flags.EnableJavaTls {
+				klog.Infof("pid=%d: Java process detected, but Java TLS instrumentation is disabled (use --enable-java-tls to enable)", pid)
+			} else if nativeLibPath := jvm.EnsureTlsAgentLoaded(pid); nativeLibPath != "" {
+				if key := tracer.AttachJavaTlsUprobes(pid, nativeLibPath); key != nil {
+					p.uprobeKeys = append(p.uprobeKeys, *key)
+				}
+			}
+		}
 	}
 }
 

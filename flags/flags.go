@@ -15,6 +15,7 @@ var (
 	DisablePinger        = kingpin.Flag("disable-pinger", "Don't ping upstreams").Default("false").Envar("DISABLE_PINGER").Bool()
 	DisableL7Tracing     = kingpin.Flag("disable-l7-tracing", "Disable L7 tracing").Default("false").Envar("DISABLE_L7_TRACING").Bool()
 	DisableGPUMonitoring = kingpin.Flag("disable-gpu-monitoring", "Disable GPU monitoring (NVML)").Default("false").Envar("DISABLE_GPU_MONITORING").Bool()
+	EnableJavaTls        = kingpin.Flag("enable-java-tls", "Enable Java TLS instrumentation via dynamic agent loading").Default("false").Envar("ENABLE_JAVA_TLS").Bool()
 
 	ContainerAllowlist = kingpin.Flag("container-allowlist", "List of allowed containers (regex patterns)").Envar("CONTAINER_ALLOWLIST").Strings()
 	ContainerDenylist  = kingpin.Flag("container-denylist", "List of denied containers (regex patterns)").Envar("CONTAINER_DENYLIST").Strings()
