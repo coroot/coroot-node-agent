@@ -67,6 +67,26 @@ func (jvm *JVM) Close() error {
 	return jvm.conn.Close()
 }
 
+func (jvm *JVM) LoadAgent(agentPath string, args string) error {
+	if err := jvm.conn.SetDeadline(time.Now().Add(requestTimeout)); err != nil {
+		return err
+	}
+	defer jvm.conn.SetDeadline(time.Time{})
+	msg := strings.Join([]string{"1", "load", "instrument", "false", agentPath + "=" + args}, "\x00") + "\x00"
+	if _, err := jvm.conn.Write([]byte(msg)); err != nil {
+		return err
+	}
+	buf := make([]byte, 128)
+	n, err := jvm.conn.Read(buf)
+	if err != nil {
+		return err
+	}
+	if n > 0 && buf[0] != '0' {
+		return fmt.Errorf("load agent failed: status=%s", string(buf[:n]))
+	}
+	return nil
+}
+
 func (jvm *JVM) DumpPerfmap() error {
 	if err := jvm.conn.SetDeadline(time.Now().Add(requestTimeout)); err != nil {
 		return err

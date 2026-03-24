@@ -17,6 +17,80 @@ const (
 	goTlsReadSymbol  = "crypto/tls.(*Conn).Read"
 )
 
+var silentErrors = []string{
+	"not a Go executable",
+	"not found",
+	"no such file or directory",
+	"no such process",
+	"permission denied",
+}
+
+func uprobeLog(pid uint32, prefix string) func(string, error) {
+	return func(msg string, err error) {
+		if err != nil {
+			for _, s := range silentErrors {
+				if strings.HasSuffix(err.Error(), s) {
+					return
+				}
+			}
+			klog.ErrorfDepth(2, "pid=%d%s: %s: %s", pid, prefix, msg, err)
+			return
+		}
+		klog.InfofDepth(2, "pid=%d%s: %s", pid, prefix, msg)
+	}
+}
+
+type uprobeSpec struct {
+	symbol    string
+	uprobe    string
+	uretprobe string
+	optional  bool
+}
+
+func (t *Tracer) attachUprobes(exePath string, ef *ELFFile, specs []uprobeSpec, log func(string, error)) []link.Link {
+	exe, err := link.OpenExecutable(exePath)
+	if err != nil {
+		log("failed to open executable", err)
+		return nil
+	}
+	var links []link.Link
+	closeLinks := func() {
+		for _, l := range links {
+			l.Close()
+		}
+	}
+	for _, s := range specs {
+		sym, err := ef.GetSymbol(s.symbol)
+		if err != nil {
+			if s.optional {
+				continue
+			}
+			log("failed to get symbol "+s.symbol, err)
+			closeLinks()
+			return nil
+		}
+		if s.uprobe != "" {
+			l, err := sym.AttachUprobe(exe, t.uprobes[s.uprobe], 0)
+			if err != nil {
+				log("failed to attach uprobe "+s.uprobe, err)
+				closeLinks()
+				return nil
+			}
+			links = append(links, l)
+		}
+		if s.uretprobe != "" {
+			ls, err := sym.AttachUretprobes(exe, t.uprobes[s.uretprobe], 0)
+			links = append(links, ls...)
+			if err != nil {
+				log("failed to attach uretprobe "+s.uretprobe, err)
+				closeLinks()
+				return nil
+			}
+		}
+	}
+	return links
+}
+
 func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 	if t.disableL7Tracing {
 		return nil
@@ -25,33 +99,8 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 	if libPath == "" {
 		return nil
 	}
-
-	log := func(msg string, err error) {
-		if err != nil {
-			for _, s := range []string{"no such file or directory", "no such process", "permission denied"} {
-				if strings.HasSuffix(err.Error(), s) {
-					return
-				}
-			}
-			klog.ErrorfDepth(1, "pid=%d: %s: %s", pid, msg, err)
-			return
-		}
-		klog.InfofDepth(1, "pid=%d: %s", pid, msg)
-	}
-
+	log := uprobeLog(pid, "")
 	key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
-		exe, err := link.OpenExecutable(libPath)
-		if err != nil {
-			log("failed to open executable", err)
-			return nil
-		}
-		var links []link.Link
-		closeLinks := func() {
-			for _, l := range links {
-				l.Close()
-			}
-		}
-
 		ef, err := OpenELFFile(libPath)
 		if err != nil {
 			log("open elf", err)
@@ -59,50 +108,14 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 		}
 		defer ef.Close()
 
-		type prog struct {
-			symbol    string
-			uprobe    string
-			uretprobe string
-			optional  bool
-		}
-		progs := []prog{
+		links := t.attachUprobes(libPath, ef, []uprobeSpec{
 			{symbol: "SSL_write", uprobe: "openssl_SSL_write_enter"},
 			{symbol: "SSL_read", uprobe: "openssl_SSL_read_enter"},
 			{symbol: "SSL_read", uretprobe: "openssl_SSL_read_exit"},
 			{symbol: "SSL_write_ex", uprobe: "openssl_SSL_write_enter", optional: true},
 			{symbol: "SSL_read_ex", uprobe: "openssl_SSL_read_ex_enter", optional: true},
 			{symbol: "SSL_read_ex", uretprobe: "openssl_SSL_read_exit", optional: true},
-		}
-
-		for _, p := range progs {
-			s, err := ef.GetSymbol(p.symbol)
-			if err != nil {
-				if p.optional {
-					continue
-				}
-				log("failed to get symbol", err)
-				closeLinks()
-				return nil
-			}
-			if p.uprobe != "" {
-				l, err := s.AttachUprobe(exe, t.uprobes[p.uprobe], 0)
-				if err != nil {
-					log("failed to attach uprobe", err)
-					closeLinks()
-					return nil
-				}
-				links = append(links, l)
-			}
-			if p.uretprobe != "" {
-				ls, err := s.AttachUretprobes(exe, t.uprobes[p.uretprobe], 0)
-				links = append(links, ls...)
-				if err != nil {
-					log("failed to attach exit uprobe", err)
-					closeLinks()
-					return nil
-				}
-			}
-		}
+		}, log)
 		if len(links) > 0 {
 			log("libssl uprobes attached (global)", nil)
 		}
@@ -122,19 +135,10 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) (*UprobeKey, bool) {
 
 	exePath := proc.Path(pid, "exe")
 
-	var err error
 	var name, version string
 	log := func(msg string, err error) {
-		if err != nil {
-			for _, s := range []string{"not a Go executable", "no such file or directory", "no such process", "permission denied"} {
-				if strings.HasSuffix(err.Error(), s) {
-					return
-				}
-			}
-			klog.ErrorfDepth(1, "pid=%d golang_app=%s golang_version=%s: %s: %s", pid, name, version, msg, err)
-			return
-		}
-		klog.InfofDepth(1, "pid=%d golang_app=%s golang_version=%s: %s", pid, name, version, msg)
+		prefix := " golang_app=" + name + " golang_version=" + version
+		uprobeLog(pid, prefix)(msg, err)
 	}
 
 	bi, err := buildinfo.ReadFile(exePath)
@@ -167,55 +171,14 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) (*UprobeKey, bool) {
 		}
 		defer ef.Close()
 
-		exe, err := link.OpenExecutable(exePath)
-		if err != nil {
-			log("failed to open executable", err)
-			return nil
+		links := t.attachUprobes(exePath, ef, []uprobeSpec{
+			{symbol: goTlsWriteSymbol, uprobe: "go_crypto_tls_write_enter"},
+			{symbol: goTlsReadSymbol, uprobe: "go_crypto_tls_read_enter"},
+			{symbol: goTlsReadSymbol, uretprobe: "go_crypto_tls_read_exit"},
+		}, log)
+		if len(links) > 0 {
+			log("crypto/tls uprobes attached", nil)
 		}
-
-		var links []link.Link
-		closeLinks := func() {
-			for _, l := range links {
-				l.Close()
-			}
-		}
-
-		ws, err := ef.GetSymbol(goTlsWriteSymbol)
-		if err != nil {
-			log("failed to get symbol", err)
-			return nil
-		}
-		l, err := ws.AttachUprobe(exe, t.uprobes["go_crypto_tls_write_enter"], 0)
-		if err != nil {
-			log("failed to attach write_enter uprobe", err)
-			return nil
-		}
-		links = append(links, l)
-
-		rs, err := ef.GetSymbol(goTlsReadSymbol)
-		if err != nil {
-			log("failed to get symbol", err)
-			return nil
-		}
-		l, err = rs.AttachUprobe(exe, t.uprobes["go_crypto_tls_read_enter"], 0)
-		if err != nil {
-			log("failed to attach read_enter uprobe", err)
-			closeLinks()
-			return nil
-		}
-		links = append(links, l)
-
-		ls, err := rs.AttachUretprobes(exe, t.uprobes["go_crypto_tls_read_exit"], 0)
-		links = append(links, ls...)
-		if err != nil {
-			log("failed to attach read_exit uprobe", err)
-			closeLinks()
-			return nil
-		}
-		if len(links) == 0 {
-			return nil
-		}
-		log("crypto/tls uprobes attached", nil)
 		return links
 	})
 	if ok {
@@ -231,19 +194,7 @@ func (t *Tracer) AttachRustlsUprobes(pid uint32) (*UprobeKey, bool) {
 	}
 
 	exePath := proc.Path(pid, "exe")
-
-	log := func(msg string, err error) {
-		if err != nil {
-			for _, s := range []string{"not found", "no such file or directory", "no such process", "permission denied"} {
-				if strings.HasSuffix(err.Error(), s) {
-					return
-				}
-			}
-			klog.ErrorfDepth(1, "pid=%d: %s: %s", pid, msg, err)
-			return
-		}
-		klog.InfofDepth(1, "pid=%d: %s", pid, msg)
-	}
+	log := uprobeLog(pid, "")
 
 	ef, err := OpenELFFile(exePath)
 	if err != nil {
@@ -316,6 +267,34 @@ func (t *Tracer) AttachRustlsUprobes(pid uint32) (*UprobeKey, bool) {
 		return &key, isRustApp
 	}
 	return nil, isRustApp
+}
+
+func (t *Tracer) AttachJavaTlsUprobes(pid uint32, nativeLibPath string) *UprobeKey {
+	if t.disableL7Tracing {
+		return nil
+	}
+	log := uprobeLog(pid, "")
+	key, ok := t.AcquireGlobalUprobe(nativeLibPath, func() []link.Link {
+		ef, err := OpenELFFile(nativeLibPath)
+		if err != nil {
+			log("open elf", err)
+			return nil
+		}
+		defer ef.Close()
+
+		links := t.attachUprobes(nativeLibPath, ef, []uprobeSpec{
+			{symbol: "coroot_java_tls_write_enter", uprobe: "java_tls_write_enter"},
+			{symbol: "coroot_java_tls_read_exit", uprobe: "java_tls_read_exit"},
+		}, log)
+		if len(links) > 0 {
+			log("java TLS uprobes attached (global)", nil)
+		}
+		return links
+	})
+	if ok {
+		return &key
+	}
+	return nil
 }
 
 func getSslLibPath(pid uint32) string {

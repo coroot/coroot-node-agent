@@ -125,6 +125,13 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(__u64));
+    __uint(max_entries, 10240);
+} java_tls_last_read_fd SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
     __uint(value_size, sizeof(struct ssl_args));
     __uint(max_entries, 10240);
 } rustls_write_pending SEC(".maps");
@@ -376,6 +383,9 @@ static inline __attribute__((__always_inline__))
 int trace_enter_read(__u64 id, __u32 pid, __u64 fd, char *buf, __u64 *ret, __u64 iovlen) {
     if (bpf_map_lookup_elem(&rustls_pids, &pid)) {
         bpf_map_update_elem(&rustls_last_read_fd, &id, &fd, BPF_ANY);
+    }
+    if (bpf_map_lookup_elem(&java_tls_pids, &pid)) {
+        bpf_map_update_elem(&java_tls_last_read_fd, &id, &fd, BPF_ANY);
     }
 
     struct connection_id cid = {};

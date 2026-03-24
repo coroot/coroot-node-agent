@@ -43,6 +43,7 @@ type Process struct {
 	goTlsUprobesChecked   bool
 	openSslUprobesChecked bool
 	rustlsUprobesChecked  bool
+	javaTlsUprobesChecked bool
 	pythonGilChecked      bool
 	nodejsChecked         bool
 	nodejsPrevStats       *ebpftracer.NodejsStats
