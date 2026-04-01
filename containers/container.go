@@ -139,6 +139,8 @@ type Container struct {
 	nodejsStats *ebpftracer.NodejsStats
 	pythonStats *ebpftracer.PythonStats
 
+	jvmProfilingStats *JvmProfilingStats
+
 	mounts     map[string]proc.MountInfo
 	seenMounts map[uint64]struct{}
 
@@ -373,7 +375,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		}
 		switch {
 		case proc.IsJvm(cmdline):
-			jvm, jMetrics := jvmMetrics(pid)
+			jvm, jMetrics := jvmMetrics(pid, c)
 			if len(jMetrics) > 0 && !seenJvms[jvm] {
 				seenJvms[jvm] = true
 				for _, m := range jMetrics {
@@ -844,6 +846,18 @@ func (c *Container) updateDelays() {
 		d.disk = stats.BlockIODelay
 		c.delaysByPid[pid] = d
 	}
+}
+
+func (c *Container) updateJvmProfilingStats(u *JvmProfilingUpdate) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.jvmProfilingStats == nil {
+		c.jvmProfilingStats = &JvmProfilingStats{}
+	}
+	c.jvmProfilingStats.AllocBytes += u.AllocBytes
+	c.jvmProfilingStats.AllocObjects += u.AllocObjects
+	c.jvmProfilingStats.LockContentions += u.LockContentions
+	c.jvmProfilingStats.LockTimeNs += u.LockTimeNs
 }
 
 func (c *Container) updateNodejsStats(s NodejsStatsUpdate) {

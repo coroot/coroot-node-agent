@@ -163,8 +163,8 @@ func main() {
 			registerer = prometheus.WrapRegistererWith(prometheus.Labels{"az": az, "region": region}, registerer)
 		}
 	}
-	processInfoCh := profiling.Init(machineId, hostname)
-	cr, err := containers.NewRegistry(registerer, processInfoCh, gpuCollector.ProcessUsageSampleCh)
+	processInfoCh, jvmProfilingCh := profiling.Init(machineId, hostname)
+	cr, err := containers.NewRegistry(registerer, processInfoCh, jvmProfilingCh, gpuCollector.ProcessUsageSampleCh)
 	if err != nil {
 		klog.Exitln(err)
 	}

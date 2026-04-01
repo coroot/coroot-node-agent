@@ -49,9 +49,15 @@ var metrics = struct {
 	JvmInfo              *prometheus.Desc
 	JvmHeapSize          *prometheus.Desc
 	JvmHeapUsed          *prometheus.Desc
+	JvmHeapMaxSize       *prometheus.Desc
 	JvmGCTime            *prometheus.Desc
 	JvmSafepointTime     *prometheus.Desc
 	JvmSafepointSyncTime *prometheus.Desc
+	JvmAllocBytes        *prometheus.Desc
+	JvmAllocObjects      *prometheus.Desc
+	JvmLockContentions   *prometheus.Desc
+	JvmLockTime          *prometheus.Desc
+	JvmProfilingStatus   *prometheus.Desc
 
 	PythonThreadLockWaitTime   *prometheus.Desc
 	NodejsEventLoopBlockedTime *prometheus.Desc
@@ -105,9 +111,15 @@ var metrics = struct {
 	JvmInfo:              metric("container_jvm_info", "Meta information about the JVM", "jvm", "java_version"),
 	JvmHeapSize:          metric("container_jvm_heap_size_bytes", "Total heap size in bytes", "jvm"),
 	JvmHeapUsed:          metric("container_jvm_heap_used_bytes", "Used heap size in bytes", "jvm"),
+	JvmHeapMaxSize:       metric("container_jvm_heap_max_size_bytes", "Maximum heap size in bytes (-Xmx)", "jvm"),
 	JvmGCTime:            metric("container_jvm_gc_time_seconds", "Time spent in the given JVM garbage collector in seconds", "jvm", "gc"),
 	JvmSafepointTime:     metric("container_jvm_safepoint_time_seconds", "Time the application has been stopped for safepoint operations in seconds", "jvm"),
 	JvmSafepointSyncTime: metric("container_jvm_safepoint_sync_time_seconds", "Time spent getting to safepoints in seconds", "jvm"),
+	JvmAllocBytes:        metric("container_jvm_alloc_bytes_total", "Total bytes allocated observed by async-profiler", "jvm"),
+	JvmAllocObjects:      metric("container_jvm_alloc_objects_total", "Total objects allocated observed by async-profiler", "jvm"),
+	JvmLockContentions:   metric("container_jvm_lock_contentions_total", "Total number of lock contentions observed by async-profiler", "jvm"),
+	JvmLockTime:          metric("container_jvm_lock_time_seconds_total", "Total time spent waiting for locks observed by async-profiler", "jvm"),
+	JvmProfilingStatus:   metric("container_jvm_profiling_status", "1 if async-profiler is enabled, 0 if disabled", "jvm"),
 
 	Ip2Fqdn: metric("ip_to_fqdn", "Mapping IP addresses to FQDNs based on DNS requests initiated by containers", "ip", "fqdn"),
 
