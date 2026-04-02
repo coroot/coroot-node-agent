@@ -16,6 +16,7 @@ import (
 	"github.com/coroot/coroot-node-agent/jvm"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/go-kit/log"
+	pprofProfile "github.com/google/pprof/profile"
 	ebpfspy "github.com/grafana/pyroscope/ebpf"
 	"github.com/grafana/pyroscope/ebpf/cpp/demangle"
 	"github.com/grafana/pyroscope/ebpf/metrics"
@@ -41,18 +42,20 @@ var (
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: *flags.InsecureSkipVerify},
 		},
 	}
-	endpointUrl  *url.URL
-	session      ebpfspy.Session
-	targetFinder = &TargetFinder{
-		processes: map[uint32]*processInfo{},
-	}
+	endpointUrl          *url.URL
+	session              ebpfspy.Session
+	targetFinder         = &TargetFinder{processes: map[uint32]*processInfo{}}
+	jvmProfilingUpdateCh chan<- *containers.JvmProfilingUpdate
 )
 
-func Init(hostId, hostName string) chan<- containers.ProcessInfo {
+func Init(hostId, hostName string) (chan<- containers.ProcessInfo, chan *containers.JvmProfilingUpdate) {
+	jvmUpdateCh := make(chan *containers.JvmProfilingUpdate, 100)
+	jvmProfilingUpdateCh = jvmUpdateCh
+
 	endpointUrl = *flags.ProfilesEndpoint
 	if endpointUrl == nil {
 		klog.Infoln("no profiles endpoint configured")
-		return nil
+		return nil, jvmUpdateCh
 	}
 	klog.Infoln("profiles endpoint:", endpointUrl.String())
 
@@ -98,19 +101,19 @@ func Init(hostId, hostName string) chan<- containers.ProcessInfo {
 	if err != nil {
 		klog.Errorln(err)
 		session = nil
-		return nil
+		return nil, jvmUpdateCh
 	}
 	err = session.Start()
 	if err != nil {
 		klog.Errorln(err)
 		session = nil
-		return nil
+		return nil, jvmUpdateCh
 	}
 	go collect()
 
 	processInfoCh := make(chan containers.ProcessInfo)
 	targetFinder.start(processInfoCh)
-	return processInfoCh
+	return processInfoCh, jvmUpdateCh
 }
 
 func Start() {
@@ -147,6 +150,10 @@ func collect() {
 			uploaded++
 		}
 		klog.Infof("uploaded %d profiles in %s", uploaded, time.Since(t).Truncate(time.Millisecond))
+
+		if *flags.EnableJavaAsyncProfiler {
+			collectAsyncProfilerProfiles()
+		}
 	}
 }
 
@@ -167,16 +174,127 @@ func upload(b *pprof.ProfileBuilder) error {
 	for _, l := range constLabels {
 		q.Set(l.Name, l.Value)
 	}
-	u.RawQuery = q.Encode()
 
 	b.Profile.SampleType[0].Type = "ebpf:cpu:nanoseconds"
 	b.Profile.DurationNanos = CollectInterval.Nanoseconds()
 	body := bytes.NewBuffer(nil)
-	_, err := b.Write(body)
-	if err != nil {
+	if _, err := b.Write(body); err != nil {
 		return err
 	}
+	return post(u, q, body)
+}
 
+func collectAsyncProfilerProfiles() {
+	targetFinder.lock.Lock()
+	type jvmInfo struct {
+		pid         uint32
+		serviceName string
+		containerID string
+		started     bool
+	}
+	var jvms []jvmInfo
+	for pid, pi := range targetFinder.processes {
+		if pi.isJvm && !pi.asyncProfilerErr {
+			jvms = append(jvms, jvmInfo{
+				pid:         pid,
+				serviceName: pi.serviceName,
+				containerID: pi.containerId,
+				started:     pi.asyncProfilerStarted,
+			})
+		}
+	}
+	targetFinder.lock.Unlock()
+
+	for _, j := range jvms {
+		if !j.started {
+			if jvm.IsAsyncProfilerAlreadyLoaded(j.pid) {
+				klog.Infof("pid=%d: async-profiler already loaded by another tool, skipping", j.pid)
+				targetFinder.lock.Lock()
+				if pi := targetFinder.processes[j.pid]; pi != nil {
+					pi.asyncProfilerErr = true
+				}
+				targetFinder.lock.Unlock()
+				continue
+			}
+			if err := jvm.DeployAndStartAsyncProfiler(j.pid); err != nil {
+				klog.Warningf("async-profiler start pid=%d: %v", j.pid, err)
+				targetFinder.lock.Lock()
+				if pi := targetFinder.processes[j.pid]; pi != nil {
+					pi.asyncProfilerErr = true
+				}
+				targetFinder.lock.Unlock()
+			} else {
+				targetFinder.lock.Lock()
+				if pi := targetFinder.processes[j.pid]; pi != nil {
+					pi.asyncProfilerStarted = true
+				}
+				targetFinder.lock.Unlock()
+			}
+			continue
+		}
+
+		data, err := jvm.CollectAsyncProfiler(j.pid)
+		if err != nil {
+			klog.Warningf("async-profiler collect pid=%d: %v", j.pid, err)
+			continue
+		}
+		if data == nil {
+			continue
+		}
+		profiles, err := jvm.ParseProfiles(data, CollectInterval)
+		if err != nil {
+			klog.Warningf("async-profiler parse pid=%d: %v", j.pid, err)
+			continue
+		}
+		for _, jp := range profiles {
+			if len(jp.Prof.Sample) == 0 {
+				continue
+			}
+			if err := uploadProfile(jp.Prof, j.serviceName, j.containerID); err != nil {
+				klog.Errorf("async-profiler upload pid=%d type=%s: %v", j.pid, jp.Type, err)
+			}
+			if jvmProfilingUpdateCh != nil {
+				var total int64
+				for _, s := range jp.Prof.Sample {
+					total += s.Value[0]
+				}
+				u := &containers.JvmProfilingUpdate{Pid: j.pid}
+				switch jp.Type {
+				case jvm.ProfileTypeAllocSpace:
+					u.AllocBytes = total
+				case jvm.ProfileTypeAllocObjects:
+					u.AllocObjects = total
+				case jvm.ProfileTypeLockContentions:
+					u.LockContentions = total
+				case jvm.ProfileTypeLockDelay:
+					u.LockTimeNs = total
+				default:
+					continue
+				}
+				jvmProfilingUpdateCh <- u
+			}
+		}
+	}
+}
+
+func uploadProfile(prof *pprofProfile.Profile, serviceName, containerID string) error {
+	u := *endpointUrl
+	q := u.Query()
+	q.Set("service.name", serviceName)
+	q.Set("container.id", containerID)
+	for _, l := range constLabels {
+		q.Set(l.Name, l.Value)
+	}
+
+	body := bytes.NewBuffer(nil)
+	if err := prof.Write(body); err != nil {
+		return err
+	}
+	return post(u, q, body)
+}
+
+func post(u url.URL, q url.Values, body *bytes.Buffer) error {
+	u.RawQuery = q.Encode()
 	req, err := http.NewRequest(http.MethodPost, u.String(), body)
 	if err != nil {
 		return err
@@ -194,7 +312,7 @@ func upload(b *pprof.ProfileBuilder) error {
 		return err
 	}
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to upload %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("failed to upload profile %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
 }
@@ -210,12 +328,15 @@ func (tf *TargetFinder) start(processInfoCh <-chan containers.ProcessInfo) {
 		for pi := range processInfoCh {
 			tf.lock.Lock()
 			cid := string(pi.ContainerId)
+			svc := common.ContainerIdToOtelServiceName(cid)
 			tf.processes[pi.Pid] = &processInfo{
 				startedAt: pi.StartedAt.UnixNano(),
 				target: sd.NewTargetForTesting(cid, 0, sd.DiscoveryTarget{
-					"service_name": common.ContainerIdToOtelServiceName(cid),
+					"service_name": svc,
 				}),
-				flags: pi.Flags,
+				flags:       pi.Flags,
+				serviceName: svc,
+				containerId: cid,
 			}
 			tf.lock.Unlock()
 		}
@@ -235,12 +356,13 @@ func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
 	var err error
 	if !pi.initialized {
 		pi.initialized = true
-		if !pi.flags.EbpfProfilingDisabled {
-			cmdline := proc.GetCmdline(pid)
-			if proc.IsJvm(cmdline) {
+		cmdline := proc.GetCmdline(pid)
+		if proc.IsJvm(cmdline) {
+			pi.isJvm = jvm.IsHotSpotJVM(pid)
+			if !pi.flags.EbpfProfilingDisabled {
 				pi.jvmPerfmapDumpSupported = jvm.IsPerfmapDumpSupported(cmdline)
-				klog.Infof("JVM detected PID: %d, perfmap dump supported: %t", pid, pi.jvmPerfmapDumpSupported)
 			}
+			klog.Infof("JVM detected PID: %d, hotspot: %t, perfmap: %t", pid, pi.isJvm, pi.jvmPerfmapDumpSupported)
 		}
 	}
 	if pi.flags.EbpfProfilingDisabled {
@@ -257,8 +379,12 @@ func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
 
 func (tf *TargetFinder) RemoveDeadPID(pid uint32) {
 	tf.lock.Lock()
-	defer tf.lock.Unlock()
+	pi := tf.processes[pid]
 	delete(tf.processes, pid)
+	tf.lock.Unlock()
+	if pi != nil && pi.asyncProfilerStarted {
+		jvm.StopAsyncProfiler(pid)
+	}
 }
 
 func (tf *TargetFinder) DebugInfo() []map[string]string {
@@ -270,12 +396,17 @@ func (tf *TargetFinder) Update(_ sd.TargetsOptions) {
 }
 
 type processInfo struct {
-	startedAt int64
-	target    *sd.Target
+	startedAt   int64
+	target      *sd.Target
+	serviceName string
+	containerId string
 
 	initialized bool
 	flags       proc.Flags
 
+	isJvm                   bool
 	jvmPerfmapDumpSupported bool
 	lastPerfmapDump         int64
+	asyncProfilerStarted    bool
+	asyncProfilerErr        bool
 }

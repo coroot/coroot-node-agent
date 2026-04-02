@@ -1,9 +1,10 @@
 package jvm
 
 import (
+	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -15,14 +16,10 @@ import (
 
 const (
 	connectionTimeout = 5 * time.Second
-	requestTimeout    = 5 * time.Second
+	requestTimeout    = 10 * time.Second
 )
 
-type JVM struct {
-	conn net.Conn
-}
-
-func Dial(pid uint32) (*JVM, error) {
+func dial(pid uint32) (net.Conn, error) {
 	nsPid, err := proc.GetNsPid(pid)
 	if err != nil {
 		return nil, err
@@ -55,53 +52,62 @@ func Dial(pid uint32) (*JVM, error) {
 			return nil, err
 		}
 	}
-	jvm := &JVM{}
-	jvm.conn, err = net.DialTimeout("unix", sockPath, connectionTimeout)
+	return net.DialTimeout("unix", sockPath, connectionTimeout)
+}
+
+// Each call opens a new connection (HotSpot closes the socket after each command).
+func sendCommand(pid uint32, msg string) (byte, string, error) {
+	conn, err := dial(pid)
 	if err != nil {
-		return nil, err
+		return 0, "", err
 	}
-	return jvm, nil
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(requestTimeout))
+
+	if _, err := conn.Write([]byte(msg)); err != nil {
+		return 0, "", err
+	}
+	status := make([]byte, 1)
+	if _, err := io.ReadFull(conn, status); err != nil {
+		return 0, "", err
+	}
+	var buf bytes.Buffer
+	io.Copy(&buf, conn)
+	return status[0], strings.TrimSpace(buf.String()), nil
 }
 
-func (jvm *JVM) Close() error {
-	return jvm.conn.Close()
-}
-
-func (jvm *JVM) LoadAgent(agentPath string, args string) error {
-	if err := jvm.conn.SetDeadline(time.Now().Add(requestTimeout)); err != nil {
-		return err
-	}
-	defer jvm.conn.SetDeadline(time.Time{})
+func LoadAgent(pid uint32, agentPath, args string) error {
 	msg := strings.Join([]string{"1", "load", "instrument", "false", agentPath + "=" + args}, "\x00") + "\x00"
-	if _, err := jvm.conn.Write([]byte(msg)); err != nil {
-		return err
-	}
-	buf := make([]byte, 128)
-	n, err := jvm.conn.Read(buf)
+	status, resp, err := sendCommand(pid, msg)
 	if err != nil {
 		return err
 	}
-	if n > 0 && buf[0] != '0' {
-		return fmt.Errorf("load agent failed: status=%s", string(buf[:n]))
+	if status != '0' {
+		return fmt.Errorf("load agent failed: status=%c response=%s", status, resp)
 	}
 	return nil
 }
 
-func (jvm *JVM) DumpPerfmap() error {
-	if err := jvm.conn.SetDeadline(time.Now().Add(requestTimeout)); err != nil {
+func LoadNativeAgent(pid uint32, agentPath, args string) error {
+	msg := strings.Join([]string{"1", "load", agentPath, "true", args}, "\x00") + "\x00"
+	status, resp, err := sendCommand(pid, msg)
+	if err != nil {
 		return err
 	}
-	defer jvm.conn.SetDeadline(time.Time{})
+	if status != '0' {
+		return fmt.Errorf("load native agent failed: status=%c response=%s", status, resp)
+	}
+	return nil
+}
+
+func DumpPerfmap(pid uint32) error {
 	msg := strings.Join([]string{"1", "jcmd", "Compiler.perfmap", "", "", ""}, "\x00")
-	if _, err := jvm.conn.Write([]byte(msg)); err != nil {
-		return err
+	status, resp, err := sendCommand(pid, msg)
+	if err != nil {
+		return fmt.Errorf("failed to dump perfmap of JVM %d: %w", pid, err)
 	}
-	status := []byte{0}
-	if _, err := jvm.conn.Read(status); err != nil {
-		return err
-	}
-	if status[0] != '0' {
-		return errors.New("status:" + string(status))
+	if status != '0' {
+		return fmt.Errorf("failed to dump perfmap of JVM %d: status=%c response=%s", pid, status, resp)
 	}
 	return nil
 }

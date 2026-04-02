@@ -56,7 +56,8 @@ type Registry struct {
 	ip2fqdn                map[netaddr.IP]*common.Domain
 	ip2fqdnLock            sync.RWMutex
 
-	processInfoCh chan<- ProcessInfo
+	processInfoCh        chan<- ProcessInfo
+	jvmProfilingUpdateCh chan *JvmProfilingUpdate
 
 	ebpfStatsLastUpdated time.Time
 	ebpfStatsLock        sync.Mutex
@@ -67,7 +68,7 @@ type Registry struct {
 	gpuProcessUsageSampleChan chan gpu.ProcessUsageSample
 }
 
-func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, gpuProcessUsageSampleChan chan gpu.ProcessUsageSample) (*Registry, error) {
+func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, jvmProfilingUpdateCh chan *JvmProfilingUpdate, gpuProcessUsageSampleChan chan gpu.ProcessUsageSample) (*Registry, error) {
 	ns, err := proc.GetSelfNetNs()
 	if err != nil {
 		return nil, err
@@ -121,6 +122,7 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, gp
 		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate),
 		nodejsStatsUpdateCh:  make(chan *NodejsStatsUpdate),
 		pythonStatsUpdateCh:  make(chan *PythonStatsUpdate),
+		jvmProfilingUpdateCh: jvmProfilingUpdateCh,
 
 		gpuProcessUsageSampleChan: gpuProcessUsageSampleChan,
 	}
@@ -228,6 +230,10 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			}
 			if c := r.containersByPid[u.Pid]; c != nil {
 				c.updatePythonStats(*u)
+			}
+		case u := <-r.jvmProfilingUpdateCh:
+			if c := r.containersByPid[u.Pid]; c != nil {
+				c.updateJvmProfilingStats(u)
 			}
 		case sample := <-r.gpuProcessUsageSampleChan:
 			if c := r.containersByPid[sample.Pid]; c != nil {
@@ -596,4 +602,19 @@ type NodejsStatsUpdate struct {
 type PythonStatsUpdate struct {
 	Pid   uint32
 	Stats ebpftracer.PythonStats
+}
+
+type JvmProfilingUpdate struct {
+	Pid             uint32
+	AllocBytes      int64
+	AllocObjects    int64
+	LockContentions int64
+	LockTimeNs      int64
+}
+
+type JvmProfilingStats struct {
+	AllocBytes      int64
+	AllocObjects    int64
+	LockContentions int64
+	LockTimeNs      int64
 }

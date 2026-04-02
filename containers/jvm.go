@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/coroot/coroot-node-agent/common"
+	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/xin053/hsperfdata"
 	"k8s.io/klog/v2"
 )
 
-func jvmMetrics(pid uint32) (string, []prometheus.Metric) {
+func jvmMetrics(pid uint32, c *Container) (string, []prometheus.Metric) {
 	nsPid, err := proc.GetNsPid(pid)
 	if err != nil {
 		if !common.IsNotExist(err) {
@@ -42,15 +43,20 @@ func jvmMetrics(pid uint32) (string, []prometheus.Metric) {
 	func() {
 		size := float64(0)
 		used := float64(0)
+		maxSize := float64(0)
 		for _, gen := range []int{0, 1} {
 			spaces := pd.getInt64("sun.gc.generation.%d.spaces", gen)
 			for s := 0; s < int(spaces); s++ {
 				size += float64(pd.getInt64("sun.gc.generation.%d.space.%d.capacity", gen, s))
 				used += float64(pd.getInt64("sun.gc.generation.%d.space.%d.used", gen, s))
+				maxSize += float64(pd.getInt64("sun.gc.generation.%d.space.%d.maxCapacity", gen, s))
 			}
 		}
 		res = append(res, gauge(metrics.JvmHeapSize, size, jvm))
 		res = append(res, gauge(metrics.JvmHeapUsed, used, jvm))
+		if maxSize > 0 {
+			res = append(res, gauge(metrics.JvmHeapMaxSize, maxSize, jvm))
+		}
 	}()
 
 	gc := func(prefix string) {
@@ -66,6 +72,19 @@ func jvmMetrics(pid uint32) (string, []prometheus.Metric) {
 
 	res = append(res, counter(metrics.JvmSafepointTime, time.Duration(pd.getInt64("sun.rt.safepointTime")).Seconds(), jvm))
 	res = append(res, counter(metrics.JvmSafepointSyncTime, time.Duration(pd.getInt64("sun.rt.safepointSyncTime")).Seconds(), jvm))
+
+	if *flags.EnableJavaAsyncProfiler {
+		res = append(res, gauge(metrics.JvmProfilingStatus, 1, jvm))
+		if s := c.jvmProfilingStats; s != nil {
+			res = append(res, counter(metrics.JvmAllocBytes, float64(s.AllocBytes), jvm))
+			res = append(res, counter(metrics.JvmAllocObjects, float64(s.AllocObjects), jvm))
+			res = append(res, counter(metrics.JvmLockContentions, float64(s.LockContentions), jvm))
+			res = append(res, counter(metrics.JvmLockTime, float64(s.LockTimeNs)/1e9, jvm))
+		}
+	} else {
+		res = append(res, gauge(metrics.JvmProfilingStatus, 0, jvm))
+	}
+
 	return jvm, res
 }
 

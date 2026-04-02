@@ -55,13 +55,7 @@ func deployAndLoadTlsAgent(pid uint32) (nativeLibPath string, err error) {
 	containerAgentPath := filepath.Join(deployDir, agentJarName)
 	containerNativeLibPath := filepath.Join(deployDir, nativeLibName)
 
-	j, err := Dial(pid)
-	if err != nil {
-		return "", fmt.Errorf("failed to attach to JVM %d: %w", pid, err)
-	}
-	defer j.Close()
-
-	if err = j.LoadAgent(containerAgentPath, containerNativeLibPath); err != nil {
+	if err = LoadAgent(pid, containerAgentPath, containerNativeLibPath); err != nil {
 		return "", fmt.Errorf("failed to load agent into JVM %d: %w", pid, err)
 	}
 	klog.Infof("pid=%d: Java TLS agent loaded successfully", pid)
@@ -128,14 +122,14 @@ func canLoadJavaAgent(pid uint32) bool {
 		klog.Infof("pid=%d: skipping Java TLS agent: dynamic agent loading disabled", pid)
 		return false
 	}
-	if !isHotSpotJVM(pid) {
+	if !IsHotSpotJVM(pid) {
 		klog.Infof("pid=%d: skipping Java TLS agent: unsupported JVM (only HotSpot-based JVMs are supported)", pid)
 		return false
 	}
 	return true
 }
 
-func isHotSpotJVM(pid uint32) bool {
+func IsHotSpotJVM(pid uint32) bool {
 	f, err := os.Open(proc.Path(pid, "maps"))
 	if err != nil {
 		return false
