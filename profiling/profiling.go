@@ -2,7 +2,6 @@ package profiling
 
 import (
 	"bytes"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,7 +38,7 @@ var (
 	httpClient  = http.Client{
 		Timeout: UploadTimeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: *flags.InsecureSkipVerify},
+			TLSClientConfig: common.TlsConfig(),
 		},
 	}
 	endpointUrl          *url.URL
