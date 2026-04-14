@@ -88,8 +88,8 @@ github.com/coroot/dotnetdiag v1.2.2 h1:PVP/By8o+xhPjfVolJYcjHLbFQInM7pkaD6/otPLc
 github.com/coroot/dotnetdiag v1.2.2/go.mod h1:veXCMlFzm1yNl7wwJb/ZLxO4WbzhDBoy1VG1XtkH2ls=
 github.com/coroot/logparser v1.2.1 h1:NLU4VAgGwqMTtKyRHDpTtE9BtPQJLOhDIuB5yiQdelQ=
 github.com/coroot/logparser v1.2.1/go.mod h1:/7qHU4/I4zWRYIzRchQPehlTzbcMv5HV6cwBqg2zl6I=
-github.com/coroot/pyroscope/ebpf v0.0.0-20250418092207-a70610b6df72 h1:NFEMXMOdUzQFG+OwRVecv/yc75/s8MmLkNquMm6hk3I=
-github.com/coroot/pyroscope/ebpf v0.0.0-20250418092207-a70610b6df72/go.mod h1:IepHM9FJ0n3n3k+ZV23Y7vNAfvWI7LDuLqWPO4rB6sQ=
+github.com/coroot/pyroscope/ebpf v0.0.0-20260413145227-9cce3f956c8e h1:nV+56pdT5ikl84ZcIoyb5qHWXuSZip2DZNFqIAs2XM0=
+github.com/coroot/pyroscope/ebpf v0.0.0-20260413145227-9cce3f956c8e/go.mod h1:IepHM9FJ0n3n3k+ZV23Y7vNAfvWI7LDuLqWPO4rB6sQ=
 github.com/cpuguy83/go-md2man/v2 v2.0.4/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/cyphar/filepath-securejoin v0.6.0 h1:BtGB77njd6SVO6VztOHfPxKitJvd/VPT+OFBFMOi1Is=
 github.com/cyphar/filepath-securejoin v0.6.0/go.mod h1:A8hd4EnAeyujCJRrICiOWqjS1AX0a9kM5XL+NwKoYSc=

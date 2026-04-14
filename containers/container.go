@@ -140,6 +140,7 @@ type Container struct {
 	pythonStats *ebpftracer.PythonStats
 
 	jvmProfilingStats *JvmProfilingStats
+	goProfilingStats  *GoProfilingStats
 
 	mounts     map[string]proc.MountInfo
 	seenMounts map[uint64]struct{}
@@ -419,6 +420,10 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 	if c.nodejsStats != nil {
 		ch <- counter(metrics.NodejsEventLoopBlockedTime, c.nodejsStats.EventLoopBlockedTime.Seconds())
+	}
+	if s := c.goProfilingStats; s != nil {
+		ch <- counter(metrics.GoAllocBytes, float64(s.AllocBytes))
+		ch <- counter(metrics.GoAllocObjects, float64(s.AllocObjects))
 	}
 
 	if c.dnsStats.Requests != nil {
@@ -848,7 +853,7 @@ func (c *Container) updateDelays() {
 	}
 }
 
-func (c *Container) updateJvmProfilingStats(u *JvmProfilingUpdate) {
+func (c *Container) updateJvmProfilingStats(u *ProfilingUpdate) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if c.jvmProfilingStats == nil {
@@ -858,6 +863,16 @@ func (c *Container) updateJvmProfilingStats(u *JvmProfilingUpdate) {
 	c.jvmProfilingStats.AllocObjects += u.AllocObjects
 	c.jvmProfilingStats.LockContentions += u.LockContentions
 	c.jvmProfilingStats.LockTimeNs += u.LockTimeNs
+}
+
+func (c *Container) updateGoProfilingStats(u *ProfilingUpdate) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.goProfilingStats == nil {
+		c.goProfilingStats = &GoProfilingStats{}
+	}
+	c.goProfilingStats.AllocBytes += u.AllocBytes
+	c.goProfilingStats.AllocObjects += u.AllocObjects
 }
 
 func (c *Container) updateNodejsStats(s NodejsStatsUpdate) {
