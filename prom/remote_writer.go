@@ -2,7 +2,6 @@ package prom
 
 import (
 	"crypto/md5"
-	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -67,7 +66,7 @@ func StartAgent(reg *prometheus.Registry, machineId, systemUuid string) error {
 		httpClient: http.Client{
 			Timeout: RemoteWriteTimeout,
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: *flags.InsecureSkipVerify},
+				TLSClientConfig: common.TlsConfig(),
 			},
 		},
 		spoolDir:     path.Join(*flags.WalDir, "spool"),

@@ -2,7 +2,6 @@ package tracing
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"math/rand"
 	"time"
@@ -57,7 +56,7 @@ func Init(machineId, hostname, version string) {
 		otlptracehttp.WithEndpoint(endpointUrl.Host),
 		otlptracehttp.WithURLPath(path),
 		otlptracehttp.WithHeaders(common.AuthHeaders()),
-		otlptracehttp.WithTLSClientConfig(&tls.Config{InsecureSkipVerify: *flags.InsecureSkipVerify}),
+		otlptracehttp.WithTLSClientConfig(common.TlsConfig()),
 	}
 	if endpointUrl.Scheme != "https" {
 		opts = append(opts, otlptracehttp.WithInsecure())
