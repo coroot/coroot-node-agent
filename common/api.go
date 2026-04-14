@@ -22,7 +22,7 @@ func TlsConfig() *tls.Config {
 	if *flags.CAFile != "" {
 		ca, err := os.ReadFile(*flags.CAFile)
 		if err != nil {
-			klog.Errorln(err)
+			klog.Fatalln(err)
 			return cfg
 		}
 		pool, err := x509.SystemCertPool()
@@ -31,7 +31,7 @@ func TlsConfig() *tls.Config {
 			pool = x509.NewCertPool()
 		}
 		if !pool.AppendCertsFromPEM(ca) {
-			klog.Errorf("failed to parse CA from %s", *flags.CAFile)
+			klog.Fatalf("failed to parse CA from %s", *flags.CAFile)
 		}
 		cfg.RootCAs = pool
 	}
