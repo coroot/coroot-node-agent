@@ -131,6 +131,63 @@ func (f *ELFFile) GetSymbol(name string) (*Symbol, error) {
 	return &Symbol{s: es, f: f}, nil
 }
 
+func (f *ELFFile) FindSymbolValue(name string) (uint64, error) {
+	return findSymbolValue(f.elf, ".symtab", name)
+}
+
+func findSymbolValue(ef *elf.File, sectionName, symName string) (uint64, error) {
+	section := ef.Section(sectionName)
+	if section == nil {
+		return 0, fmt.Errorf("no %s section", sectionName)
+	}
+	strtab := ef.Sections[section.Link]
+	if strtab == nil {
+		return 0, fmt.Errorf("no string table for %s", sectionName)
+	}
+
+	entrySize := int64(24) // Elf64_Sym
+	if ef.Class == elf.ELFCLASS32 {
+		entrySize = 16 // Elf32_Sym
+	}
+
+	symReader := section.Open()
+	entry := make([]byte, entrySize)
+	target := []byte(symName)
+	nameBuf := make([]byte, len(target)+1)
+
+	// skip entry 0 (undefined symbol)
+	if _, err := symReader.Read(entry); err != nil {
+		return 0, fmt.Errorf("read %s: %w", sectionName, err)
+	}
+
+	for {
+		if _, err := symReader.Read(entry); err != nil {
+			break
+		}
+		nameIdx := ef.ByteOrder.Uint32(entry[0:4])
+		var value uint64
+		if ef.Class == elf.ELFCLASS64 {
+			value = ef.ByteOrder.Uint64(entry[8:16])
+		} else {
+			value = uint64(ef.ByteOrder.Uint32(entry[4:8]))
+		}
+		if nameIdx == 0 {
+			continue
+		}
+		n, _ := strtab.ReadAt(nameBuf, int64(nameIdx))
+		if n < len(target) {
+			continue
+		}
+		if n > len(target) && nameBuf[len(target)] != 0 {
+			continue
+		}
+		if string(nameBuf[:len(target)]) == symName {
+			return value, nil
+		}
+	}
+	return 0, fmt.Errorf("%s not found", symName)
+}
+
 func (f *ELFFile) FindSymbolBySubstrings(substrs ...string) *Symbol {
 	if f.symbols == nil {
 		if err := f.readSymbols(); err != nil {
@@ -166,6 +223,10 @@ func (f *ELFFile) getTextSectionAndReader() (*elf.Section, io.ReadSeeker, error)
 		f.textSectionReader = f.textSection.Open()
 	}
 	return f.textSection, f.textSectionReader, nil
+}
+
+func (f *ELFFile) IsGoBinary() bool {
+	return f.elf.Section(".go.buildinfo") != nil
 }
 
 func (f *ELFFile) IsRustBinary() bool {

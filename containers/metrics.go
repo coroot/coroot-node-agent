@@ -59,6 +59,9 @@ var metrics = struct {
 	JvmLockTime          *prometheus.Desc
 	JvmProfilingStatus   *prometheus.Desc
 
+	GoAllocBytes   *prometheus.Desc
+	GoAllocObjects *prometheus.Desc
+
 	PythonThreadLockWaitTime   *prometheus.Desc
 	NodejsEventLoopBlockedTime *prometheus.Desc
 
@@ -120,6 +123,9 @@ var metrics = struct {
 	JvmLockContentions:   metric("container_jvm_lock_contentions_total", "Total number of lock contentions observed by async-profiler", "jvm"),
 	JvmLockTime:          metric("container_jvm_lock_time_seconds_total", "Total time spent waiting for locks observed by async-profiler", "jvm"),
 	JvmProfilingStatus:   metric("container_jvm_profiling_status", "1 if async-profiler is enabled, 0 if disabled", "jvm"),
+
+	GoAllocBytes:   metric("container_go_alloc_bytes_total", "Total bytes allocated by a Go application"),
+	GoAllocObjects: metric("container_go_alloc_objects_total", "Total objects allocated by a Go application"),
 
 	Ip2Fqdn: metric("ip_to_fqdn", "Mapping IP addresses to FQDNs based on DNS requests initiated by containers", "ip", "fqdn"),
 

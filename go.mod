@@ -209,7 +209,7 @@ require (
 )
 
 replace (
-	github.com/grafana/pyroscope/ebpf => github.com/coroot/pyroscope/ebpf v0.0.0-20250418092207-a70610b6df72
+	github.com/grafana/pyroscope/ebpf => github.com/coroot/pyroscope/ebpf v0.0.0-20260413145227-9cce3f956c8e
 	github.com/optiopay/kafka => github.com/cilium/kafka v0.0.0-20180809090225-01ce283b732b
 	github.com/pyroscope-io/dotnetdiag => github.com/coroot/dotnetdiag v1.2.2
 )

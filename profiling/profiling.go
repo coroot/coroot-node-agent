@@ -41,20 +41,20 @@ var (
 			TLSClientConfig: common.TlsConfig(),
 		},
 	}
-	endpointUrl          *url.URL
-	session              ebpfspy.Session
-	targetFinder         = &TargetFinder{processes: map[uint32]*processInfo{}}
-	jvmProfilingUpdateCh chan<- *containers.JvmProfilingUpdate
+	endpointUrl       *url.URL
+	session           ebpfspy.Session
+	targetFinder      = &TargetFinder{processes: map[uint32]*processInfo{}}
+	profilingUpdateCh chan<- *containers.ProfilingUpdate
 )
 
-func Init(hostId, hostName string) (chan<- containers.ProcessInfo, chan *containers.JvmProfilingUpdate) {
-	jvmUpdateCh := make(chan *containers.JvmProfilingUpdate, 100)
-	jvmProfilingUpdateCh = jvmUpdateCh
+func Init(hostId, hostName string) (chan<- containers.ProcessInfo, chan *containers.ProfilingUpdate) {
+	updateCh := make(chan *containers.ProfilingUpdate, 100)
+	profilingUpdateCh = updateCh
 
 	endpointUrl = *flags.ProfilesEndpoint
 	if endpointUrl == nil {
 		klog.Infoln("no profiles endpoint configured")
-		return nil, jvmUpdateCh
+		return nil, updateCh
 	}
 	klog.Infoln("profiles endpoint:", endpointUrl.String())
 
@@ -100,19 +100,19 @@ func Init(hostId, hostName string) (chan<- containers.ProcessInfo, chan *contain
 	if err != nil {
 		klog.Errorln(err)
 		session = nil
-		return nil, jvmUpdateCh
+		return nil, updateCh
 	}
 	err = session.Start()
 	if err != nil {
 		klog.Errorln(err)
 		session = nil
-		return nil, jvmUpdateCh
+		return nil, updateCh
 	}
 	go collect()
 
 	processInfoCh := make(chan containers.ProcessInfo)
 	targetFinder.start(processInfoCh)
-	return processInfoCh, jvmUpdateCh
+	return processInfoCh, updateCh
 }
 
 func Start() {
@@ -152,6 +152,9 @@ func collect() {
 
 		if *flags.EnableJavaAsyncProfiler {
 			collectAsyncProfilerProfiles()
+		}
+		if *flags.GoHeapProfilerMode != "disabled" {
+			collectGoHeapProfiles()
 		}
 	}
 }
@@ -252,12 +255,12 @@ func collectAsyncProfilerProfiles() {
 			if err := uploadProfile(jp.Prof, j.serviceName, j.containerID); err != nil {
 				klog.Errorf("async-profiler upload pid=%d type=%s: %v", j.pid, jp.Type, err)
 			}
-			if jvmProfilingUpdateCh != nil {
+			if profilingUpdateCh != nil {
 				var total int64
 				for _, s := range jp.Prof.Sample {
 					total += s.Value[0]
 				}
-				u := &containers.JvmProfilingUpdate{Pid: j.pid}
+				u := &containers.ProfilingUpdate{Pid: j.pid, Runtime: containers.RuntimeJvm}
 				switch jp.Type {
 				case jvm.ProfileTypeAllocSpace:
 					u.AllocBytes = total
@@ -270,7 +273,74 @@ func collectAsyncProfilerProfiles() {
 				default:
 					continue
 				}
-				jvmProfilingUpdateCh <- u
+				profilingUpdateCh <- u
+			}
+		}
+	}
+}
+
+func collectGoHeapProfiles() {
+	targetFinder.lock.Lock()
+	type goInfo struct {
+		pid          uint32
+		serviceName  string
+		containerID  string
+		mbucketsAddr uint64
+		prev         goHeapPrevState
+	}
+	var goProcesses []goInfo
+	symCache := session.SymbolCache()
+	for pid, pi := range targetFinder.processes {
+		if pi.isGo {
+			goProcesses = append(goProcesses, goInfo{
+				pid:          pid,
+				serviceName:  pi.serviceName,
+				containerID:  pi.containerId,
+				mbucketsAddr: pi.mbucketsAddr,
+				prev:         pi.goHeapPrev,
+			})
+		}
+	}
+	targetFinder.lock.Unlock()
+
+	r := newMemReader()
+	for _, g := range goProcesses {
+		profiles, newPrev, err := collectHeapProfile(g.pid, g.mbucketsAddr, CollectInterval, symCache, g.prev, r)
+		if err != nil {
+			if !common.IsNotExist(err) {
+				klog.Warningf("go heap profile pid=%d: %v", g.pid, err)
+			}
+			continue
+		}
+		targetFinder.lock.Lock()
+		if pi := targetFinder.processes[g.pid]; pi != nil {
+			pi.goHeapPrev = newPrev
+		}
+		targetFinder.lock.Unlock()
+		for _, hp := range profiles {
+			if len(hp.Prof.Sample) == 0 {
+				continue
+			}
+			if err := uploadProfile(hp.Prof, g.serviceName, g.containerID); err != nil {
+				klog.Errorf("go heap upload pid=%d type=%s: %v", g.pid, hp.Type, err)
+			}
+			if profilingUpdateCh != nil {
+				var total int64
+				for _, s := range hp.Prof.Sample {
+					total += s.Value[0]
+				}
+				if total > 0 {
+					u := &containers.ProfilingUpdate{Pid: g.pid, Runtime: containers.RuntimeGo}
+					switch hp.Type {
+					case profileTypeAllocSpace:
+						u.AllocBytes = total
+					case profileTypeAllocObjects:
+						u.AllocObjects = total
+					default:
+						continue
+					}
+					profilingUpdateCh <- u
+				}
 			}
 		}
 	}
@@ -363,6 +433,13 @@ func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
 			}
 			klog.Infof("JVM detected PID: %d, hotspot: %t, perfmap: %t", pid, pi.isJvm, pi.jvmPerfmapDumpSupported)
 		}
+		if *flags.GoHeapProfilerMode != "disabled" && !pi.flags.EbpfProfilingDisabled {
+			if addr, err := findMbucketsAddr(pid, *flags.GoHeapProfilerMode); err == nil {
+				pi.isGo = true
+				pi.mbucketsAddr = addr
+				klog.Infof("Go heap profiling enabled for PID: %d, mbuckets at 0x%x", pid, addr)
+			}
+		}
 	}
 	if pi.flags.EbpfProfilingDisabled {
 		return nil
@@ -408,4 +485,8 @@ type processInfo struct {
 	lastPerfmapDump         int64
 	asyncProfilerStarted    bool
 	asyncProfilerErr        bool
+
+	isGo         bool
+	mbucketsAddr uint64
+	goHeapPrev   goHeapPrevState
 }

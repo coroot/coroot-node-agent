@@ -56,8 +56,8 @@ type Registry struct {
 	ip2fqdn                map[netaddr.IP]*common.Domain
 	ip2fqdnLock            sync.RWMutex
 
-	processInfoCh        chan<- ProcessInfo
-	jvmProfilingUpdateCh chan *JvmProfilingUpdate
+	processInfoCh     chan<- ProcessInfo
+	profilingUpdateCh chan *ProfilingUpdate
 
 	ebpfStatsLastUpdated time.Time
 	ebpfStatsLock        sync.Mutex
@@ -68,7 +68,7 @@ type Registry struct {
 	gpuProcessUsageSampleChan chan gpu.ProcessUsageSample
 }
 
-func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, jvmProfilingUpdateCh chan *JvmProfilingUpdate, gpuProcessUsageSampleChan chan gpu.ProcessUsageSample) (*Registry, error) {
+func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, profilingUpdateCh chan *ProfilingUpdate, gpuProcessUsageSampleChan chan gpu.ProcessUsageSample) (*Registry, error) {
 	ns, err := proc.GetSelfNetNs()
 	if err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, jv
 		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate),
 		nodejsStatsUpdateCh:  make(chan *NodejsStatsUpdate),
 		pythonStatsUpdateCh:  make(chan *PythonStatsUpdate),
-		jvmProfilingUpdateCh: jvmProfilingUpdateCh,
+		profilingUpdateCh:    profilingUpdateCh,
 
 		gpuProcessUsageSampleChan: gpuProcessUsageSampleChan,
 	}
@@ -231,9 +231,14 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			if c := r.containersByPid[u.Pid]; c != nil {
 				c.updatePythonStats(*u)
 			}
-		case u := <-r.jvmProfilingUpdateCh:
+		case u := <-r.profilingUpdateCh:
 			if c := r.containersByPid[u.Pid]; c != nil {
-				c.updateJvmProfilingStats(u)
+				switch u.Runtime {
+				case RuntimeJvm:
+					c.updateJvmProfilingStats(u)
+				case RuntimeGo:
+					c.updateGoProfilingStats(u)
+				}
 			}
 		case sample := <-r.gpuProcessUsageSampleChan:
 			if c := r.containersByPid[sample.Pid]; c != nil {
@@ -604,8 +609,14 @@ type PythonStatsUpdate struct {
 	Stats ebpftracer.PythonStats
 }
 
-type JvmProfilingUpdate struct {
+const (
+	RuntimeJvm = "jvm"
+	RuntimeGo  = "go"
+)
+
+type ProfilingUpdate struct {
 	Pid             uint32
+	Runtime         string
 	AllocBytes      int64
 	AllocObjects    int64
 	LockContentions int64
@@ -617,4 +628,9 @@ type JvmProfilingStats struct {
 	AllocObjects    int64
 	LockContentions int64
 	LockTimeNs      int64
+}
+
+type GoProfilingStats struct {
+	AllocBytes   int64
+	AllocObjects int64
 }
