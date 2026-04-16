@@ -44,6 +44,8 @@ var (
 
 	MaxLabelLength = kingpin.Flag("max-label-length", "Maximum length of a metric label value").Default("4096").Envar("MAX_LABEL_LENGTH").Int()
 
+	MaxConnectionDestinations = kingpin.Flag("max-connection-destinations", "Max unique connection destinations tracked per container (0=no limit)").Default("0").Envar("MAX_CONNECTION_DESTINATIONS").Int()
+
 	CollectorEndpoint  = kingpin.Flag("collector-endpoint", "A base endpoint URL for metrics, traces, logs, and profiles").Envar("COLLECTOR_ENDPOINT").URL()
 	ApiKey             = kingpin.Flag("api-key", "Coroot API key").Envar("API_KEY").String()
 	MetricsEndpoint    = kingpin.Flag("metrics-endpoint", "The URL of the endpoint to send metrics to").Envar("METRICS_ENDPOINT").URL()

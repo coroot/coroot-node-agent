@@ -119,9 +119,9 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, pr
 
 		tracer: ebpftracer.NewTracer(hostNetNs, selfNetNs, *flags.DisableL7Tracing),
 
-		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate),
-		nodejsStatsUpdateCh:  make(chan *NodejsStatsUpdate),
-		pythonStatsUpdateCh:  make(chan *PythonStatsUpdate),
+		trafficStatsUpdateCh: make(chan *TrafficStatsUpdate, 4096),
+		nodejsStatsUpdateCh:  make(chan *NodejsStatsUpdate, 4096),
+		pythonStatsUpdateCh:  make(chan *PythonStatsUpdate, 4096),
 		profilingUpdateCh:    profilingUpdateCh,
 
 		gpuProcessUsageSampleChan: gpuProcessUsageSampleChan,

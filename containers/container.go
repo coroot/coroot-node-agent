@@ -131,7 +131,7 @@ type Container struct {
 	connectionsByPidFd       map[PidFd]*ActiveConnection
 
 	l7Stats  L7Stats
-	dnsStats *L7Metrics
+	dnsStats *DnsStats
 
 	gpuStats map[string]*GpuUsage
 
@@ -186,7 +186,7 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		activeConnections:        map[ConnectionKey]*ActiveConnection{},
 		connectionsByPidFd:       map[PidFd]*ActiveConnection{},
 		l7Stats:                  L7Stats{},
-		dnsStats:                 &L7Metrics{},
+		dnsStats:                 &DnsStats{},
 
 		gpuStats: map[string]*GpuUsage{},
 
@@ -426,12 +426,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		ch <- counter(metrics.GoAllocObjects, float64(s.AllocObjects))
 	}
 
-	if c.dnsStats.Requests != nil {
-		c.dnsStats.Requests.Collect(ch)
-	}
-	if c.dnsStats.Latency != nil {
-		c.dnsStats.Latency.Collect(ch)
-	}
+	c.dnsStats.collect(ch)
 	c.l7Stats.collect(ch)
 
 	if !*flags.DisablePinger {
@@ -608,6 +603,25 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst, actualDst 
 	} else {
 		stats := c.connectionStats[key]
 		if stats == nil {
+			maxDest := *flags.MaxConnectionDestinations
+			if maxDest > 0 && len(c.connectionStats) >= maxDest {
+				var oldest common.DestinationKey
+				oldestAt := time.Time{}
+				for ck := range c.connectionStats {
+					at, ok := c.lastConnectionAttempts[ck.Destination()]
+					if !ok {
+						continue
+					}
+					if oldestAt.IsZero() || at.Before(oldestAt) {
+						oldest = ck
+						oldestAt = at
+					}
+				}
+				if !oldestAt.IsZero() {
+					delete(c.connectionStats, oldest)
+					c.l7Stats.delete(oldest.Destination())
+				}
+			}
 			stats = &ConnectionStats{}
 			c.connectionStats[key] = stats
 		}
@@ -664,8 +678,7 @@ func (c *Container) updateConnectionTrafficStats(ac *ActiveConnection, sent, rec
 	}
 	stats := c.connectionStats[ac.DestinationKey]
 	if stats == nil {
-		stats = &ConnectionStats{}
-		c.connectionStats[ac.DestinationKey] = stats
+		return
 	}
 	if sent > ac.BytesSent {
 		stats.BytesSent += sent - ac.BytesSent
@@ -695,22 +708,9 @@ func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]*common.Domai
 		return nil
 	}
 
-	if c.dnsStats.Requests == nil {
-		dnsReq := L7Requests[l7.ProtocolDNS]
-		c.dnsStats.Requests = prometheus.NewCounterVec(
-			prometheus.CounterOpts{Name: dnsReq.Name, Help: dnsReq.Help},
-			[]string{"request_type", "domain", "status"},
-		)
-	}
-	if m, _ := c.dnsStats.Requests.GetMetricWithLabelValues(t, fqdn, status); m != nil {
-		m.Inc()
-	}
+	c.dnsStats.observe(t, fqdn, status)
 	if r.Duration != 0 {
-		if c.dnsStats.Latency == nil {
-			dnsLatency := L7Latency[l7.ProtocolDNS]
-			c.dnsStats.Latency = prometheus.NewHistogram(prometheus.HistogramOpts{Name: dnsLatency.Name, Help: dnsLatency.Help})
-		}
-		c.dnsStats.Latency.Observe(r.Duration.Seconds())
+		c.dnsStats.observeLatency(r.Duration.Seconds())
 	}
 	ip2fqdn := map[netaddr.IP]*common.Domain{}
 	if fqdn != "" {
@@ -831,8 +831,7 @@ func (c *Container) onRetransmission(src netaddr.IPPort, dst netaddr.IPPort) boo
 	}
 	stats := c.connectionStats[conn.DestinationKey]
 	if stats == nil {
-		stats = &ConnectionStats{}
-		c.connectionStats[conn.DestinationKey] = stats
+		return true
 	}
 	stats.Retransmissions++
 	return true
