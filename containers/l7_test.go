@@ -164,8 +164,11 @@ func TestL7MetricsObserveNoLatencyField(t *testing.T) {
 
 	m.observe("200", "", 100*time.Millisecond)
 
-	if len(m.requests) != 1 && m.requests[0].count != 1 {
-		t.Errorf("request should be counted even without latency field")
+	if len(m.requests) != 1 {
+		t.Fatalf("requests: got %d, want 1", len(m.requests))
+	}
+	if m.requests[0].count != 1 {
+		t.Errorf("request count: got %d, want 1", m.requests[0].count)
 	}
 }
 
@@ -288,9 +291,15 @@ func TestL7StatsCollect(t *testing.T) {
 		t.Fatalf("request metrics: got %d, want 2 (status 200 and 500)", len(reqMF.Metric))
 	}
 
-	latMF := findMetricFamily(mfs, "container_http_requests_duration_seconds_total")
+	latMF := findMetricFamily(mfs, "container_http_requests_duration_seconds_total_bucket")
 	if latMF == nil {
-		t.Fatal("container_http_requests_duration_seconds_total not found")
+		t.Fatal("container_http_requests_duration_seconds_total_bucket not found")
+	}
+	if findMetricFamily(mfs, "container_http_requests_duration_seconds_total_sum") == nil {
+		t.Fatal("container_http_requests_duration_seconds_total_sum not found")
+	}
+	if findMetricFamily(mfs, "container_http_requests_duration_seconds_total_count") == nil {
+		t.Fatal("container_http_requests_duration_seconds_total_count not found")
 	}
 }
 
@@ -425,9 +434,9 @@ func TestDnsStatsCollect(t *testing.T) {
 		t.Fatalf("dns request metrics: got %d, want 2", len(reqMF.Metric))
 	}
 
-	latMF := findMetricFamily(mfs, "container_dns_requests_duration_seconds_total")
+	latMF := findMetricFamily(mfs, "container_dns_requests_duration_seconds_total_bucket")
 	if latMF == nil {
-		t.Fatal("container_dns_requests_duration_seconds_total not found")
+		t.Fatal("container_dns_requests_duration_seconds_total_bucket not found")
 	}
 }
 
@@ -438,6 +447,7 @@ func TestEmitHistogramCumulative(t *testing.T) {
 	h.observe(0.05)
 	h.observe(0.05)
 	h.observe(7)
+	h.observe(15)
 
 	ch := make(chan prometheus.Metric, 100)
 	emitHistogram(ch, descs, "dest", "act", h)
@@ -456,8 +466,8 @@ func TestEmitHistogramCumulative(t *testing.T) {
 	if err := metrics[11].Write(pb); err != nil {
 		t.Fatal(err)
 	}
-	if pb.GetCounter().GetValue() != 4 {
-		t.Errorf("+Inf cumulative: got %f, want 4", pb.GetCounter().GetValue())
+	if pb.GetCounter().GetValue() != 5 {
+		t.Errorf("+Inf: got %f, want 5 (h.count)", pb.GetCounter().GetValue())
 	}
 
 	bucketValues := []float64{1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 4}
@@ -476,7 +486,7 @@ func TestEmitHistogramCumulative(t *testing.T) {
 	if err := sumM.Write(pb2); err != nil {
 		t.Fatal(err)
 	}
-	wantSum := 0.003 + 0.05 + 0.05 + 7.0
+	wantSum := 0.003 + 0.05 + 0.05 + 7.0 + 15.0
 	if math.Abs(pb2.GetCounter().GetValue()-wantSum) > 1e-9 {
 		t.Errorf("sum: got %f, want %f", pb2.GetCounter().GetValue(), wantSum)
 	}
@@ -486,8 +496,8 @@ func TestEmitHistogramCumulative(t *testing.T) {
 	if err := countM.Write(pb3); err != nil {
 		t.Fatal(err)
 	}
-	if pb3.GetCounter().GetValue() != 4 {
-		t.Errorf("count: got %f, want 4", pb3.GetCounter().GetValue())
+	if pb3.GetCounter().GetValue() != 5 {
+		t.Errorf("count: got %f, want 5", pb3.GetCounter().GetValue())
 	}
 }
 

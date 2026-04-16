@@ -35,7 +35,7 @@ func init() {
 			requestsWithMethod: prometheus.NewDesc(opts.Name, opts.Help, []string{"destination", "actual_destination", "status", "method"}, nil),
 		}
 		if latOpts, ok := L7Latency[proto]; ok {
-			l7Descs[proto].latency = prometheus.NewDesc(latOpts.Name, latOpts.Help, []string{"destination", "actual_destination", "le"}, nil)
+			l7Descs[proto].latency = prometheus.NewDesc(latOpts.Name+"_bucket", latOpts.Help, []string{"destination", "actual_destination", "le"}, nil)
 			l7Descs[proto].latencySum = prometheus.NewDesc(latOpts.Name+"_sum", latOpts.Help, []string{"destination", "actual_destination"}, nil)
 			l7Descs[proto].latencyCount = prometheus.NewDesc(latOpts.Name+"_count", latOpts.Help, []string{"destination", "actual_destination"}, nil)
 		}
@@ -44,7 +44,7 @@ func init() {
 		dnsDescs.requests = prometheus.NewDesc(opts.Name, opts.Help, []string{"request_type", "domain", "status"}, nil)
 	}
 	if latOpts, ok := L7Latency[l7.ProtocolDNS]; ok {
-		dnsDescs.latency = prometheus.NewDesc(latOpts.Name, latOpts.Help, []string{"le"}, nil)
+		dnsDescs.latency = prometheus.NewDesc(latOpts.Name+"_bucket", latOpts.Help, []string{"le"}, nil)
 		dnsDescs.latencySum = prometheus.NewDesc(latOpts.Name+"_sum", latOpts.Help, nil, nil)
 		dnsDescs.latencyCount = prometheus.NewDesc(latOpts.Name+"_count", latOpts.Help, nil, nil)
 	}
@@ -158,7 +158,7 @@ func emitHistogram(ch chan<- prometheus.Metric, descs *l7DescCache, dest, act st
 	for i, upper := range defaultBuckets {
 		ch <- prometheus.MustNewConstMetric(descs.latency, prometheus.CounterValue, float64(h.bucketCounts[i]), dest, act, sortFloatStr(upper))
 	}
-	ch <- prometheus.MustNewConstMetric(descs.latency, prometheus.CounterValue, float64(h.bucketCounts[len(defaultBuckets)-1]), dest, act, "+Inf")
+	ch <- prometheus.MustNewConstMetric(descs.latency, prometheus.CounterValue, float64(h.count), dest, act, "+Inf")
 	ch <- prometheus.MustNewConstMetric(descs.latencySum, prometheus.CounterValue, h.sum, dest, act)
 	ch <- prometheus.MustNewConstMetric(descs.latencyCount, prometheus.CounterValue, float64(h.count), dest, act)
 }
@@ -222,7 +222,7 @@ func emitHistogramDNS(ch chan<- prometheus.Metric, h *lightweightHistogram) {
 	for i, upper := range defaultBuckets {
 		ch <- prometheus.MustNewConstMetric(dnsDescs.latency, prometheus.CounterValue, float64(h.bucketCounts[i]), sortFloatStr(upper))
 	}
-	ch <- prometheus.MustNewConstMetric(dnsDescs.latency, prometheus.CounterValue, float64(h.bucketCounts[len(defaultBuckets)-1]), "+Inf")
+	ch <- prometheus.MustNewConstMetric(dnsDescs.latency, prometheus.CounterValue, float64(h.count), "+Inf")
 	ch <- prometheus.MustNewConstMetric(dnsDescs.latencySum, prometheus.CounterValue, h.sum)
 	ch <- prometheus.MustNewConstMetric(dnsDescs.latencyCount, prometheus.CounterValue, float64(h.count))
 }
