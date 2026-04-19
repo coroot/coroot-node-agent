@@ -193,6 +193,7 @@ func collectAsyncProfilerProfiles() {
 		serviceName string
 		containerID string
 		started     bool
+		detectedAt  time.Time
 	}
 	var jvms []jvmInfo
 	for pid, pi := range targetFinder.processes {
@@ -202,6 +203,7 @@ func collectAsyncProfilerProfiles() {
 				serviceName: pi.serviceName,
 				containerID: pi.containerId,
 				started:     pi.asyncProfilerStarted,
+				detectedAt:  pi.jvmDetectedAt,
 			})
 		}
 	}
@@ -209,6 +211,15 @@ func collectAsyncProfilerProfiles() {
 
 	for _, j := range jvms {
 		if !j.started {
+			// Check if we need to wait before starting the profiler
+			if *flags.JavaAsyncProfilerDelay > 0 && !j.detectedAt.IsZero() {
+				delay := time.Duration(*flags.JavaAsyncProfilerDelay) * time.Second
+				if time.Since(j.detectedAt) < delay {
+					klog.V(2).Infof("pid=%d: delaying async-profiler start (waiting for %v since detection)", j.pid, delay-time.Since(j.detectedAt))
+					continue
+				}
+			}
+
 			if jvm.IsAsyncProfilerAlreadyLoaded(j.pid) {
 				klog.Infof("pid=%d: async-profiler already loaded by another tool, skipping", j.pid)
 				targetFinder.lock.Lock()
@@ -226,6 +237,7 @@ func collectAsyncProfilerProfiles() {
 				}
 				targetFinder.lock.Unlock()
 			} else {
+				klog.Infof("pid=%d: async-profiler started after %v delay", j.pid, time.Since(j.detectedAt).Truncate(time.Second))
 				targetFinder.lock.Lock()
 				if pi := targetFinder.processes[j.pid]; pi != nil {
 					pi.asyncProfilerStarted = true
@@ -428,6 +440,7 @@ func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
 		cmdline := proc.GetCmdline(pid)
 		if proc.IsJvm(cmdline) {
 			pi.isJvm = jvm.IsHotSpotJVM(pid)
+			pi.jvmDetectedAt = time.Now()
 			if !pi.flags.EbpfProfilingDisabled {
 				pi.jvmPerfmapDumpSupported = jvm.IsPerfmapDumpSupported(cmdline)
 			}
@@ -481,6 +494,7 @@ type processInfo struct {
 	flags       proc.Flags
 
 	isJvm                   bool
+	jvmDetectedAt           time.Time
 	jvmPerfmapDumpSupported bool
 	lastPerfmapDump         int64
 	asyncProfilerStarted    bool
