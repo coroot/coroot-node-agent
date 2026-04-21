@@ -214,7 +214,7 @@ func collectAsyncProfilerProfiles() {
 			delay := *flags.JavaAsyncProfilerDelay
 			if delay > 0 && !j.startedAt.IsZero() {
 				if time.Since(j.startedAt) < delay {
-					klog.Infof("pid=%d: delaying async-profiler start (waiting for %v since start)", j.pid, delay-time.Since(j.startedAt))
+					klog.Infof("pid=%d: delaying async-profiler start (waiting for %s since start)", j.pid, delay)
 					continue
 				}
 			}
@@ -229,14 +229,14 @@ func collectAsyncProfilerProfiles() {
 				continue
 			}
 			if err := jvm.DeployAndStartAsyncProfiler(j.pid); err != nil {
-				klog.Warningf("async-profiler start pid=%d: %v", j.pid, err)
+				klog.Warningf("async-profiler start pid=%d: %s", j.pid, err)
 				targetFinder.lock.Lock()
 				if pi := targetFinder.processes[j.pid]; pi != nil {
 					pi.asyncProfilerErr = true
 				}
 				targetFinder.lock.Unlock()
 			} else {
-				klog.Infof("pid=%d: async-profiler started after %v delay", j.pid, time.Since(j.startedAt).Truncate(time.Second))
+				klog.Infof("pid=%d: async-profiler started", j.pid)
 				targetFinder.lock.Lock()
 				if pi := targetFinder.processes[j.pid]; pi != nil {
 					pi.asyncProfilerStarted = true
