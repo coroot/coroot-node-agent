@@ -211,8 +211,8 @@ func collectAsyncProfilerProfiles() {
 
 	for _, j := range jvms {
 		if !j.started {
-			if *flags.JavaAsyncProfilerDelay > 0 && !j.startedAt.IsZero() {
-				delay := time.Duration(*flags.JavaAsyncProfilerDelay) * time.Second
+			delay := *flags.JavaAsyncProfilerDelay
+			if delay > 0 && !j.startedAt.IsZero() {
 				if time.Since(j.startedAt) < delay {
 					klog.Infof("pid=%d: delaying async-profiler start (waiting for %v since start)", j.pid, delay-time.Since(j.startedAt))
 					continue
