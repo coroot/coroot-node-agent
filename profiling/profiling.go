@@ -193,6 +193,7 @@ func collectAsyncProfilerProfiles() {
 		serviceName string
 		containerID string
 		started     bool
+		startedAt   time.Time
 	}
 	var jvms []jvmInfo
 	for pid, pi := range targetFinder.processes {
@@ -202,6 +203,7 @@ func collectAsyncProfilerProfiles() {
 				serviceName: pi.serviceName,
 				containerID: pi.containerId,
 				started:     pi.asyncProfilerStarted,
+				startedAt:   time.Unix(0, pi.startedAt),
 			})
 		}
 	}
@@ -209,6 +211,14 @@ func collectAsyncProfilerProfiles() {
 
 	for _, j := range jvms {
 		if !j.started {
+			delay := *flags.JavaAsyncProfilerDelay
+			if delay > 0 && !j.startedAt.IsZero() {
+				if time.Since(j.startedAt) < delay {
+					klog.Infof("pid=%d: delaying async-profiler start (waiting for %s since start)", j.pid, delay)
+					continue
+				}
+			}
+
 			if jvm.IsAsyncProfilerAlreadyLoaded(j.pid) {
 				klog.Infof("pid=%d: async-profiler already loaded by another tool, skipping", j.pid)
 				targetFinder.lock.Lock()
@@ -219,13 +229,14 @@ func collectAsyncProfilerProfiles() {
 				continue
 			}
 			if err := jvm.DeployAndStartAsyncProfiler(j.pid); err != nil {
-				klog.Warningf("async-profiler start pid=%d: %v", j.pid, err)
+				klog.Warningf("async-profiler start pid=%d: %s", j.pid, err)
 				targetFinder.lock.Lock()
 				if pi := targetFinder.processes[j.pid]; pi != nil {
 					pi.asyncProfilerErr = true
 				}
 				targetFinder.lock.Unlock()
 			} else {
+				klog.Infof("pid=%d: async-profiler started", j.pid)
 				targetFinder.lock.Lock()
 				if pi := targetFinder.processes[j.pid]; pi != nil {
 					pi.asyncProfilerStarted = true
