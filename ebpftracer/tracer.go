@@ -175,7 +175,7 @@ func (t *Tracer) AcquireGlobalUprobe(path string, attach func() []link.Link) (Up
 	return key, true
 }
 
-func (t *Tracer) ReleaseGlobalUprobes(keys []UprobeKey) {
+func (t *Tracer) ReleaseGlobalUprobes(keys ...UprobeKey) {
 	t.globalUprobesLock.Lock()
 	defer t.globalUprobesLock.Unlock()
 
