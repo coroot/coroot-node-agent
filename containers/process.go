@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/coroot/coroot-node-agent/ebpftracer"
@@ -40,6 +41,9 @@ type Process struct {
 	isRustApp     bool
 
 	uprobeKeys            []ebpftracer.UprobeKey
+	uprobeKeysLock        sync.Mutex
+	instrumentDone        chan struct{}
+	closed                bool
 	goTlsUprobesChecked   bool
 	openSslUprobesChecked bool
 	rustlsUprobesChecked  bool
@@ -53,7 +57,7 @@ type Process struct {
 }
 
 func NewProcess(pid uint32, stats *taskstats.Stats, tracer *ebpftracer.Tracer) *Process {
-	p := &Process{Pid: pid, StartedAt: stats.BeginTime, tracer: tracer}
+	p := &Process{Pid: pid, StartedAt: stats.BeginTime, tracer: tracer, instrumentDone: make(chan struct{})}
 	p.Flags, _ = proc.GetFlags(pid)
 	p.ctx, p.cancelFunc = context.WithCancel(context.Background())
 	go p.instrument(tracer)
@@ -77,6 +81,7 @@ func (p *Process) isHostNs() bool {
 }
 
 func (p *Process) instrument(tracer *ebpftracer.Tracer) {
+	defer close(p.instrumentDone)
 	b := backoff.Backoff{Factor: 2, Min: time.Second, Max: time.Minute}
 	for {
 		select {
@@ -123,7 +128,7 @@ func (p *Process) instrumentPython(cmdline []byte, tracer *ebpftracer.Tracer) {
 	}
 	if key := tracer.AttachPythonThreadLockProbes(p.Pid); key != nil {
 		p.pythonPrevStats = &ebpftracer.PythonStats{}
-		p.uprobeKeys = append(p.uprobeKeys, *key)
+		p.addUprobeKey(*key)
 	}
 }
 
@@ -137,7 +142,7 @@ func (p *Process) instrumentNodejs(exe string, tracer *ebpftracer.Tracer) {
 	}
 	if key := tracer.AttachNodejsProbes(p.Pid, exe); key != nil {
 		p.nodejsPrevStats = &ebpftracer.NodejsStats{}
-		p.uprobeKeys = append(p.uprobeKeys, *key)
+		p.addUprobeKey(*key)
 	}
 }
 
@@ -178,10 +183,26 @@ func (p *Process) removeOldGpuUsageSamples(cutoff time.Time) {
 	}
 }
 
+func (p *Process) addUprobeKey(key ebpftracer.UprobeKey) {
+	p.uprobeKeysLock.Lock()
+	if p.closed {
+		p.uprobeKeysLock.Unlock()
+		p.tracer.ReleaseGlobalUprobes(key)
+		return
+	}
+	p.uprobeKeys = append(p.uprobeKeys, key)
+	p.uprobeKeysLock.Unlock()
+}
+
 func (p *Process) Close() {
 	p.cancelFunc()
-	if len(p.uprobeKeys) > 0 {
-		p.tracer.ReleaseGlobalUprobes(p.uprobeKeys)
-		p.uprobeKeys = nil
+	<-p.instrumentDone
+	p.uprobeKeysLock.Lock()
+	p.closed = true
+	keys := p.uprobeKeys
+	p.uprobeKeys = nil
+	p.uprobeKeysLock.Unlock()
+	if len(keys) > 0 {
+		p.tracer.ReleaseGlobalUprobes(keys...)
 	}
 }

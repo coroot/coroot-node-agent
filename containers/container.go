@@ -1272,7 +1272,7 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 	}
 	if !p.openSslUprobesChecked {
 		if key := tracer.AttachOpenSslUprobes(pid); key != nil {
-			p.uprobeKeys = append(p.uprobeKeys, *key)
+			p.addUprobeKey(*key)
 		}
 		p.openSslUprobesChecked = true
 	}
@@ -1280,7 +1280,7 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 		key, isGolangApp := tracer.AttachGoTlsUprobes(pid)
 		p.isGolangApp = isGolangApp
 		if key != nil {
-			p.uprobeKeys = append(p.uprobeKeys, *key)
+			p.addUprobeKey(*key)
 		}
 		p.goTlsUprobesChecked = true
 	}
@@ -1288,7 +1288,7 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 		key, isRustApp := tracer.AttachRustlsUprobes(pid)
 		p.isRustApp = isRustApp
 		if key != nil {
-			p.uprobeKeys = append(p.uprobeKeys, *key)
+			p.addUprobeKey(*key)
 		}
 		p.rustlsUprobesChecked = true
 	}
@@ -1299,7 +1299,7 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 				klog.Infof("pid=%d: Java process detected, but Java TLS instrumentation is disabled (use --enable-java-tls to enable)", pid)
 			} else if nativeLibPath := jvm.EnsureTlsAgentLoaded(pid); nativeLibPath != "" {
 				if key := tracer.AttachJavaTlsUprobes(pid, nativeLibPath); key != nil {
-					p.uprobeKeys = append(p.uprobeKeys, *key)
+					p.addUprobeKey(*key)
 				}
 			}
 		}
