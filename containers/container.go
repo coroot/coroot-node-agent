@@ -130,8 +130,9 @@ type Container struct {
 	activeConnections        map[ConnectionKey]*ActiveConnection
 	connectionsByPidFd       map[PidFd]*ActiveConnection
 
-	l7Stats  L7Stats
-	dnsStats *L7Metrics
+	l7Stats   L7Stats
+	dnsStats  *L7Metrics
+	seenFQDNs map[string]struct{}
 
 	gpuStats map[string]*GpuUsage
 
@@ -187,6 +188,7 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		connectionsByPidFd:       map[PidFd]*ActiveConnection{},
 		l7Stats:                  L7Stats{},
 		dnsStats:                 &L7Metrics{},
+		seenFQDNs:                map[string]struct{}{},
 
 		gpuStats: map[string]*GpuUsage{},
 
@@ -677,6 +679,8 @@ func (c *Container) updateConnectionTrafficStats(ac *ActiveConnection, sent, rec
 	ac.BytesReceived = received
 }
 
+const fqdnOverflowLabel = "~other"
+
 func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]*common.Domain {
 	status := r.Status.DNS()
 	if status == "" {
@@ -702,7 +706,17 @@ func (c *Container) onDNSRequest(r *l7.RequestData) map[netaddr.IP]*common.Domai
 			[]string{"request_type", "domain", "status"},
 		)
 	}
-	if m, _ := c.dnsStats.Requests.GetMetricWithLabelValues(t, fqdn, status); m != nil {
+	metricFQDN := fqdn
+	if fqdn != "" {
+		if _, ok := c.seenFQDNs[fqdn]; !ok {
+			if len(c.seenFQDNs) < *flags.MaxFQDNsPerContainer {
+				c.seenFQDNs[fqdn] = struct{}{}
+			} else {
+				metricFQDN = fqdnOverflowLabel
+			}
+		}
+	}
+	if m, _ := c.dnsStats.Requests.GetMetricWithLabelValues(t, metricFQDN, status); m != nil {
 		m.Inc()
 	}
 	if r.Duration != 0 {
