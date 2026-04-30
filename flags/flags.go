@@ -19,6 +19,7 @@ var (
 	EnableJavaAsyncProfiler = kingpin.Flag("enable-java-async-profiler", "Enable Java profiling via async-profiler (CPU, memory allocations, lock contention)").Default("false").Envar("ENABLE_JAVA_ASYNC_PROFILER").Bool()
 	JavaAsyncProfilerDelay  = kingpin.Flag("java-async-profiler-delay", "Delay in seconds before starting async-profiler after JVM process is detected").Default("30s").Envar("JAVA_ASYNC_PROFILER_DELAY").Duration()
 	GoHeapProfilerMode      = kingpin.Flag("go-heap-profiler", "Go heap profiling mode: disabled, enabled (collect from apps with profiling on), force (enable profiling in all Go apps)").Default("enabled").Envar("GO_HEAP_PROFILER").String()
+	InstrumentationDelay    = kingpin.Flag("instrumentation-delay", "Delay before enabling Python GIL and Node.js event loop instrumentation, after a process is started").Default("30s").Envar("INSTRUMENTATION_DELAY").Duration()
 
 	ContainerAllowlist = kingpin.Flag("container-allowlist", "List of allowed containers (regex patterns)").Envar("CONTAINER_ALLOWLIST").Strings()
 	ContainerDenylist  = kingpin.Flag("container-denylist", "List of denied containers (regex patterns)").Envar("CONTAINER_DENYLIST").Strings()

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/coroot/coroot-node-agent/ebpftracer"
+	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/jpillora/backoff"
@@ -82,6 +83,15 @@ func (p *Process) isHostNs() bool {
 
 func (p *Process) instrument(tracer *ebpftracer.Tracer) {
 	defer close(p.instrumentDone)
+	if delay := *flags.InstrumentationDelay; delay > 0 && !p.StartedAt.IsZero() {
+		if wait := delay - time.Since(p.StartedAt); wait > 0 {
+			select {
+			case <-p.ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+		}
+	}
 	b := backoff.Backoff{Factor: 2, Min: time.Second, Max: time.Minute}
 	for {
 		select {
