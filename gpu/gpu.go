@@ -64,12 +64,23 @@ var (
 		"Peak GPU core utilization (percentage) over the collection interval",
 		[]string{"gpu_uuid"}, nil,
 	)
+	gpuComputeOccupancyAvg = prometheus.NewDesc(
+		"node_resources_gpu_compute_occupancy_percent_avg",
+		"Average GPU compute occupancy (percentage) over the collection interval",
+		[]string{"gpu_uuid"}, nil,
+	)
+	gpuComputeOccupancyPeak = prometheus.NewDesc(
+		"node_resources_gpu_compute_occupancy_percent_peak",
+		"Peak GPU compute occupancy (percentage) over the collection interval",
+		[]string{"gpu_uuid"}, nil,
+	)
 )
 
 type Collector struct {
 	ProcessUsageSampleCh chan ProcessUsageSample
 	iface                nvml.Interface
 	devices              []*Device
+	nsight               *nsightCollector
 	lock                 sync.Mutex
 }
 
@@ -130,7 +141,15 @@ func NewCollector() (*Collector, error) {
 		c.devices = append(c.devices, &dev)
 	}
 	if len(names) > 0 {
-		klog.Infof("found %d GPU: %s", len(names), strings.Join(names, ", "))
+		klog.Infof("found %d NVIDIA GPU: %s", len(names), strings.Join(names, ", "))
+		if nc, err := newNsightCollector(c.devices); err != nil {
+			klog.Infof("Nsight Systems GPU metrics disabled: %s", err)
+		} else {
+			c.nsight = nc
+			c.nsight.Start()
+		}
+	} else {
+		klog.Infoln("no NVIDIA GPUs detected")
 	}
 	go c.processUtilizationPoller()
 	return c, nil
@@ -169,6 +188,8 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- gpuMemoryUsagePeak
 	ch <- gpuUsageAvg
 	ch <- gpuUsagePeak
+	ch <- gpuComputeOccupancyAvg
+	ch <- gpuComputeOccupancyPeak
 	ch <- gpuTemperature
 	ch <- gpuPowerWatts
 }
@@ -176,6 +197,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	nsight := c.nsight.Snapshot()
 	for _, dev := range c.devices {
 		ch <- gauge(gpuInfo, 1, dev.UUID, dev.Name)
 
@@ -190,50 +212,66 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		if mw, ret := dev.device.GetPowerUsage(); ret == nvml.SUCCESS {
 			ch <- gauge(gpuPowerWatts, float64(mw)/1000., dev.UUID)
 		}
-		for _, st := range []nvml.SamplingType{nvml.GPU_UTILIZATION_SAMPLES, nvml.MEMORY_UTILIZATION_SAMPLES} {
-			lastTs := dev.lastSampleTime[st]
-			valtype, samples, ret := dev.device.GetSamples(st, lastTs)
-			if ret != nvml.SUCCESS {
-				continue
-			}
-			total := float64(0)
-			count := float64(0)
-			peak := float64(0)
-			for _, sample := range samples {
-				if sample.TimeStamp <= lastTs {
-					continue
-				}
-				value, err := valueToFloat(valtype, sample.SampleValue)
-				if err != nil {
-					continue
-				}
-				total += value
-				if value > peak {
-					peak = value
-				}
-				count++
-				lastTs = sample.TimeStamp
-			}
-			if count > 0 {
-				switch st {
-				case nvml.GPU_UTILIZATION_SAMPLES:
-					ch <- gauge(gpuUsageAvg, total/count, dev.UUID)
-					ch <- gauge(gpuUsagePeak, peak, dev.UUID)
-				case nvml.MEMORY_UTILIZATION_SAMPLES:
-					ch <- gauge(gpuMemoryUsageAvg, total/count, dev.UUID)
-					ch <- gauge(gpuMemoryUsagePeak, peak, dev.UUID)
-				}
-			}
-			dev.lastSampleTime[st] = lastTs
+		if m, ok := nsight[dev.UUID]; ok {
+			ch <- gauge(gpuUsageAvg, m.GPUUtilizationAvg, dev.UUID)
+			ch <- gauge(gpuUsagePeak, m.GPUUtilizationPeak, dev.UUID)
+			ch <- gauge(gpuMemoryUsageAvg, m.MemoryUtilizationAvg, dev.UUID)
+			ch <- gauge(gpuMemoryUsagePeak, m.MemoryUtilizationPeak, dev.UUID)
+			ch <- gauge(gpuComputeOccupancyAvg, m.ComputeOccupancyAvg, dev.UUID)
+			ch <- gauge(gpuComputeOccupancyPeak, m.ComputeOccupancyPeak, dev.UUID)
+		} else {
+			c.collectNVMLUtilization(ch, dev)
 		}
 	}
 }
 
 func (c *Collector) Close() {
+	if c.nsight != nil {
+		c.nsight.Close()
+	}
 	if c.iface == nil {
 		return
 	}
 	c.iface.Shutdown()
+}
+
+func (c *Collector) collectNVMLUtilization(ch chan<- prometheus.Metric, dev *Device) {
+	for _, st := range []nvml.SamplingType{nvml.GPU_UTILIZATION_SAMPLES, nvml.MEMORY_UTILIZATION_SAMPLES} {
+		lastTs := dev.lastSampleTime[st]
+		valtype, samples, ret := dev.device.GetSamples(st, lastTs)
+		if ret != nvml.SUCCESS {
+			continue
+		}
+		total := float64(0)
+		count := float64(0)
+		peak := float64(0)
+		for _, sample := range samples {
+			if sample.TimeStamp <= lastTs {
+				continue
+			}
+			value, err := valueToFloat(valtype, sample.SampleValue)
+			if err != nil {
+				continue
+			}
+			total += value
+			if value > peak {
+				peak = value
+			}
+			count++
+			lastTs = sample.TimeStamp
+		}
+		if count > 0 {
+			switch st {
+			case nvml.GPU_UTILIZATION_SAMPLES:
+				ch <- gauge(gpuUsageAvg, total/count, dev.UUID)
+				ch <- gauge(gpuUsagePeak, peak, dev.UUID)
+			case nvml.MEMORY_UTILIZATION_SAMPLES:
+				ch <- gauge(gpuMemoryUsageAvg, total/count, dev.UUID)
+				ch <- gauge(gpuMemoryUsagePeak, peak, dev.UUID)
+			}
+		}
+		dev.lastSampleTime[st] = lastTs
+	}
 }
 
 func findNvidiaMLLib() (string, error) {
