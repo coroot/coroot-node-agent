@@ -243,6 +243,26 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	if taskstatsClient != nil {
+		deadPids := c.updateDelaysLocked()
+		for _, pid := range deadPids {
+			c.onProcessExitLocked(pid, false)
+		}
+	}
+
+	if minAge := *flags.MinContainerAge; minAge > 0 {
+		if c.startedAt.IsZero() {
+			return
+		}
+		end := time.Now()
+		if !c.zombieAt.IsZero() && c.zombieAt.Before(end) {
+			end = c.zombieAt
+		}
+		if end.Sub(c.startedAt) < minAge {
+			return
+		}
+	}
+
 	if c.metadata.image != "" || !c.metadata.systemd.IsEmpty() {
 		ch <- gauge(metrics.ContainerInfo, 1, c.metadata.image, c.metadata.systemd.TriggeredBy, c.metadata.systemd.Type)
 	}
@@ -258,7 +278,6 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	if taskstatsClient != nil {
-		c.updateDelays()
 		ch <- counter(metrics.CPUDelay, float64(c.delays.cpu)/float64(time.Second))
 		ch <- counter(metrics.DiskDelay, float64(c.delays.disk)/float64(time.Second))
 	}
@@ -475,9 +494,7 @@ func (c *Container) onProcessStart(pid uint32) *Process {
 	return p
 }
 
-func (c *Container) onProcessExit(pid uint32, oomKill bool) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+func (c *Container) onProcessExitLocked(pid uint32, oomKill bool) {
 	if p := c.processes[pid]; p != nil {
 		p.Close()
 	}
@@ -489,6 +506,12 @@ func (c *Container) onProcessExit(pid uint32, oomKill bool) {
 	if oomKill {
 		c.oomKills++
 	}
+}
+
+func (c *Container) onProcessExit(pid uint32, oomKill bool) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.onProcessExitLocked(pid, oomKill)
 }
 
 func (c *Container) onFileOpen(pid uint32, fd uint64, mnt uint64, log bool) {
@@ -852,10 +875,12 @@ func (c *Container) onRetransmission(src netaddr.IPPort, dst netaddr.IPPort) boo
 	return true
 }
 
-func (c *Container) updateDelays() {
+func (c *Container) updateDelaysLocked() []uint32 {
+	var deadPids []uint32
 	for pid := range c.processes {
 		stats, err := TaskstatsTGID(pid)
 		if err != nil {
+			deadPids = append(deadPids, pid)
 			continue
 		}
 		d := c.delaysByPid[pid]
@@ -865,6 +890,7 @@ func (c *Container) updateDelays() {
 		d.disk = stats.BlockIODelay
 		c.delaysByPid[pid] = d
 	}
+	return deadPids
 }
 
 func (c *Container) updateJvmProfilingStats(u *ProfilingUpdate) {
