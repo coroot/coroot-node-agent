@@ -106,17 +106,122 @@ criteria ("works well", "is robust") do not count.
 
 ### Beads → plan linkage — required shape
 
-When creating a bead:
+When creating a bead, use a heredoc for the description so the
+full junior-developer-grade context (next section) fits comfortably:
 
 ```bash
 bd create \
-  --title="Split main.go uname/machineID into _linux.go and _windows.go" \
-  --description="Plan: plans/windows-port-plan.md §4 main.go split. Extracts the /proc/.../ns/uts uname call, /etc/machine-id read, and DMI product-uuid read into main_linux.go; main_windows.go uses the registry MachineGuid and GetVersionEx." \
-  --acceptance="CRIT-4 from plan: GOOS=windows go build ./... succeeds; machineID() returns the registry MachineGuid on Windows; existing Linux uname-namespace behavior is unchanged." \
+  --title="Split main.go uname/machineID/systemUUID into main_linux.go and main_windows.go" \
+  --description="$(cat <<'EOF'
+Plan: plans/windows-port-plan.md §5 (per-package map row for main.go) and §6 M1 (Node-level metrics on Windows).
+
+WHAT TO DO
+The current main.go contains three Linux-only helpers and one Linux-only check that prevent the program from compiling under GOOS=windows:
+- uname()              — reads /proc/1/ns/uts and calls golang.org/x/sys/unix.Setns
+- machineID()          — reads /etc/machine-id and similar Linux paths
+- systemUUID()         — reads /sys/devices/virtual/dmi/id/product_uuid
+- kernel-version gate  — exits if the running kernel is older than 4.16
+
+Move all four into a new file main_linux.go. Keep the exported names and signatures byte-identical so the rest of main.go compiles unchanged. Then create main_windows.go with Windows-native implementations:
+- uname():       hostname from os.Hostname(); OS version from golang.org/x/sys/windows.RtlGetVersion
+- machineID():   read HKLM\\SOFTWARE\\Microsoft\\Cryptography\\MachineGuid (REG_SZ)
+- systemUUID():  read Win32_ComputerSystemProduct.UUID via WMI
+- kernel-version gate: no-op on Windows (return immediately)
+
+WHY
+main.go uses the return values of these helpers as Prometheus label values (machine_id, system_uuid) and as user-visible log lines. Everything in main.go past the helpers is platform-agnostic orchestration (HTTP server, signal handling, registry wiring) — only the four helpers need splitting. The build-tag discipline rule forbids runtime GOOS checks, so this split is compile-time only.
+
+HOW TO VERIFY
+- GOOS=linux   go build ./... still succeeds.
+- GOOS=windows go build ./... now succeeds (it does not before this bead).
+- On Linux, before vs. after this change, the binary's "hostname:", "kernel version:", and "machine-id:" startup log lines emit identical values for the same host.
+- On a Windows host, the binary starts, logs a non-empty hostname and machine-id, and serves /metrics on the configured port.
+
+EDGE CASES AND PITFALLS
+- DO NOT modify the bodies of the four Linux helpers. The Linux-side diff for this bead is move-only — file rename to main_linux.go plus any import adjustments that fall out of the move. AGENTS.md §"Build-tag discipline" rule 1.
+- machineID() on Windows MUST return a real value. main.go wraps it into a Prometheus label; an empty string would corrupt metric series across restarts.
+- systemUUID() via WMI is the most code-heavy of the three. If full WMI integration is out of scope for this bead, returning an empty string is acceptable as a temporary stub — but you MUST file a discovered-from bead capturing the gap and note it in this bead's --notes before closing.
+- No runtime.GOOS == "windows" branching anywhere. Only build-tag separation. AGENTS.md §"Build-tag discipline" rule 5.
+
+PROJECT-SPECIFIC TERMINOLOGY
+- "Build-tag discipline": the cardinal rule of this branch — Linux code stays unchanged; Windows logic lives in _windows.go sibling files (or parallel packages for ebpftracer). Full statement in AGENTS.md §"Build-tag discipline".
+- "M1": the second milestone in plans/windows-port-plan.md §6, which covers node-level metrics on Windows. main.go must be cross-buildable before any other M1 work can ship.
+EOF
+)" \
+  --acceptance="CRIT-1 (GOOS=windows go build ./... succeeds from a clean checkout) AND CRIT-3 (the Linux-side diff is move-only — no functional change to the bodies of uname, machineID, systemUUID, or the kernel-version gate)." \
   --type=feature --priority=2
 ```
 
-The `Plan:` line in the description is mandatory.
+The `Plan:` line in the description is mandatory. The body must
+satisfy the standalone-completeness rule in the next section.
+
+### Beads must stand alone — required completeness
+
+**Every bead MUST be written for a naive but competent junior
+developer.** Assume that developer can write the language, run the
+standard toolchain, and read anything checked into the repo —
+`AGENTS.md`, `README.md`, the `Makefile`, the source tree. Do **not**
+assume they have read the plan doc, prior beads, or any conversation
+that led to this bead being filed. The bead must remove all ambiguity
+about scope and required work: if a competent reader could plausibly
+interpret the description two different ways, the bead is not ready.
+
+The `--description="..."` must contain enough context that such a
+developer could execute the task end-to-end **without consulting a
+senior developer, the plan doc, other beads, or any out-of-band
+knowledge**. The mandatory `Plan: plans/<doc>.md §N` reference is for
+*traceability* (where did this work originate), not *delegation* (go
+read the plan to figure out what to do).
+
+A junior developer reading the bead in isolation must already know:
+
+- **What to do** — concrete files, packages, functions, or commands
+  to create or modify. Name them.
+- **Why** — the user-visible behavior, constraint, or design rule
+  this serves. One or two sentences.
+- **How to verify** — the test, command, or observable result that
+  proves the work is done. This is reinforced by the mandatory
+  `--acceptance="..."` flag but should also appear in the
+  description in everyday terms.
+- **Edge cases and pitfalls** — non-obvious constraints. Examples
+  on this branch: "do not modify the existing Linux file beyond
+  adding the `//go:build linux` header"; "preserve the exact
+  exported function signature so the Linux caller compiles
+  unchanged"; "the Windows stub must compile under `GOOS=windows`
+  but is allowed to return `errors.New("not implemented on
+  windows")` at runtime."
+- **Project-specific terminology** — if the bead uses a term that
+  only makes sense in context (e.g., "the M0 scaffolding", "the
+  parallel-package pattern", "the dispatcher in §4"), explain it
+  inline or paraphrase the relevant plan passage. Do not assume
+  the reader will follow the `Plan:` link.
+
+If you cannot write a description at that level of completeness,
+the bead is not ready to file. Either the underlying plan section
+is too thin (fix the plan first), or the work needs to be split
+into smaller beads that *are* individually self-explanatory.
+
+This rule applies equally to follow-up beads created via
+`discovered-from` linkage — a bead filed mid-implementation must
+still stand alone, because whoever picks it up next won't have
+the discovering session's context.
+
+### Scope a bead to one logical unit of work
+
+A bead covers **one** subsection of the system, not a mixed bag.
+Examples of correctly-scoped units:
+
+- one page's UI update
+- one API endpoint (or one cohesive set of changes to one endpoint)
+- one DB migration
+- one file's build-tag split
+- one parallel-package implementation (e.g. `etwtracer/`)
+
+If a bead touches two unrelated subsystems, requires two independent
+acceptance criteria, or has a description that reads "...and then
+also...", it should be split. Scope is bounded by the work, not by a
+line count — a single split that genuinely needs five pitfalls
+documented is still one bead.
 
 ## Documentation must match code
 
