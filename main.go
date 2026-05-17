@@ -138,6 +138,7 @@ func main() {
 	nodeCollector := node.NewCollector(hostname, kv)
 
 	registry := prometheus.NewRegistry()
+	internalReg := prometheus.NewRegistry()
 
 	registerer := prometheus.WrapRegistererWith(
 		prometheus.Labels{"machine_id": machineId, "system_uuid": systemUuid},
@@ -154,7 +155,7 @@ func main() {
 	if err := registerer.Register(gpuCollector); err != nil {
 		klog.Exitln(err)
 	}
-	registerer.MustRegister(info("node_agent_info", version))
+	internalReg.MustRegister(info("node_agent_info", version))
 
 	if md := nodeCollector.Metadata(); md != nil {
 		region := md.Region
@@ -170,20 +171,29 @@ func main() {
 	}
 	profiling.Start()
 
-	if err := prom.StartAgent(registry, machineId, systemUuid); err != nil {
+	if err := prom.StartAgent(registry, internalReg, machineId, systemUuid); err != nil {
 		klog.Exitln(err)
 	}
 
 	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{ErrorLog: logger{}, Registry: registerer}))
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(internalReg, promhttp.HandlerOpts{ErrorLog: logger{}}))
 	klog.Infoln("listening on:", *flags.ListenAddress)
+	klog.Infoln("agent metrics listening on:", *flags.AgentMetricsListen)
 
 	srv := &http.Server{Addr: *flags.ListenAddress}
+	agentSrv := &http.Server{Addr: *flags.AgentMetricsListen, Handler: mux}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			klog.Exitln(err)
+		}
+	}()
+	go func() {
+		if err := agentSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			klog.Exitln(err)
 		}
 	}()
@@ -195,6 +205,9 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		klog.Warningf("HTTP server shutdown error: %s", err)
+	}
+	if err := agentSrv.Shutdown(shutdownCtx); err != nil {
+		klog.Warningf("agent metrics server shutdown error: %s", err)
 	}
 
 	done := make(chan struct{})

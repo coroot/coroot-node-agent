@@ -34,11 +34,12 @@ type Agent struct {
 
 	httpClient http.Client
 
-	spoolDir     string
-	maxSpoolSize int64
+	spoolDir         string
+	maxSpoolSize     int64
+	collectedMetrics prometheus.Gauge
 }
 
-func StartAgent(reg *prometheus.Registry, machineId, systemUuid string) error {
+func StartAgent(reg *prometheus.Registry, internalReg *prometheus.Registry, machineId, systemUuid string) error {
 	if *flags.MetricsEndpoint == nil {
 		return nil
 	}
@@ -47,6 +48,14 @@ func StartAgent(reg *prometheus.Registry, machineId, systemUuid string) error {
 	up := prometheus.NewGauge(prometheus.GaugeOpts{Name: "up"})
 	up.Set(1)
 	reg.MustRegister(up)
+	internalReg.MustRegister(up)
+
+	collectedMetrics := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "node_agent_collected_metrics",
+		Help: "Number of time series collected in the last scrape",
+	})
+	reg.MustRegister(collectedMetrics)
+	internalReg.MustRegister(collectedMetrics)
 
 	instance := machineId
 	if s := strings.ReplaceAll(systemUuid, "-", ""); s != "" && s != machineId {
@@ -69,8 +78,9 @@ func StartAgent(reg *prometheus.Registry, machineId, systemUuid string) error {
 				TLSClientConfig: common.TlsConfig(),
 			},
 		},
-		spoolDir:     path.Join(*flags.WalDir, "spool"),
-		maxSpoolSize: int64(*flags.MaxSpoolSize),
+		spoolDir:         path.Join(*flags.WalDir, "spool"),
+		maxSpoolSize:     int64(*flags.MaxSpoolSize),
+		collectedMetrics: collectedMetrics,
 	}
 	if _, err := os.Stat(*flags.WalDir); os.IsNotExist(err) {
 		if err = os.Mkdir(*flags.WalDir, 0750); err != nil {
@@ -166,6 +176,11 @@ func (a *Agent) scrape() error {
 	if err != nil {
 		return err
 	}
+	count := 0
+	for _, mf := range mfs {
+		count += len(mf.Metric)
+	}
+	a.collectedMetrics.Set(float64(count))
 	mfsByName := make(map[string]*dto.MetricFamily)
 	for _, mf := range mfs {
 		mfsByName[mf.GetName()] = mf
