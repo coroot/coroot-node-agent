@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/coroot/coroot-node-agent/ebpftracer"
+	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/proc"
@@ -55,6 +56,13 @@ type Process struct {
 	pythonPrevStats       *ebpftracer.PythonStats
 
 	gpuUsageSamples []gpu.ProcessUsageSample
+
+	inboundHttp2Parsers map[uint64]*inboundHttp2State
+}
+
+type inboundHttp2State struct {
+	parser        *l7.Http2Parser
+	connTimestamp uint64
 }
 
 func NewProcess(pid uint32, stats *taskstats.Stats, tracer *ebpftracer.Tracer) *Process {

@@ -159,23 +159,29 @@ func (t *Tracer) init(ch chan<- Event) error {
 	timestamp := uint64(time.Now().UnixNano())
 	for _, s := range socks {
 		typ := EventTypeConnectionOpen
+		inbound := false
 		if s.Listen {
 			typ = EventTypeListenOpen
-		} else if listens[uint64(s.pid)<<32|uint64(s.SAddr.Port())] || s.DAddr.Port() > s.SAddr.Port() { // inbound
-			continue
+		} else if listens[uint64(s.pid)<<32|uint64(s.SAddr.Port())] || s.DAddr.Port() > s.SAddr.Port() {
+			inbound = true
 		}
-		ch <- Event{
-			Type:          typ,
-			Pid:           s.pid,
-			Timestamp:     timestamp,
-			Fd:            s.fd,
-			SrcAddr:       s.SAddr,
-			DstAddr:       s.DAddr,
-			ActualDstAddr: s.actualDest,
+		if !inbound {
+			ch <- Event{
+				Type:          typ,
+				Pid:           s.pid,
+				Timestamp:     timestamp,
+				Fd:            s.fd,
+				SrcAddr:       s.SAddr,
+				DstAddr:       s.DAddr,
+				ActualDstAddr: s.actualDest,
+			}
 		}
 		if typ == EventTypeConnectionOpen {
 			id := ConnectionId{FD: s.fd, PID: s.pid}
 			conn := Connection{Timestamp: timestamp}
+			if inbound {
+				conn.IsInbound = 1
+			}
 			if err := ebpfConnectionsMap.Update(id, conn, ebpf.UpdateNoExist); err != nil {
 				klog.Warningln(err)
 			}

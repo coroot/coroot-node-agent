@@ -34,6 +34,6 @@ int java_tls_read_exit(struct pt_regs *ctx) {
 
     __u32 pid = pid_tgid >> 32;
     __u64 id = pid_tgid | IS_TLS_READ_ID;
-    trace_enter_read(id, pid, fd, buf, 0, 0);
+    trace_enter_read(id, pid, fd, 1, buf, 0, 0);
     return trace_exit_read(ctx, id, pid, 1, size);
 }

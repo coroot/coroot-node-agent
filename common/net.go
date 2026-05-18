@@ -126,8 +126,15 @@ type portFilter struct {
 	to   uint16
 }
 
+var wellKnownPorts = map[uint16]struct{}{
+	50051: {}, // gRPC
+}
+
 func (f *portFilter) ShouldBeSkipped(port uint16) bool {
 	if f == nil {
+		return false
+	}
+	if _, ok := wellKnownPorts[port]; ok {
 		return false
 	}
 	return port >= f.from && port <= f.to

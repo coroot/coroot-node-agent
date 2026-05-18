@@ -90,3 +90,39 @@ func (s L7Stats) delete(dst common.HostPort) {
 		}
 	}
 }
+
+type L7InboundStats map[l7.Protocol]*L7Metrics
+
+func (s L7InboundStats) get(protocol l7.Protocol) *L7Metrics {
+	if protocol == l7.ProtocolHTTP2 {
+		protocol = l7.ProtocolHTTP
+	}
+	m := s[protocol]
+	if m != nil {
+		return m
+	}
+	m = &L7Metrics{}
+	s[protocol] = m
+	labels := []string{"status"}
+	switch protocol {
+	case l7.ProtocolRabbitmq, l7.ProtocolNats:
+		labels = append(labels, "method")
+	default:
+		hOpts := L7InboundLatency[protocol]
+		m.Latency = prometheus.NewHistogram(prometheus.HistogramOpts{Name: hOpts.Name, Help: hOpts.Help})
+	}
+	cOpts := L7InboundRequests[protocol]
+	m.Requests = prometheus.NewCounterVec(prometheus.CounterOpts{Name: cOpts.Name, Help: cOpts.Help}, labels)
+	return m
+}
+
+func (s L7InboundStats) collect(ch chan<- prometheus.Metric) {
+	for _, m := range s {
+		if m.Requests != nil {
+			m.Requests.Collect(ch)
+		}
+		if m.Latency != nil {
+			m.Latency.Collect(ch)
+		}
+	}
+}
