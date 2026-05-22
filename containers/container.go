@@ -99,6 +99,12 @@ type PidFd struct {
 	Fd  uint64
 }
 
+type pendingHttp2State struct {
+	parser    *l7.Http2Parser
+	timestamp uint64
+	updatedAt time.Time
+}
+
 type ConnectionStats struct {
 	Count           uint64
 	TotalTime       time.Duration
@@ -129,10 +135,12 @@ type Container struct {
 	lastConnectionAttempts   map[common.HostPort]time.Time
 	activeConnections        map[ConnectionKey]*ActiveConnection
 	connectionsByPidFd       map[PidFd]*ActiveConnection
+	pendingHttp2Parsers      map[PidFd]*pendingHttp2State
 
-	l7Stats   L7Stats
-	dnsStats  *L7Metrics
-	seenFQDNs map[string]struct{}
+	l7Stats        L7Stats
+	l7InboundStats L7InboundStats
+	dnsStats       *L7Metrics
+	seenFQDNs      map[string]struct{}
 
 	gpuStats map[string]*GpuUsage
 
@@ -186,7 +194,9 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		lastConnectionAttempts:   map[common.HostPort]time.Time{},
 		activeConnections:        map[ConnectionKey]*ActiveConnection{},
 		connectionsByPidFd:       map[PidFd]*ActiveConnection{},
+		pendingHttp2Parsers:      map[PidFd]*pendingHttp2State{},
 		l7Stats:                  L7Stats{},
+		l7InboundStats:           L7InboundStats{},
 		dnsStats:                 &L7Metrics{},
 		seenFQDNs:                map[string]struct{}{},
 
@@ -454,6 +464,7 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		c.dnsStats.Latency.Collect(ch)
 	}
 	c.l7Stats.collect(ch)
+	c.l7InboundStats.collect(ch)
 
 	if !*flags.DisablePinger {
 		for ip, rtt := range c.ping() {
@@ -651,11 +662,39 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst, actualDst 
 			prev.Closed = time.Now()
 		}
 		c.connectionsByPidFd[k] = connection
+		if pending, ok := c.pendingHttp2Parsers[k]; ok {
+			if pending.timestamp == 0 || pending.timestamp == timestamp {
+				connection.http2Parser = pending.parser
+			}
+			delete(c.pendingHttp2Parsers, k)
+		}
 	}
 	c.lastConnectionAttempts[key.Destination()] = time.Now()
 }
 
+func (c *Container) feedPendingHttp2(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) {
+	k := PidFd{Pid: pid, Fd: fd}
+	st := c.pendingHttp2Parsers[k]
+	if st == nil || (timestamp != 0 && st.timestamp != 0 && st.timestamp != timestamp) {
+		st = &pendingHttp2State{parser: l7.NewHttp2Parser(), timestamp: timestamp}
+		c.pendingHttp2Parsers[k] = st
+	}
+	if st.timestamp == 0 {
+		st.timestamp = timestamp
+	}
+	st.updatedAt = time.Now()
+	_ = st.parser.Parse(r.Method, r.Payload, uint64(r.Duration))
+}
+
 func (c *Container) onConnectionClose(e ebpftracer.Event) {
+	if e.IsInbound {
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		if p := c.processes[e.Pid]; p != nil {
+			delete(p.inboundHttp2Parsers, e.Fd)
+		}
+		return
+	}
 	c.lock.Lock()
 	conn := c.connectionsByPidFd[PidFd{Pid: e.Pid, Fd: e.Fd}]
 	c.lock.Unlock()
@@ -763,12 +802,20 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	if r.IsInbound {
+		c.observeInboundL7(pid, fd, timestamp, r)
+		return nil
+	}
+
 	if r.Protocol == l7.ProtocolDNS {
 		return c.onDNSRequest(r)
 	}
 
 	conn := c.connectionsByPidFd[PidFd{Pid: pid, Fd: fd}]
 	if conn == nil {
+		if r.Protocol == l7.ProtocolHTTP2 {
+			c.feedPendingHttp2(pid, fd, timestamp, r)
+		}
 		return nil
 	}
 	if timestamp != 0 && conn.Timestamp != timestamp {
@@ -857,6 +904,55 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		stats.observe(r.Status.String(), "", r.Duration)
 	}
 	return nil
+}
+
+func (c *Container) observeInboundL7(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) {
+	protocol := r.Protocol
+	if protocol == l7.ProtocolHTTP2 {
+		p := c.processes[pid]
+		if p == nil {
+			return
+		}
+		if p.inboundHttp2Parsers == nil {
+			p.inboundHttp2Parsers = map[uint64]*inboundHttp2State{}
+		}
+		state := p.inboundHttp2Parsers[fd]
+		if state == nil || state.connTimestamp != timestamp {
+			state = &inboundHttp2State{
+				parser:        l7.NewHttp2Parser(),
+				connTimestamp: timestamp,
+			}
+			p.inboundHttp2Parsers[fd] = state
+		}
+		requests := state.parser.Parse(r.Method, r.Payload, uint64(r.Duration))
+		if len(requests) == 0 {
+			return
+		}
+		stats := c.l7InboundStats.get(l7.ProtocolHTTP)
+		for _, req := range requests {
+			if common.HttpFilter.ShouldBeSkipped(req.Path) {
+				continue
+			}
+			status := req.Status.Http()
+			if req.GrpcStatus >= 0 {
+				status = req.GrpcStatus.GRPC()
+			}
+			stats.observe(status, "", req.Duration)
+		}
+		return
+	}
+	if _, ok := L7InboundRequests[protocol]; !ok {
+		return
+	}
+	stats := c.l7InboundStats.get(protocol)
+	switch protocol {
+	case l7.ProtocolHTTP:
+		stats.observe(r.Status.Http(), "", r.Duration)
+	case l7.ProtocolZookeeper:
+		stats.observe(r.Status.Zookeeper(), "", r.Duration)
+	default:
+		stats.observe(r.Status.String(), "", r.Duration)
+	}
 }
 
 func (c *Container) onRetransmission(src netaddr.IPPort, dst netaddr.IPPort) bool {
@@ -1184,6 +1280,22 @@ func (c *Container) gc(now time.Time) {
 	listens := map[netaddr.IPPort]string{}
 	seenNamespaces := map[string]bool{}
 	for _, p := range c.processes {
+		if len(p.inboundHttp2Parsers) > 0 {
+			fds, err := proc.ReadFds(p.Pid)
+			if err == nil {
+				openFds := map[uint64]struct{}{}
+				for _, fd := range fds {
+					if fd.SocketInode != "" {
+						openFds[fd.Fd] = struct{}{}
+					}
+				}
+				for fd := range p.inboundHttp2Parsers {
+					if _, ok := openFds[fd]; !ok {
+						delete(p.inboundHttp2Parsers, fd)
+					}
+				}
+			}
+		}
 		if seenNamespaces[p.NetNsId()] {
 			continue
 		}
@@ -1220,6 +1332,11 @@ func (c *Container) gc(now time.Time) {
 			if conn == c.connectionsByPidFd[pidFd] {
 				delete(c.connectionsByPidFd, pidFd)
 			}
+		}
+	}
+	for k, st := range c.pendingHttp2Parsers {
+		if now.Sub(st.updatedAt) > gcInterval {
+			delete(c.pendingHttp2Parsers, k)
 		}
 	}
 	for dst, at := range c.lastConnectionAttempts {

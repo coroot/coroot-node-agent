@@ -21,6 +21,9 @@ int is_server_preface(__u8 frame_type, __u32 stream_id, __u8 method) {
 
 static __always_inline
 int looks_like_http2_frame(char *buf, __u64 size, __u8 method) {
+    if (size < 9) {
+        return is_client_preface(buf, size, method);
+    }
     __u32 frame_length;
     bpf_read(buf, frame_length);
     frame_length = bpf_htonl(frame_length) >> 8;
@@ -31,11 +34,6 @@ int looks_like_http2_frame(char *buf, __u64 size, __u8 method) {
     bpf_read(buf+3, frame_type);
     if (frame_type > 0x9) {
         return is_client_preface(buf, size, method);
-    }
-    __u32 stream_id;
-    bpf_read(buf+5, stream_id);
-    if (!HTTP2_CLIENT_INITIATED_STREAM(stream_id)) {
-        return is_server_preface(frame_type, stream_id, method);
     }
     return 1;
 }

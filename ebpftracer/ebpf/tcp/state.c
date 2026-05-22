@@ -15,6 +15,8 @@ struct tcp_event {
     __u8 saddr[16];
     __u8 daddr[16];
     __u8 aaddr[16];
+    __u8 is_inbound;
+    __u8 pad[7];
 };
 
 struct {
@@ -74,6 +76,8 @@ struct connection {
     __u64 timestamp;
     __u64 bytes_sent;
     __u64 bytes_received;
+    __u8 is_inbound;
+    __u8 pad[7];
 };
 
 struct {
@@ -274,8 +278,35 @@ int sys_enter_close(void *ctx) {
         e.bytes_sent = conn->bytes_sent;
         e.bytes_received = conn->bytes_received;
         e.timestamp = conn->timestamp;
+        e.is_inbound = conn->is_inbound;
         bpf_perf_event_output(ctx, &tcp_connect_events, BPF_F_CURRENT_CPU, &e, sizeof(e));
         bpf_map_delete_elem(&active_connections, &cid);
     }
     return 0;
+}
+
+static inline __attribute__((__always_inline__))
+int handle_accept_exit(long int ret) {
+    if (ret < 0) {
+        return 0;
+    }
+    __u64 id = bpf_get_current_pid_tgid();
+    struct connection_id cid = {};
+    cid.pid = id >> 32;
+    cid.fd = (__u64)ret;
+    struct connection conn = {};
+    conn.timestamp = bpf_ktime_get_ns();
+    conn.is_inbound = 1;
+    bpf_map_update_elem(&active_connections, &cid, &conn, BPF_ANY);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_accept")
+int sys_exit_accept(struct trace_event_raw_sys_exit__stub* ctx) {
+    return handle_accept_exit(ctx->ret);
+}
+
+SEC("tracepoint/syscalls/sys_exit_accept4")
+int sys_exit_accept4(struct trace_event_raw_sys_exit__stub* ctx) {
+    return handle_accept_exit(ctx->ret);
 }

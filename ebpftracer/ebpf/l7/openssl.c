@@ -34,18 +34,30 @@ SEC("uprobe/openssl_SSL_read_exit")
 int openssl_SSL_read_exit(struct pt_regs *ctx) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     struct ssl_args *args = bpf_map_lookup_elem(&ssl_pending, &pid_tgid);
-    if (!args || !args->is_read || !args->fd) {
+    if (!args || !args->is_read) {
         bpf_map_delete_elem(&ssl_pending, &pid_tgid);
         return 0;
     }
     __u64 fd = args->fd;
+    if (!fd) {
+        // SSL_read returned buffered plaintext without an inner syscall — fall back to the last
+        // fd we saw an inner syscall for on this thread.
+        __u64 *last = bpf_map_lookup_elem(&ssl_last_fd, &pid_tgid);
+        if (last) {
+            fd = *last;
+        }
+        if (!fd) {
+            bpf_map_delete_elem(&ssl_pending, &pid_tgid);
+            return 0;
+        }
+    }
     char *buf = args->buf;
     __u64 *ret_ptr = args->ret_ptr;
     bpf_map_delete_elem(&ssl_pending, &pid_tgid);
 
     __u32 pid = pid_tgid >> 32;
     __u64 id = pid_tgid | IS_TLS_READ_ID;
-    trace_enter_read(id, pid, fd, buf, ret_ptr, 0);
+    trace_enter_read(id, pid, fd, 1, buf, ret_ptr, 0);
 
     int ret = (int)PT_REGS_RC(ctx);
     return trace_exit_read(ctx, id, pid, 1, ret);
