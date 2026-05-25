@@ -1,6 +1,7 @@
 package prom
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
@@ -130,12 +131,13 @@ func (a *Agent) sendLoop() {
 }
 
 func (a *Agent) send(fPath string) error {
-	f, err := os.Open(fPath)
+	// Read into memory so the request has an explicit Content-Length; streaming an *os.File
+	// makes net/http use chunked encoding, which some middleboxes reset (seen as EOF).
+	payload, err := os.ReadFile(fPath)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	req, err := http.NewRequest(http.MethodPost, a.url.String(), f)
+	req, err := http.NewRequest(http.MethodPost, a.url.String(), bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
