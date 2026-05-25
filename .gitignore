@@ -1,2 +1,3 @@
 .idea
 .vagrant
+/build.sh
