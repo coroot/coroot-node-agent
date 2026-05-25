@@ -315,12 +315,17 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	if disks, err := node.GetDisks(); err == nil {
 		ioStat := c.cgroup.IOStat()
+		seenVolumes := map[string]struct{}{}
 		for majorMinor, mounts := range c.getMounts() {
 			var device string
 			if dev := disks.GetParentBlockDevice(majorMinor); dev != nil {
 				device = dev.Name
 			}
 			for mountPoint, fsStat := range mounts {
+				if _, ok := seenVolumes[mountPoint+":"+device]; ok {
+					continue
+				}
+				seenVolumes[mountPoint+":"+device] = struct{}{}
 				dls := []string{mountPoint, device, c.metadata.volumes[mountPoint]}
 				ch <- gauge(metrics.DiskSize, float64(fsStat.CapacityBytes), dls...)
 				ch <- gauge(metrics.DiskUsed, float64(fsStat.UsedBytes), dls...)
@@ -1048,6 +1053,21 @@ func (c *Container) updatePythonStats(s PythonStatsUpdate) {
 func (c *Container) getMounts() map[string]map[string]*proc.FSStat {
 	if len(c.mounts) == 0 {
 		return nil
+	}
+	var current map[string]proc.MountInfo
+	for pid := range c.processes {
+		if current = proc.GetMountInfo(pid); current != nil {
+			break
+		}
+	}
+	if len(current) > 0 {
+		for mntId := range c.mounts {
+			if mi, ok := current[mntId]; ok {
+				c.mounts[mntId] = mi
+			} else {
+				delete(c.mounts, mntId)
+			}
+		}
 	}
 	res := map[string]map[string]*proc.FSStat{}
 	for _, mi := range c.mounts {
