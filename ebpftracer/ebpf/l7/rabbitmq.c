@@ -9,7 +9,7 @@
 #define RABBITMQ_METHOD_DELIVER 60
 
 static __always_inline
-int rabbitmq_method_is(char *buf, __u64 buf_size, __u16 expected_method) {
+int is_rabbitmq_method_frame(char *buf, __u64 buf_size) {
     if (buf_size < 12) {
         return 0;
     }
@@ -32,6 +32,11 @@ int rabbitmq_method_is(char *buf, __u64 buf_size, __u16 expected_method) {
         return 0;
     }
 
+    return 1;
+}
+
+static __always_inline
+int rabbitmq_method_matches(char *buf, __u16 expected_method) {
     __u16 class = 0;
     bpf_read(buf+7, class);
     if (bpf_htons(class) != RABBITMQ_CLASS_BASIC) {
@@ -40,19 +45,5 @@ int rabbitmq_method_is(char *buf, __u64 buf_size, __u16 expected_method) {
 
     __u16 method = 0;
     bpf_read(buf+9, method);
-    if (bpf_htons(method) != expected_method) {
-        return 0;
-    }
-
-    return 1;
-}
-
-static __always_inline
-int is_rabbitmq_produce(char *buf, __u64 buf_size) {
-    return rabbitmq_method_is(buf, buf_size, RABBITMQ_METHOD_PUBLISH);
-}
-
-static __always_inline
-int is_rabbitmq_consume(char *buf, __u64 buf_size) {
-    return rabbitmq_method_is(buf, buf_size, RABBITMQ_METHOD_DELIVER);
+    return bpf_htons(method) == expected_method;
 }

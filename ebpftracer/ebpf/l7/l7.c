@@ -358,15 +358,18 @@ int handle_request(void *ctx, struct connection_id cid, struct connection *conn,
         req->protocol = PROTOCOL_MYSQL;
     } else if (is_mongo_query(payload, size)) {
         req->protocol = PROTOCOL_MONGO;
-    } else if (!conn->is_inbound && is_rabbitmq_produce(payload, size)) {
-        struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
-        if (!e) {
-            return 0;
+    } else if (is_rabbitmq_method_frame(payload, size)) {
+        if (!conn->is_inbound && rabbitmq_method_matches(payload, RABBITMQ_METHOD_PUBLISH)) {
+            struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
+            if (!e) {
+                return 0;
+            }
+            e->protocol = PROTOCOL_RABBITMQ;
+            e->method = METHOD_PRODUCE;
+            e->status = STATUS_OK;
+            e->is_inbound = 0;
+            send_event(ctx, e, cid, conn);
         }
-        e->protocol = PROTOCOL_RABBITMQ;
-        e->method = METHOD_PRODUCE;
-        e->is_inbound = 0;
-        send_event(ctx, e, cid, conn);
         return 0;
     } else if (!conn->is_inbound && nats_method(payload, size) == METHOD_PRODUCE) {
         struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
@@ -375,6 +378,7 @@ int handle_request(void *ctx, struct connection_id cid, struct connection *conn,
         }
         e->protocol = PROTOCOL_NATS;
         e->method = METHOD_PRODUCE;
+        e->status = STATUS_OK;
         e->is_inbound = 0;
         send_event(ctx, e, cid, conn);
         return 0;
@@ -532,15 +536,19 @@ int handle_response(void *ctx, struct connection_id cid, struct connection *conn
     e->is_inbound = conn->is_inbound;
 
     if (!conn->is_inbound) {
-        if (is_rabbitmq_consume(payload, ret)) {
-            e->protocol = PROTOCOL_RABBITMQ;
-            e->method = METHOD_CONSUME;
-            send_event(ctx, e, cid, conn);
+        if (is_rabbitmq_method_frame(payload, ret)) {
+            if (rabbitmq_method_matches(payload, RABBITMQ_METHOD_DELIVER)) {
+                e->protocol = PROTOCOL_RABBITMQ;
+                e->method = METHOD_CONSUME;
+                e->status = STATUS_OK;
+                send_event(ctx, e, cid, conn);
+            }
             return 0;
         }
         if (nats_method(payload, ret) == METHOD_CONSUME) {
             e->protocol = PROTOCOL_NATS;
             e->method = METHOD_CONSUME;
+            e->status = STATUS_OK;
             send_event(ctx, e, cid, conn);
             return 0;
         }
