@@ -50,6 +50,17 @@ func TestTailReader(t *testing.T) {
 	get("foo 2")
 	get("bar 2")
 
+	// partial line should not leak into a rotated file
+	write("stale-prefix")
+	wait()
+	err = os.Rename(f.Name(), f.Name()+".partial")
+	assert.NoError(t, err)
+	defer os.Remove(f.Name() + ".partial")
+	f, err = os.Create(f.Name())
+	assert.NoError(t, err)
+	write("fresh line\n")
+	get("fresh line")
+
 	// move
 	err = os.Rename(f.Name(), f.Name()+".1")
 	assert.NoError(t, err)

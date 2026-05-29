@@ -59,7 +59,9 @@ func NewTailReader(fileName string, ch chan<- logparser.LogEntry) (*TailReader, 
 				line, err := r.reader.ReadString('\n')
 				if err != nil {
 					prefix = line
-					r.poll(ctx)
+					if r.poll(ctx) {
+						prefix = ""
+					}
 					continue
 				}
 				if prefix != "" {
@@ -87,13 +89,13 @@ func (r *TailReader) Stop() {
 	}
 }
 
-func (r *TailReader) poll(ctx context.Context) {
+func (r *TailReader) poll(ctx context.Context) bool {
 	ticker := time.NewTicker(tailPollInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-ticker.C:
 			if info, err := os.Stat(r.fileName); err != nil {
 				if r.file != nil {
@@ -109,11 +111,15 @@ func (r *TailReader) poll(ctx context.Context) {
 					r.file = f
 					r.info = info
 					r.reader = bufio.NewReader(r.file)
-					return
+					return true
 				}
-				if r.moved(info) || r.truncated(info) || r.appended(info) {
+				if r.moved(info) || r.truncated(info) {
 					r.info = info
-					return
+					return true
+				}
+				if r.appended(info) {
+					r.info = info
+					return false
 				}
 			}
 		}
