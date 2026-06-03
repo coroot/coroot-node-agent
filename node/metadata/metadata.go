@@ -3,8 +3,6 @@ package metadata
 import (
 	"fmt"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -40,50 +38,33 @@ type CloudMetadata struct {
 	PublicIPv4         string
 }
 
-func getCloudProvider() CloudProvider {
-	if d, err := os.ReadFile("/sys/hypervisor/uuid"); err == nil { // AWS Xen instances
-		if strings.HasPrefix(strings.ToLower(string(d)), "ec2") {
-			return CloudProviderAWS
-		}
-	}
-	if vendor, err := os.ReadFile("/sys/class/dmi/id/board_vendor"); err == nil {
-		switch strings.TrimSpace(string(vendor)) {
-		case "Amazon EC2":
-			return CloudProviderAWS
-		case "Google":
-			return CloudProviderGCP
-		case "Microsoft Corporation":
-			return CloudProviderAzure
-		case "DigitalOcean":
-			return CloudProviderDigitalOcean
-		}
-	}
-	if vendor, err := os.ReadFile("/sys/class/dmi/id/sys_vendor"); err == nil {
-		switch strings.TrimSpace(string(vendor)) {
-		case "Hetzner":
-			return CloudProviderHetzner
-		case "Alibaba Cloud":
-			return CloudProviderAlibaba
-		case "Scaleway":
-			return CloudProviderScaleway
-		}
-	}
-	if vendor, err := os.ReadFile("/sys/class/dmi/id/chassis_vendor"); err == nil {
-		if strings.HasPrefix(string(vendor), "IBM:Cloud Compute Server") {
-			return CloudProviderIBM
-		}
-	}
-	if vendor, err := os.ReadFile("/sys/class/dmi/id/chassis_asset_tag"); err == nil {
-		if strings.TrimSpace(string(vendor)) == "OracleCloud.com" {
-			return CloudProviderOracle
-		}
-	}
-
-	return CloudProviderUnknown
+type Overrides struct {
+	Provider          string
+	Region            string
+	AvailabilityZone  string
+	InstanceType      string
+	InstanceLifeCycle string
 }
 
-func GetInstanceMetadata() *CloudMetadata {
-	provider := getCloudProvider()
+func (md *CloudMetadata) ApplyOverrides(o Overrides) {
+	if o.Provider != "" {
+		md.Provider = CloudProvider(o.Provider)
+	}
+	if o.Region != "" {
+		md.Region = o.Region
+	}
+	if o.AvailabilityZone != "" {
+		md.AvailabilityZone = o.AvailabilityZone
+	}
+	if o.InstanceType != "" {
+		md.InstanceType = o.InstanceType
+	}
+	if o.InstanceLifeCycle != "" {
+		md.LifeCycle = o.InstanceLifeCycle
+	}
+}
+
+func GetMetadata(provider CloudProvider) *CloudMetadata {
 	klog.Infoln("cloud provider:", provider)
 	switch provider {
 	case CloudProviderAWS:

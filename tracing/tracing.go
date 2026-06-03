@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/coroot/coroot-node-agent/api"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"github.com/coroot/coroot-node-agent/flags"
@@ -55,8 +56,8 @@ func Init(machineId, hostname, version string) {
 	opts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpoint(endpointUrl.Host),
 		otlptracehttp.WithURLPath(path),
-		otlptracehttp.WithHeaders(common.AuthHeaders()),
-		otlptracehttp.WithTLSClientConfig(common.TlsConfig()),
+		otlptracehttp.WithHeaders(api.AuthHeaders(*flags.ApiKey)),
+		otlptracehttp.WithTLSClientConfig(api.TlsConfig(*flags.CAFile, *flags.InsecureSkipVerify)),
 	}
 	if endpointUrl.Scheme != "https" {
 		opts = append(opts, otlptracehttp.WithInsecure())

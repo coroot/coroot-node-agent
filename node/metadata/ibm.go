@@ -1,15 +1,12 @@
 package metadata
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"regexp"
 
-	"github.com/coroot/coroot-node-agent/proc"
 	"k8s.io/klog/v2"
 )
 
@@ -32,35 +29,12 @@ type ibmMetadata struct {
 }
 
 func getIBMToken(scheme string) (string, error) {
-	// a token must be retrieved using the host net NS because the metadata service sets IP TTL to 1 on all response packets
-	hostNetNs, err := proc.GetHostNetNs()
-	if err != nil {
-		return "", err
-	}
-	defer hostNetNs.Close()
-	agentNetNs, err := proc.GetSelfNetNs()
-	if err != nil {
-		return "", err
-	}
-	defer agentNetNs.Close()
+	client, cleanup := newMetadataClient()
+	defer cleanup()
 
 	url := fmt.Sprintf("%s://%s/instance_identity/v1/token?version=2025-04-22", scheme, ibmInstanceMetadataAddress)
-
 	r, _ := http.NewRequest(http.MethodPut, url, nil)
 	r.Header.Set("Metadata-Flavor", "ibm")
-
-	client := http.Client{
-		Transport: &http.Transport{
-			DisableKeepAlives: true,
-			DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, err error) {
-				err = proc.ExecuteInNetNs(hostNetNs, agentNetNs, func() error {
-					conn, err = net.DialTimeout(network, addr, metadataServiceTimeout)
-					return err
-				})
-				return conn, err
-			},
-		},
-	}
 	resp, err := client.Do(r)
 	if err != nil {
 		return "", err

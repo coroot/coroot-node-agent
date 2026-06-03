@@ -8,59 +8,45 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
+func envar(name string) string {
+	return envarPrefix + name
+}
+
 var (
-	ListenAddress           = kingpin.Flag("listen", "Listen address - ip:port or :port").Default("0.0.0.0:80").Envar("LISTEN").String()
-	CgroupRoot              = kingpin.Flag("cgroupfs-root", "The mount point of the host cgroupfs root").Default("/sys/fs/cgroup").Envar("CGROUPFS_ROOT").String()
-	DisableLogParsing       = kingpin.Flag("disable-log-parsing", "Disable container log parsing").Default("false").Envar("DISABLE_LOG_PARSING").Bool()
-	DisablePinger           = kingpin.Flag("disable-pinger", "Don't ping upstreams").Default("false").Envar("DISABLE_PINGER").Bool()
-	DisableL7Tracing        = kingpin.Flag("disable-l7-tracing", "Disable L7 tracing").Default("false").Envar("DISABLE_L7_TRACING").Bool()
-	DisableGPUMonitoring    = kingpin.Flag("disable-gpu-monitoring", "Disable GPU monitoring (NVML)").Default("false").Envar("DISABLE_GPU_MONITORING").Bool()
-	EnableJavaTls           = kingpin.Flag("enable-java-tls", "Enable Java TLS instrumentation via dynamic agent loading").Default("false").Envar("ENABLE_JAVA_TLS").Bool()
-	EnableJavaAsyncProfiler = kingpin.Flag("enable-java-async-profiler", "Enable Java profiling via async-profiler (CPU, memory allocations, lock contention)").Default("false").Envar("ENABLE_JAVA_ASYNC_PROFILER").Bool()
-	JavaAsyncProfilerDelay  = kingpin.Flag("java-async-profiler-delay", "Delay in seconds before starting async-profiler after JVM process is detected").Default("30s").Envar("JAVA_ASYNC_PROFILER_DELAY").Duration()
-	GoHeapProfilerMode      = kingpin.Flag("go-heap-profiler", "Go heap profiling mode: disabled, enabled (collect from apps with profiling on), force (enable profiling in all Go apps)").Default("enabled").Envar("GO_HEAP_PROFILER").String()
-	InstrumentationDelay    = kingpin.Flag("instrumentation-delay", "Delay before enabling Python GIL and Node.js event loop instrumentation, after a process is started").Default("30s").Envar("INSTRUMENTATION_DELAY").Duration()
+	ListenAddress = kingpin.Flag("listen", "Listen address - ip:port or :port").Default(defaultListenAddress).Envar(envar("LISTEN")).String()
 
-	ContainerAllowlist = kingpin.Flag("container-allowlist", "List of allowed containers (regex patterns)").Envar("CONTAINER_ALLOWLIST").Strings()
-	ContainerDenylist  = kingpin.Flag("container-denylist", "List of denied containers (regex patterns)").Envar("CONTAINER_DENYLIST").Strings()
-	MinContainerAge    = kingpin.Flag("min-container-age", "Don't report metrics for containers younger than this. Suppresses short-lived job/cronjob pods that produce high-cardinality series. 0 disables.").Default("30s").Envar("MIN_CONTAINER_AGE").Duration()
+	DisableLogParsing    = kingpin.Flag("disable-log-parsing", "Disable container log parsing").Default("false").Envar(envar("DISABLE_LOG_PARSING")).Bool()
+	DisableGPUMonitoring = kingpin.Flag("disable-gpu-monitoring", "Disable GPU monitoring (NVML)").Default("false").Envar(envar("DISABLE_GPU_MONITORING")).Bool()
 
-	SkipSystemdSystemServices = kingpin.Flag("skip-systemd-system-services", "Skip well-known systemd system services (apt, motd, udev, etc.)").Default("true").Envar("SKIP_SYSTEMD_SYSTEM_SERVICES").Bool()
+	ContainerAllowlist = kingpin.Flag("container-allowlist", "List of allowed containers (regex patterns)").Envar(envar("CONTAINER_ALLOWLIST")).Strings()
+	ContainerDenylist  = kingpin.Flag("container-denylist", "List of denied containers (regex patterns)").Envar(envar("CONTAINER_DENYLIST")).Strings()
+	MinContainerAge    = kingpin.Flag("min-container-age", "Don't report metrics for containers younger than this. Suppresses short-lived job/cronjob pods that produce high-cardinality series. 0 disables.").Default("30s").Envar(envar("MIN_CONTAINER_AGE")).Duration()
 
-	ExcludeHTTPMetricsByPath = kingpin.Flag("exclude-http-requests-by-path", "Skip HTTP metrics and traces by path").Envar("EXCLUDE_HTTP_REQUESTS_BY_PATH").Strings()
+	MaxFQDNsPerContainer = kingpin.Flag("max-fqdns-per-container", "Max unique FQDN values per container, extras are bucketed under '~other'").Default("50").Envar(envar("MAX_FQDNS_PER_CONTAINER")).Int()
 
-	ExternalNetworksWhitelist = kingpin.
-					Flag("track-public-network", "Allow track connections to the specified IP networks, all private networks are allowed by default (e.g., Y.Y.Y.Y/mask)").
-					Envar("TRACK_PUBLIC_NETWORK").
-					Default("0.0.0.0/0").
-					Strings()
-	EphemeralPortRange = kingpin.Flag("ephemeral-port-range", "Destination and Listen TCP ports from this range will be skipped").Default("32768-60999").Envar("EPHEMERAL_PORT_RANGE").String()
+	ExcludeHTTPMetricsByPath  = kingpin.Flag("exclude-http-requests-by-path", "Skip HTTP metrics and traces by path").Envar(envar("EXCLUDE_HTTP_REQUESTS_BY_PATH")).Strings()
+	ExternalNetworksWhitelist = kingpin.Flag("track-public-network", "Allow track connections to the specified IP networks, all private networks are allowed by default (e.g., Y.Y.Y.Y/mask)").Envar(envar("TRACK_PUBLIC_NETWORK")).Default("0.0.0.0/0").Strings()
+	EphemeralPortRange        = kingpin.Flag("ephemeral-port-range", "Destination and Listen TCP ports from this range will be skipped").Default("32768-60999").Envar(envar("EPHEMERAL_PORT_RANGE")).String()
 
-	Provider                = kingpin.Flag("provider", "`provider` label for `node_cloud_info` metric").Envar("PROVIDER").String()
-	Region                  = kingpin.Flag("region", "`region` label for `node_cloud_info` metric").Envar("REGION").String()
-	AvailabilityZone        = kingpin.Flag("availability-zone", "`availability_zone` label for `node_cloud_info` metric").Envar("AVAILABILITY_ZONE").String()
-	InstanceType            = kingpin.Flag("instance-type", "`instance_type` label for `node_cloud_info` metric").Envar("INSTANCE_TYPE").String()
-	InstanceLifeCycle       = kingpin.Flag("instance-life-cycle", "`instance_life_cycle` label for `node_cloud_info` metric").Envar("INSTANCE_LIFE_CYCLE").String()
-	LogPerSecond            = kingpin.Flag("log-per-second", "The number of logs per second").Default("10.0").Envar("LOG_PER_SECOND").Float64()
-	LogBurst                = kingpin.Flag("log-burst", "The maximum number of tokens that can be consumed in a single call to allow").Default("100").Envar("LOG_BURST").Int()
-	LogPatternsPerContainer = kingpin.Flag("log-patterns-per-container", "Max unique log patterns per container per level").Default("256").Envar("LOG_PATTERNS_PER_CONTAINER").Int()
-	MaxFQDNsPerContainer    = kingpin.Flag("max-fqdns-per-container", "Max unique FQDN values per container, extras are bucketed under '~other'").Default("50").Envar("MAX_FQDNS_PER_CONTAINER").Int()
+	Provider          = kingpin.Flag("provider", "`provider` label for `node_cloud_info` metric").Envar(envar("PROVIDER")).String()
+	Region            = kingpin.Flag("region", "`region` label for `node_cloud_info` metric").Envar(envar("REGION")).String()
+	AvailabilityZone  = kingpin.Flag("availability-zone", "`availability_zone` label for `node_cloud_info` metric").Envar(envar("AVAILABILITY_ZONE")).String()
+	InstanceType      = kingpin.Flag("instance-type", "`instance_type` label for `node_cloud_info` metric").Envar(envar("INSTANCE_TYPE")).String()
+	InstanceLifeCycle = kingpin.Flag("instance-life-cycle", "`instance_life_cycle` label for `node_cloud_info` metric").Envar(envar("INSTANCE_LIFE_CYCLE")).String()
 
-	MaxLabelLength = kingpin.Flag("max-label-length", "Maximum length of a metric label value").Default("4096").Envar("MAX_LABEL_LENGTH").Int()
+	LogPatternsPerContainer = kingpin.Flag("log-patterns-per-container", "Max unique log patterns per container per level").Default("256").Envar(envar("LOG_PATTERNS_PER_CONTAINER")).Int()
+	MaxLabelLength          = kingpin.Flag("max-label-length", "Maximum length of a metric label value").Default("4096").Envar(envar("MAX_LABEL_LENGTH")).Int()
 
-	CollectorEndpoint  = kingpin.Flag("collector-endpoint", "A base endpoint URL for metrics, traces, logs, and profiles").Envar("COLLECTOR_ENDPOINT").URL()
-	ApiKey             = kingpin.Flag("api-key", "Coroot API key").Envar("API_KEY").String()
-	MetricsEndpoint    = kingpin.Flag("metrics-endpoint", "The URL of the endpoint to send metrics to").Envar("METRICS_ENDPOINT").URL()
-	TracesEndpoint     = kingpin.Flag("traces-endpoint", "The URL of the endpoint to send traces to").Envar("TRACES_ENDPOINT").URL()
-	TracesSampling     = kingpin.Flag("traces-sampling", "Trace sampling rate (0.0 to 1.0)").Default("1.0").Envar("TRACES_SAMPLING").Float64()
-	LogsEndpoint       = kingpin.Flag("logs-endpoint", "The URL of the endpoint to send logs to").Envar("LOGS_ENDPOINT").URL()
-	ProfilesEndpoint   = kingpin.Flag("profiles-endpoint", "The URL of the endpoint to send profiles to").Envar("PROFILES_ENDPOINT").URL()
-	InsecureSkipVerify = kingpin.Flag("insecure-skip-verify", "whether to skip verifying the certificate or not").Envar("INSECURE_SKIP_VERIFY").Default("false").Bool()
-	CAFile             = kingpin.Flag("ca-file", "Path to the custom CA certificate file").Envar("CA_FILE").String()
+	CollectorEndpoint  = kingpin.Flag("collector-endpoint", "A base endpoint URL for metrics, traces, logs, and profiles").Envar(envar("COLLECTOR_ENDPOINT")).URL()
+	ApiKey             = kingpin.Flag("api-key", "Coroot API key").Envar(envar("API_KEY")).String()
+	MetricsEndpoint    = kingpin.Flag("metrics-endpoint", "The URL of the endpoint to send metrics to").Envar(envar("METRICS_ENDPOINT")).URL()
+	LogsEndpoint       = kingpin.Flag("logs-endpoint", "The URL of the endpoint to send logs to").Envar(envar("LOGS_ENDPOINT")).URL()
+	InsecureSkipVerify = kingpin.Flag("insecure-skip-verify", "whether to skip verifying the certificate or not").Envar(envar("INSECURE_SKIP_VERIFY")).Default("false").Bool()
+	CAFile             = kingpin.Flag("ca-file", "Path to the custom CA certificate file").Envar(envar("CA_FILE")).String()
 
-	ScrapeInterval = kingpin.Flag("scrape-interval", "How often to gather metrics from the agent").Default("15s").Envar("SCRAPE_INTERVAL").Duration()
-	WalDir         = kingpin.Flag("wal-dir", "Path to where the agent stores data (e.g. the metrics Write-Ahead Log)").Default("/tmp/coroot-node-agent").Envar("WAL_DIR").String()
-	MaxSpoolSize   = kingpin.Flag("max-spool-size", "Maximum size of the on-disk spool used to buffer data when it cannot be sent to collector. Supports size suffixes like KB, MB, or GB.").Default("500MB").Envar("MAX_SPOOL_SIZE").Bytes()
+	ScrapeInterval = kingpin.Flag("scrape-interval", "How often to gather metrics from the agent").Default("15s").Envar(envar("SCRAPE_INTERVAL")).Duration()
+	WalDir         = kingpin.Flag("wal-dir", "Path to where the agent stores data (e.g. the metrics Write-Ahead Log)").Default(defaultWalDir).Envar(envar("WAL_DIR")).String()
+	MaxSpoolSize   = kingpin.Flag("max-spool-size", "Maximum size of the on-disk spool used to buffer data when it cannot be sent to collector. Supports size suffixes like KB, MB, or GB.").Default("500MB").Envar(envar("MAX_SPOOL_SIZE")).Bytes()
 
 	agentVersion = kingpin.Flag("version", "Print version and exit").Default("false").Bool()
 	Version      = "unknown"
@@ -91,15 +77,10 @@ func init() {
 		if *MetricsEndpoint == nil {
 			*MetricsEndpoint = u.JoinPath("/v1/metrics")
 		}
-		if *TracesEndpoint == nil {
-			*TracesEndpoint = u.JoinPath("/v1/traces")
-		}
 		if *LogsEndpoint == nil {
 			*LogsEndpoint = u.JoinPath("/v1/logs")
 		}
-		if *ProfilesEndpoint == nil {
-			*ProfilesEndpoint = u.JoinPath("/v1/profiles")
-		}
+		platformEndpoints(u)
 	}
 
 	if *MetricsEndpoint != nil {

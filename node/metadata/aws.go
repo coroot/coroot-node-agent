@@ -1,47 +1,22 @@
 package metadata
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 
-	"github.com/coroot/coroot-node-agent/proc"
 	"k8s.io/klog/v2"
 )
 
 const awsInstanceMetadataURL = "http://169.254.169.254/latest"
 
 func getAwsToken() (string, error) {
-	// a token must be retrieved using the host net NS because the metadata service sets IP TTL to 1 on all response packets
-	hostNetNs, err := proc.GetHostNetNs()
-	if err != nil {
-		return "", err
-	}
-	defer hostNetNs.Close()
-	agentNetNs, err := proc.GetSelfNetNs()
-	if err != nil {
-		return "", err
-	}
-	defer agentNetNs.Close()
+	client, cleanup := newMetadataClient()
+	defer cleanup()
 
 	r, _ := http.NewRequest(http.MethodPut, awsInstanceMetadataURL+"/api/token", nil)
 	r.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
-
-	client := http.Client{
-		Transport: &http.Transport{
-			DisableKeepAlives: true,
-			DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, err error) {
-				err = proc.ExecuteInNetNs(hostNetNs, agentNetNs, func() error {
-					conn, err = net.DialTimeout(network, addr, metadataServiceTimeout)
-					return err
-				})
-				return conn, err
-			},
-		},
-	}
 	resp, err := client.Do(r)
 	if err != nil {
 		return "", err

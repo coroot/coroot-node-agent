@@ -1,26 +1,25 @@
-package common
+package api
 
 import (
 	"crypto/tls"
 	"crypto/x509"
 	"os"
 
-	"github.com/coroot/coroot-node-agent/flags"
 	"k8s.io/klog/v2"
 )
 
-func AuthHeaders() map[string]string {
+func AuthHeaders(apiKey string) map[string]string {
 	res := map[string]string{}
-	if apiKey := *flags.ApiKey; apiKey != "" {
+	if apiKey != "" {
 		res["X-Api-Key"] = apiKey
 	}
 	return res
 }
 
-func TlsConfig() *tls.Config {
-	cfg := &tls.Config{InsecureSkipVerify: *flags.InsecureSkipVerify}
-	if *flags.CAFile != "" {
-		ca, err := os.ReadFile(*flags.CAFile)
+func TlsConfig(caFile string, insecureSkipVerify bool) *tls.Config {
+	cfg := &tls.Config{InsecureSkipVerify: insecureSkipVerify}
+	if caFile != "" {
+		ca, err := os.ReadFile(caFile)
 		if err != nil {
 			klog.Fatalln(err)
 			return cfg
@@ -31,7 +30,7 @@ func TlsConfig() *tls.Config {
 			pool = x509.NewCertPool()
 		}
 		if !pool.AppendCertsFromPEM(ca) {
-			klog.Fatalf("failed to parse CA from %s", *flags.CAFile)
+			klog.Fatalf("failed to parse CA from %s", caFile)
 		}
 		cfg.RootCAs = pool
 	}

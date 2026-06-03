@@ -1,4 +1,4 @@
-package containers
+package apptype
 
 import (
 	"bytes"
@@ -6,13 +6,21 @@ import (
 )
 
 var (
-	phpCmd    = regexp.MustCompile(`.*php(-fpm)?\d*\.?\d*$`)
+	phpCmd    = regexp.MustCompile(`.*php(-fpm|-cgi)?\d*\.?\d*$`)
 	pythonCmd = regexp.MustCompile(`.*python\d*\.?\d*$`)
 	rubyCmd   = regexp.MustCompile(`.*ruby\d*\.?\d*$`)
 	nodejsCmd = regexp.MustCompile(`.*node(js)?\d*\.?\d*$`)
 )
 
-func guessApplicationTypeByCmdline(cmdline []byte) string {
+func IsPython(cmd []byte) bool {
+	return pythonCmd.Match(cmd)
+}
+
+func IsNodejs(exe string) bool {
+	return nodejsCmd.MatchString(exe)
+}
+
+func GuessByCmdline(cmdline []byte) string {
 	parts := bytes.Split(cmdline, []byte{0})
 	if len(parts) == 0 || len(parts[0]) == 0 {
 		return ""
@@ -47,6 +55,8 @@ func guessApplicationTypeByCmdline(cmdline []byte) string {
 		return "mysql"
 	case bytes.HasSuffix(cmd, []byte("mariadbd")):
 		return "mysql"
+	case bytes.HasSuffix(cmd, []byte("sqlservr")):
+		return "mssql"
 	case bytes.Contains(cmdline, []byte("org.apache.zookeeper.server.quorum.QuorumPeerMain")):
 		return "zookeeper"
 	case bytes.HasSuffix(cmd, []byte("redis-server")):
@@ -71,6 +81,8 @@ func guessApplicationTypeByCmdline(cmdline []byte) string {
 		return "haproxy"
 	case bytes.HasSuffix(cmd, []byte("nginx")):
 		return "nginx"
+	case bytes.HasSuffix(cmd, []byte("w3wp")):
+		return "dotnet"
 	case bytes.HasSuffix(cmd, []byte("kubelet")):
 		return "kubelet"
 	case bytes.HasSuffix(cmd, []byte("kube-apiserver")):
@@ -95,7 +107,7 @@ func guessApplicationTypeByCmdline(cmdline []byte) string {
 		return "traefik"
 	case bytes.HasSuffix(cmd, []byte("asd")):
 		return "aerospike"
-	case bytes.HasSuffix(cmd, []byte("httpd")):
+	case bytes.HasSuffix(cmd, []byte("httpd")) || bytes.HasSuffix(cmd, []byte("apache")):
 		return "httpd"
 	case bytes.HasSuffix(cmd, []byte("influxd")):
 		return "influxdb"
@@ -143,7 +155,7 @@ func guessApplicationTypeByCmdline(cmdline []byte) string {
 	return ""
 }
 
-func guessApplicationTypeByExe(exe string) string {
+func GuessByExe(exe string) string {
 	switch {
 	case phpCmd.MatchString(exe):
 		return "php"

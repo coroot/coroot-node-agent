@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coroot/coroot-node-agent/apptype"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/ebpftracer/l7"
 	"github.com/coroot/coroot-node-agent/flags"
@@ -141,7 +142,7 @@ func (p *Process) instrumentPython(cmdline []byte, tracer *ebpftracer.Tracer) {
 		return
 	}
 	cmd = bytes.TrimSuffix(cmdFields[0], []byte{':'})
-	if !pythonCmd.Match(cmd) {
+	if !apptype.IsPython(cmd) {
 		return
 	}
 	if key := tracer.AttachPythonThreadLockProbes(p.Pid); key != nil {
@@ -155,7 +156,7 @@ func (p *Process) instrumentNodejs(exe string, tracer *ebpftracer.Tracer) {
 		return
 	}
 	p.nodejsChecked = true
-	if !nodejsCmd.MatchString(exe) {
+	if !apptype.IsNodejs(exe) {
 		return
 	}
 	if key := tracer.AttachNodejsProbes(p.Pid, exe); key != nil {

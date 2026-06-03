@@ -8,7 +8,11 @@ on:
 
 jobs:
   GO:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-22.04-arm]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -24,3 +28,23 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build -mod=readonly .
+
+  Windows:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      # The repo's Linux cgroup test fixtures have very long paths that exceed
+      # Windows' 260-char MAX_PATH, breaking checkout unless long paths are on.
+      - name: Enable Git long paths
+        run: git config --system core.longpaths true
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.9'
+      - name: vet
+        run: go vet -unsafeptr=false ./windows/... ./cmd/coroot-windows-agent
+      - name: test
+        run: go test ./windows/... ./apptype/... ./metrics/...
+      - name: build
+        run: go build -mod=readonly ./cmd/coroot-windows-agent

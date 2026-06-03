@@ -9,16 +9,25 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  linux:
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-22.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-22.04-arm
+            arch: arm64
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -36,58 +45,153 @@ jobs:
             type=ref,event=pr
             type=semver,pattern={{version}}
 
-      - uses: docker/build-push-action@v6
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 
-      - name: extract amd64 binary from the image
-        run: | 
-          docker create --platform linux/amd64 --name amd64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} && 
-          docker cp amd64:/usr/bin/coroot-node-agent /tmp/coroot-node-agent-amd64
-
-      - name: extract arm64 binary from the image
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          docker create --platform linux/arm64 --name arm64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} &&
-          docker cp arm64:/usr/bin/coroot-node-agent /tmp/coroot-node-agent-arm64
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
 
-      - name: upload amd64 binary
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: /tmp/coroot-node-agent-amd64
-          asset_name: coroot-node-agent-amd64
-          asset_content_type: application/octet-stream
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: upload arm64 binary
-        uses: actions/upload-release-asset@v1
+      - name: Extract the release binary from the image
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: /tmp/coroot-node-agent-arm64
-          asset_name: coroot-node-agent-arm64
-          asset_content_type: application/octet-stream
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cid=$(docker create --platform ${{ matrix.platform }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST})
+          docker cp "$cid:/usr/bin/coroot-node-agent" "/tmp/coroot-node-agent-${{ matrix.arch }}"
+          docker rm "$cid"
 
+      - name: Upload binary to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: /tmp/coroot-node-agent-${{ matrix.arch }}
+
+  merge:
+    needs: linux
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+
+      - name: Create and push the multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect the pushed image
+        run: docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            wixarch: x64
+          - goarch: arm64
+            wixarch: arm64
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      # The repo's Linux cgroup test fixtures have very long paths that exceed
+      # Windows' 260-char MAX_PATH, breaking checkout unless long paths are on.
+      - name: Enable Git long paths
+        run: git config --system core.longpaths true
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.9'
+
+      - name: Build binary
+        shell: pwsh
+        env:
+          GOOS: windows
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          $version = "${{ github.event.release.tag_name }}"
+          go build -ldflags "-X 'github.com/coroot/coroot-node-agent/flags.Version=$version'" -o coroot-windows-agent-${{ matrix.goarch }}.exe ./cmd/coroot-windows-agent
+
+      - name: Install WiX Toolset
+        shell: pwsh
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          # MSI ProductVersion must be numeric x.y.z; strip the leading "v".
+          $version = "${{ github.event.release.tag_name }}".TrimStart("v")
+          if ($version -notmatch '^\d+\.\d+\.\d+') {
+            $version = "0.0.1"
+          }
+          wix build -arch ${{ matrix.wixarch }} windows/wix/product.wxs -d Version=$version -d ExePath=coroot-windows-agent-${{ matrix.goarch }}.exe -o coroot-windows-agent-${{ matrix.goarch }}.msi
+
+      - name: Upload EXE and MSI to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            coroot-windows-agent-${{ matrix.goarch }}.exe
+            coroot-windows-agent-${{ matrix.goarch }}.msi
+
+  finalize:
+    needs: [linux, merge, windows]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
       - uses: actions/github-script@v7
         env:
-            RELEASE_ID: ${{ github.event.release.id }}
+          RELEASE_ID: ${{ github.event.release.id }}
         with:
           script: |
             const { RELEASE_ID } = process.env
-            github.rest.repos.updateRelease({
+            await github.rest.repos.updateRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
               release_id: `${RELEASE_ID}`,
               prerelease: false,
               make_latest: true
-            })  
-          
-
+            })

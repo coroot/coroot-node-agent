@@ -1,0 +1,57 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Coroot Windows Agent"
+           Manufacturer="Coroot"
+           Version="$(var.Version)"
+           UpgradeCode="a1b2c3d4-e5f6-7890-abcd-ef1234567890">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Coroot Windows Agent is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <Media Id="1" Cabinet="agent.cab" EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Coroot">
+        <Directory Id="AGENTFOLDER" Name="Windows Agent">
+          <Component Id="AgentExe" Guid="b2c3d4e5-f6a7-8901-bcde-f12345678901" Bitness="always64">
+            <File Id="AgentExeFile" Source="$(var.ExePath)" KeyPath="yes" />
+
+            <ServiceInstall Id="InstallService"
+                            Name="coroot-windows-agent"
+                            DisplayName="Coroot Windows Agent"
+                            Description="Coroot monitoring agent for Windows"
+                            Type="ownProcess"
+                            Start="auto"
+                            ErrorControl="normal"
+                            Arguments='--collector-endpoint=[COLLECTOR_ENDPOINT] --api-key=[API_KEY] --scrape-interval=[SCRAPE_INTERVAL]' />
+
+            <ServiceControl Id="ControlService"
+                            Name="coroot-windows-agent"
+                            Start="install"
+                            Stop="both"
+                            Remove="uninstall"
+                            Wait="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DATAFOLDER" Name="coroot-windows-agent">
+        <Component Id="DataDir" Guid="c3d4e5f6-a7b8-9012-cdef-123456789012" Bitness="always64">
+          <CreateFolder />
+          <RemoveFolder Id="RemoveDataDir" On="uninstall" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Level="1">
+      <ComponentRef Id="AgentExe" />
+      <ComponentRef Id="DataDir" />
+    </Feature>
+
+    <Property Id="COLLECTOR_ENDPOINT" Secure="yes" />
+    <Property Id="API_KEY" Secure="yes" />
+    <Property Id="SCRAPE_INTERVAL" Value="15s" Secure="yes" />
+
+  </Package>
+</Wix>
