@@ -152,8 +152,11 @@ against a Linux scrape.
 ### M2 — Container discovery on Windows
 
 - Follow `plans/windows-container-runtime-plan.md`.
-- `containers/dockerd.go` and `containers/containerd.go` work
-  against Windows-native Docker and containerd runtimes.
+- The Windows `containers/` registry first supports the Docker Engine
+  API when it reports a Windows engine. Docker Desktop Linux-container
+  / WSL mode fails closed, and containerd/HCS direct sources are
+  deferred until a Windows host with those runtimes is available for
+  validation.
 - Linux-only sources (`crio.go`, `journald.go`, `systemd.go`,
   `cilium.go`) are build-tagged out of the Windows binary.
 - `container_info{}` metric labels are stable across container
