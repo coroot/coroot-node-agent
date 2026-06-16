@@ -3,9 +3,11 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 	"k8s.io/klog/v2"
 )
@@ -15,7 +17,8 @@ func uname() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	return hostname, "10.0.0", nil
+	version := windows.RtlGetVersion()
+	return hostname, fmt.Sprintf("%d.%d.%d", version.MajorVersion, version.MinorVersion, version.BuildNumber), nil
 }
 
 func machineID() string {
