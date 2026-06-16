@@ -6,12 +6,13 @@ Below are some basic guidelines.
 
 ## Requirements
 * Linux ≥v5.1 (amd64, arm64)
+* Windows support is in progress; Windows builds currently provide startup scaffolding only.
 * Go v1.23
 
 
 ## Running
 ```shell
-sudo go run main.go
+sudo go run .
 ```
 
 ```shell
@@ -25,6 +26,7 @@ curl http://127.0.0.1:80/metrics
 * Add tests relevant to the fixed bug or new feature.
 * Use `make lint` to run linters and ensure formatting is correct.
 * Run the unit tests suite `make test`.
+* Run `make crossbuild-check` when changing platform-specific code.
 
 
 ## eBPF

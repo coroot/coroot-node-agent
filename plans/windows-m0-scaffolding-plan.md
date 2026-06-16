@@ -1,6 +1,6 @@
 # Windows M0 Scaffolding Plan
 
-**Status:** Draft
+**Status:** Complete (2026-06-16)
 **Parent:** `plans/windows-port-plan.md` M0
 **Created:** 2026-06-16
 
@@ -88,8 +88,9 @@ another Linux-only file, update this list in the same change.
 - `node/cpu.go`, `node/memory.go`, `node/disk.go`, `node/net.go`,
   `node/uptime.go`: gate Linux readers and add Windows siblings. M0
   siblings may return empty metrics; M1 fills real PDH/IP Helper data.
-- `node/metadata/metadata.go`: split Linux `/sys` probes from portable
-  cloud metadata logic.
+- `node/metadata/`: keep the shared metadata dispatcher compiling on
+  Windows; gate Linux providers that require host network namespaces
+  and add Windows compile stubs for their provider functions.
 - `gpu/gpu.go`: either prove the NVML binding compiles on Windows or
   add a Windows no-op collector for M0. Full GPU support is not part of
   M0.
@@ -108,17 +109,16 @@ another Linux-only file, update this list in the same change.
 
 ## Acceptance Criteria
 
-- [ ] **M0-CRIT-1:** `make crossbuild-check` exists and runs
+- [x] **M0-CRIT-1:** `make crossbuild-check` exists and runs
       `GOOS=linux go build ./...` and `GOOS=windows go build ./...`.
-- [ ] **M0-CRIT-2:** `make crossbuild-check` succeeds from a clean
+- [x] **M0-CRIT-2:** `make crossbuild-check` succeeds from a clean
       checkout on the development host.
-- [ ] **M0-CRIT-3:** `make test` succeeds on Linux after the file
+- [x] **M0-CRIT-3:** `make test` succeeds on Linux after the file
       splits.
-- [ ] **M0-CRIT-4:** Windows startup-path stubs for `containers/`,
+- [x] **M0-CRIT-4:** Windows startup-path stubs for `containers/`,
       `profiling/`, `gpu/`, `logs/`, `tracing/`, and `node/` do not
       return fatal startup errors.
-- [ ] **M0-CRIT-5:** No Linux implementation body is functionally
+- [x] **M0-CRIT-5:** No Linux implementation body is functionally
       changed. The diff is limited to build tags, renames, moved helper
       bodies, new shared interfaces, new Windows stubs, Makefile
       targets, and documentation.
-

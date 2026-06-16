@@ -115,7 +115,7 @@ work will break it down further.
 Each milestone is a chunk that lands a coherent slice of feature
 parity. This plan tracks between-milestone gates.
 
-### M0 — Scaffolding (blocks everything else)
+### M0 — Scaffolding (complete)
 
 - Follow `plans/windows-m0-scaffolding-plan.md`.
 - Add `//go:build linux` or `_linux.go` suffix to every existing

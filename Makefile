@@ -4,6 +4,17 @@ all: lint test
 .PHONY: test
 test: go-test
 
+.PHONY: crossbuild-check
+crossbuild-check: build-linux build-windows
+
+.PHONY: build-linux
+build-linux:
+	GOOS=linux go build ./...
+
+.PHONY: build-windows
+build-windows:
+	GOOS=windows go build ./...
+
 .PHONY: lint
 lint: go-mod go-vet go-fmt go-imports
 
