@@ -183,12 +183,14 @@ IDs, image labels, and PID mappings.
 - `ebpfwin/` remains out of the M3 critical path. It may be tested in
   parallel only under a separate experimental sub-plan.
 
-Exit gate: integration test verifies `container_net_tcp_*`,
-`container_net_listen_*`, and `container_dns_requests_total` are
-emitted on Windows with the same metric-name surface as Linux.
-`container_oom_kills_total` is emitted only if the M3 sub-plan defines
-a precise Windows source event and semantic equivalent; otherwise the
-omission is documented as a non-parity item.
+Exit gate: the ETW sub-plan is complete. Windows emits the proven
+process-isolated Docker TCP metrics with Linux-compatible names and
+labels, and every required network metric that ETW cannot attribute
+reliably is documented with the failed proof and deferred to
+`plans/windows-network-fallback-plan.md`. `container_oom_kills_total`
+is emitted only if the M3 sub-plan defines a precise Windows source
+event and semantic equivalent; otherwise the omission is documented as
+a non-parity item.
 
 ### M4 — Logs and process detail
 

@@ -1,6 +1,6 @@
 # ETW Tracer Plan
 
-**Status:** In Progress
+**Status:** Complete
 **Parent:** `plans/windows-port-plan.md` M3
 **Created:** 2026-06-16
 
@@ -51,9 +51,9 @@ is marked complete.
 |--------------------------|--------------------------|-----------------|
 | Process/container attribution | Docker Engine `ContainerTop` for process-isolated containers | Container ID, logical `container_id`, `app_id`, host PID. Verified on the Horde VM: Docker `top` reports exec workload host PIDs for process-isolated containers. Hyper-V isolated containers expose internal PIDs that did not match ETW network PIDs in the 2026-06-17 smoke; Hyper-V attribution is deferred to HNS/WFP correlation. |
 | TCP connect success/failure | `Microsoft-Windows-Kernel-Network` (`{7DD42A49-5329-4832-8DFD-43D979153A88}`), keywords `KERNEL_NETWORK_KEYWORD_IPV4=0x10` and `KERNEL_NETWORK_KEYWORD_IPV6=0x20`, level Informational | Event IDs `12/28` ("Connection attempted"), `13/29` ("Disconnect issued"), `15/31` ("Connection accepted"), `16/32` ("Reconnect attempted"), and data events `10/26` / `11/27`; fields `PID,size,daddr,saddr,dport,sport,startime,endtime,seqnum,connid`. First implementation counts a connection successful once a PID-attributed TCP data event is observed. Failed connect attribution remains pending a failing-workload proof. |
-| TCP listen open/close | Not satisfied by the ETW proof yet | `Microsoft-Windows-Kernel-Network` showed "Connection accepted" but not a durable listener-open event with listen address. M3 must either add a Windows socket-table snapshot source or document `container_net_tcp_listen_info` as omitted with this proof. |
+| TCP listen open/close | Deferred to `plans/windows-network-fallback-plan.md` | `Microsoft-Windows-Kernel-Network` did not prove a durable listener-open event with listen address. A process-isolated container listener was visible in Docker `top`, but host `Get-NetTCPConnection`, `netstat -ano`, and the normal TCP owner table did not show the container-compartment listener by PID or port. Do not emit `container_net_tcp_listen_info` on Windows until a fallback source proves container-compartment visibility and attribution. |
 | Active TCP bytes | `Microsoft-Windows-Kernel-Network` | Event IDs `10/26` ("Data sent") and `11/27` ("Data received") with `PID,size,daddr,saddr,dport,sport,connid`; PID is joined to Docker `ContainerTop` output. |
-| DNS request | `Microsoft-Windows-DNS-Client` (`{1C95126E-7EEA-49A9-A3FE-A378B03DDB4D}`) | Candidate IDs `3010/3011/3016/3020`, version 1+ carries `ClientPID`; fields include `QueryName,QueryType,DnsServerIpAddress,ResponseStatus,ClientPID,QueryResults`. Container PID attribution and latency pairing still need a container workload proof. |
+| DNS request | Deferred to `plans/windows-network-fallback-plan.md` | `Microsoft-Windows-DNS-Client` (`{1C95126E-7EEA-49A9-A3FE-A378B03DDB4D}`) exposes useful host fields, but did not emit process-isolated container queries with the container `curl.exe` PID in the Horde VM proof. `Microsoft-Windows-Winsock-NameResolution` also did not emit the container query. Do not emit `container_dns_requests_total`, DNS duration, or `ip_to_fqdn` on Windows until a fallback source proves container attribution. |
 | File open for logs | Deferred to M4 | Candidate provider `Microsoft-Windows-Kernel-File` (`{EDD08927-9CC4-4E65-B970-C2560FB5C289}`). |
 | OOM-equivalent | Deferred | No precise Windows semantic equivalent has been proven. |
 
@@ -116,13 +116,17 @@ On a Windows 11 host:
    gauges, and successful connection counters from
    `Microsoft-Windows-Kernel-Network` data events. Document Hyper-V,
    failed-connect, listen, DNS, and OOM gaps in this plan.
-2. **M3-B: DNS attribution.** Add DNS Client event pairing for
-   `container_dns_requests_total`, DNS latency, and `ip_to_fqdn` once a
-   container workload proves `ClientPID` maps to Docker `top` PIDs.
-3. **M3-C: Listen/failure decision.** Add a socket-table snapshot or
-   explicit omission proof for `container_net_tcp_listen_info` and
-   failed connects. Create `plans/windows-network-fallback-plan.md` if
-   the missing fields require WFP.
+2. **M3-B: DNS attribution — deferred.** DNS Client and Winsock
+   NameResolution ETW providers did not expose process-isolated
+   container DNS queries with a container PID on the Horde VM. DNS
+   metrics remain omitted on Windows until
+   `plans/windows-network-fallback-plan.md` proves an HNS, WFP, or
+   inside-container ETW source with reliable container attribution.
+3. **M3-C: Listen/failure decision — deferred.** Listen and failed
+   connect metrics remain omitted on Windows. ETW did not prove the
+   required fields, and the host TCP owner table did not include a
+   process-isolated container listener. Both metrics are deferred to
+   `plans/windows-network-fallback-plan.md`.
 
 ## Verification Log
 
@@ -158,19 +162,39 @@ On a Windows 11 host:
   `coroot-etwtracer.test.exe` and `coroot-containers.test.exe` passed on
   the Horde Windows VM. Repository gates `make lint`, `make test`, and
   `make crossbuild-check` passed on the Linux workspace.
+- 2026-06-17: M3-B DNS attribution proof failed on the Horde Windows VM.
+  `Get-WinEvent -ListProvider Microsoft-Windows-DNS-Client` verified
+  event IDs `3006/3008/3010/3011/3016/3018/3020` and fields
+  `QueryName,QueryType,Status,ResponseStatus,QueryResults,ClientPID`,
+  but process-isolated container `curl.exe` DNS lookups did not appear
+  as host DNS Client events with the container PID. Captured DNS Client
+  events during the test carried host process PID `5964`
+  (`consul.exe`) for host background lookups, while Docker `top` showed
+  the container `curl.exe` PID separately. A
+  `Microsoft-Windows-Winsock-NameResolution` capture also did not emit
+  the unique container query. DNS metrics are therefore deferred to the
+  Windows network fallback plan.
+- 2026-06-17: M3-C listen attribution proof failed on the Horde Windows
+  VM. A process-isolated container ran `coroot-node-agent-m3c.exe`
+  listening on `0.0.0.0:18090`, and Docker `top` showed the listener
+  process PID. Host `Get-NetTCPConnection -OwningProcess <pid>`,
+  `Get-NetTCPConnection -LocalPort 18090`, and `netstat -ano` did not
+  show that listener. `Get-NetTCPConnection` has no all-compartments
+  option on this VM. `container_net_tcp_listen_info` remains omitted on
+  Windows and deferred to the fallback plan.
 
 ## Acceptance Criteria
 
-- [ ] **M3-CRIT-1:** `make crossbuild-check` and `make test` pass.
-- [ ] **M3-CRIT-2:** The ETW source map records exact provider names,
+- [x] **M3-CRIT-1:** `make crossbuild-check` and `make test` pass.
+- [x] **M3-CRIT-2:** The ETW source map records exact provider names,
       event IDs, payload fields, and privileges for each implemented
       event.
-- [ ] **M3-CRIT-3:** Windows builds do not import Linux-only
+- [x] **M3-CRIT-3:** Windows builds do not import Linux-only
       `ebpftracer` packages or types.
-- [ ] **M3-CRIT-4:** Required TCP and DNS metrics are emitted on
+- [x] **M3-CRIT-4:** Required TCP and DNS metrics are emitted on
       Windows with Linux-compatible metric names and label keys, or
       each omission is explicitly documented with the failed ETW proof.
-- [ ] **M3-CRIT-5:** Metric samples are attributed to the correct
+- [x] **M3-CRIT-5:** Metric samples are attributed to the correct
       logical container ID for the verification workload.
-- [ ] **M3-CRIT-6:** Any WFP fallback work is deferred to a separate
+- [x] **M3-CRIT-6:** Any WFP fallback work is deferred to a separate
       accepted sub-plan.
