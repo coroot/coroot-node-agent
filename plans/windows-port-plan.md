@@ -192,16 +192,19 @@ is emitted only if the M3 sub-plan defines a precise Windows source
 event and semantic equivalent; otherwise the omission is documented as
 a non-parity item.
 
-### M4 — Logs and process detail
+### M4 — Logs and process detail (complete)
 
-- Log tailing on Windows (files and Docker JSON driver portable;
-  add Windows Event Log).
-- `proc/` Windows analogue extended for any data needed by
-  `containers/process.go` that wasn't already covered in M2.
-- `profiling/` left as a no-op stub on Windows (separate future plan).
+- Follow `plans/windows-logs-process-plan.md`.
+- Docker `json-file` stdout/stderr log tailing is implemented for
+  Windows Docker containers and emits `container_log_messages_total`
+  with Linux-compatible label keys.
+- Windows Event Log, containerd/CRI logs, file-log discovery, and
+  profiling remain deferred to source-specific future work.
 
 Exit gate: log-pattern extraction emits `container_log_messages_total`
-on Windows from a containerized app writing to stdout.
+on Windows from a containerized app writing to stdout. Passed on
+2026-06-17 on the Horde Windows VM with process-isolated
+`coroot-m4-log`.
 
 ### M5 — Packaging and deployment
 
@@ -333,6 +336,8 @@ master plan.
   signing/deployment story, and the exact ETW gaps that justify a
   driver fallback. Optional; only created if M3 proves ETW is
   insufficient.
+- `plans/windows-logs-process-plan.md` — Docker JSON log-pattern
+  extraction and M4 deferred Windows log/process surfaces. Drives M4.
 - `plans/ebpfwin-experiment-plan.md` — optional eBPF-for-Windows
   experiment. Must prove supported program types, deployment, and
   support matrix before any `ebpfwin/` code is used by production

@@ -1,7 +1,10 @@
+//go:build linux
+
 package logs
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -9,10 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestTailReader(t *testing.T) {
+func TestTailReaderRotationAndReopen(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "log")
 	assert.NoError(t, err)
-	defer f.Close()
 
 	tailPollInterval = time.Millisecond * 100
 	ch := make(chan logparser.LogEntry, 10)
@@ -37,15 +39,28 @@ func TestTailReader(t *testing.T) {
 	write("foo 1\n")
 	get("foo 1")
 
-	// append
-	write("bar 1\nbuz 1\n")
-	get("bar 1")
-	get("buz 1")
+	// move
+	rotated := filepath.Join(filepath.Dir(f.Name()), filepath.Base(f.Name())+".1")
+	err = os.Rename(f.Name(), rotated)
+	assert.NoError(t, err)
+	f, err = os.Create(f.Name())
+	assert.NoError(t, err)
+	write("foo 3\nbar 3\n")
+	get("foo 3")
+	get("bar 3")
 
-	// no end of line
-	write("foo 2\nba")
+	// truncate
+	f, err = os.OpenFile(f.Name(), os.O_WRONLY|os.O_TRUNC, 0)
+	assert.NoError(t, err)
+	write("foo 4\n")
+	get("foo 4")
+
+	// delete
+	err = os.Remove(f.Name())
+	assert.NoError(t, err)
 	wait()
-	write("r 2\n")
-	get("foo 2")
-	get("bar 2")
+	f, err = os.Create(f.Name())
+	assert.NoError(t, err)
+	write("foo 5\n")
+	get("foo 5")
 }

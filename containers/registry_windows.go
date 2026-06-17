@@ -14,6 +14,7 @@ import (
 	"github.com/coroot/coroot-node-agent/etwtracer"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/proc"
+	"github.com/coroot/logparser"
 	"github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
@@ -53,6 +54,7 @@ type ProcessInfo struct {
 type Registry struct {
 	sources []windowsContainerSource
 	network *windowsNetworkState
+	logs    *windowsContainerLogState
 	tracer  *etwtracer.Tracer
 }
 
@@ -77,10 +79,12 @@ type windowsContainer struct {
 	RestartCount int
 	Pid          uint32
 	StartedAt    time.Time
+	LogPath      string
+	LogDecoder   logparser.Decoder
 }
 
 func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, profilingUpdateCh chan *ProfilingUpdate, gpuProcessUsageSampleChan chan gpu.ProcessUsageSample) (*Registry, error) {
-	r := &Registry{sources: detectWindowsContainerSources(), network: newWindowsNetworkState()}
+	r := &Registry{sources: detectWindowsContainerSources(), network: newWindowsNetworkState(), logs: newWindowsContainerLogState()}
 	if len(r.sources) == 0 {
 		klog.Warningln("no supported Windows container runtime detected; container metrics disabled")
 	}
@@ -105,11 +109,15 @@ func (r *Registry) Describe(ch chan<- *prometheus.Desc) {
 	ch <- windowsContainerInfoDesc
 	ch <- windowsContainerRestartsDesc
 	r.network.Describe(ch)
+	if r.logs != nil {
+		r.logs.Describe(ch)
+	}
 }
 
 func (r *Registry) Collect(ch chan<- prometheus.Metric) {
 	seen := map[ContainerID]string{}
 	var processes []windowsContainerProcess
+	var reportableContainers []windowsContainer
 	for _, source := range r.sources {
 		ctx, cancel := context.WithTimeout(context.Background(), windowsContainerRuntimeTimeout)
 		containers, err := source.Containers(ctx)
@@ -133,6 +141,7 @@ func (r *Registry) Collect(ch chan<- prometheus.Metric) {
 			}
 			seen[c.ID] = source.Name()
 			reportable = append(reportable, c)
+			reportableContainers = append(reportableContainers, c)
 			ch <- prometheus.MustNewConstMetric(windowsContainerInfoDesc, prometheus.GaugeValue, 1, string(c.ID), c.AppID, c.Image, "", "")
 			ch <- prometheus.MustNewConstMetric(windowsContainerRestartsDesc, prometheus.CounterValue, float64(c.RestartCount), string(c.ID), c.AppID)
 		}
@@ -147,12 +156,19 @@ func (r *Registry) Collect(ch chan<- prometheus.Metric) {
 		cancel()
 	}
 	r.network.ReplaceProcesses(processes)
+	if r.logs != nil {
+		r.logs.Sync(reportableContainers)
+		r.logs.Collect(ch)
+	}
 	r.network.Collect(ch)
 }
 
 func (r *Registry) Close() {
 	if r.tracer != nil {
 		r.tracer.Close()
+	}
+	if r.logs != nil {
+		r.logs.Close()
 	}
 	for _, source := range r.sources {
 		if err := source.Close(); err != nil {
@@ -313,6 +329,12 @@ func dockerContainerFromInspect(item types.Container, inspect types.ContainerJSO
 	if inspect.HostConfig != nil {
 		isolation = string(inspect.HostConfig.Isolation)
 	}
+	var logPath string
+	var logDecoder logparser.Decoder
+	if inspect.ContainerJSONBase != nil && inspect.ContainerJSONBase.LogPath != "" && inspect.HostConfig != nil && inspect.HostConfig.LogConfig.Type == "json-file" {
+		logPath = inspect.ContainerJSONBase.LogPath
+		logDecoder = logparser.DockerJsonDecoder{}
+	}
 	return windowsContainer{
 		ID:           id,
 		AppID:        appIDForContainerID(id),
@@ -324,6 +346,8 @@ func dockerContainerFromInspect(item types.Container, inspect types.ContainerJSO
 		RestartCount: inspect.RestartCount,
 		Pid:          pid,
 		StartedAt:    startedAt,
+		LogPath:      logPath,
+		LogDecoder:   logDecoder,
 	}, true
 }
 

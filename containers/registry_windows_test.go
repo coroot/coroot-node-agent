@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/coroot/logparser"
+	"github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -137,6 +139,51 @@ func TestWindowsContainerProcessesFromTop(t *testing.T) {
 	}
 	if processes[0] != (windowsContainerProcess{Pid: 4242, ContainerID: "/docker/web", AppID: "web"}) {
 		t.Fatalf("unexpected process: %+v", processes[0])
+	}
+}
+
+func TestDockerContainerFromInspectCapturesJSONLogPath(t *testing.T) {
+	c, ok := dockerContainerFromInspect(types.Container{ID: "raw", Image: "fallback"}, types.ContainerJSON{
+		ContainerJSONBase: &types.ContainerJSONBase{
+			ID:   "raw",
+			Name: "/web",
+			State: &types.ContainerState{
+				Running: true,
+			},
+			LogPath: `C:\ProgramData\docker\containers\raw\raw-json.log`,
+			HostConfig: &dockercontainer.HostConfig{
+				LogConfig: dockercontainer.LogConfig{Type: "json-file"},
+			},
+		},
+		Config: &dockercontainer.Config{Image: "image:v1"},
+	})
+	if !ok {
+		t.Fatal("dockerContainerFromInspect() rejected running container")
+	}
+	if c.LogPath != `C:\ProgramData\docker\containers\raw\raw-json.log` {
+		t.Fatalf("LogPath=%q, want Docker JSON log path", c.LogPath)
+	}
+	if _, ok := c.LogDecoder.(logparser.DockerJsonDecoder); !ok {
+		t.Fatalf("LogDecoder=%T, want logparser.DockerJsonDecoder", c.LogDecoder)
+	}
+
+	c, ok = dockerContainerFromInspect(types.Container{ID: "raw", Image: "fallback"}, types.ContainerJSON{
+		ContainerJSONBase: &types.ContainerJSONBase{
+			ID:      "raw",
+			Name:    "/web",
+			State:   &types.ContainerState{Running: true},
+			LogPath: `C:\ProgramData\docker\containers\raw\raw.log`,
+			HostConfig: &dockercontainer.HostConfig{
+				LogConfig: dockercontainer.LogConfig{Type: "local"},
+			},
+		},
+		Config: &dockercontainer.Config{Image: "image:v1"},
+	})
+	if !ok {
+		t.Fatal("dockerContainerFromInspect() rejected running container")
+	}
+	if c.LogPath != "" || c.LogDecoder != nil {
+		t.Fatalf("unsupported log driver produced LogPath=%q LogDecoder=%T", c.LogPath, c.LogDecoder)
 	}
 }
 

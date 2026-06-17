@@ -10,8 +10,10 @@ It uses eBPF to track container related events such as TCP connects, so the mini
 Windows support is in progress on this branch. The current Windows
 build supports startup, node-level metrics, Docker-based container
 discovery, and an ETW-backed TCP scaffold for process-isolated Windows
-Docker containers. Remaining Windows tracing work is tracked in
-`plans/windows-port-plan.md` and `plans/etw-tracer-plan.md`.
+Docker containers. Docker `json-file` stdout/stderr log-pattern metrics
+are also supported for Windows containers. Remaining Windows tracing
+work is tracked in `plans/windows-port-plan.md` and
+`plans/etw-tracer-plan.md`.
 
 <img src="https://coroot.com/static/img/blog/ebpf.svg" width="800" />
 
@@ -44,6 +46,9 @@ At the moment the following sources are supported:
 * Journald
 * Dockerd (JSON file driver)
 * Containerd (CRI logs)
+
+On Windows, Docker's `json-file` stdout/stderr log driver is supported
+for Windows containers.
 
 To learn more about automated log clustering, check out the blog post "[Mining metrics from unstructured logs](https://coroot.com/blog/mining-logs-from-unstructured-logs)".
 
