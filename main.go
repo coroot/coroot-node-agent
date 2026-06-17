@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/coroot/coroot-node-agent/common"
@@ -49,17 +48,23 @@ func main() {
 	klog.LogToStderr(false)
 	klog.SetOutput(&RateLimitedLogOutput{limiter: rate.NewLimiter(rate.Limit(*flags.LogPerSecond), *flags.LogBurst)})
 
+	if err := runPlatform(); err != nil {
+		klog.Exitln(err)
+	}
+}
+
+func runAgent(ctx context.Context) error {
 	klog.Infoln("agent version:", version)
 
 	hostname, kv, err := uname()
 	if err != nil {
-		klog.Exitln("failed to get uname:", err)
+		return fmt.Errorf("failed to get uname: %w", err)
 	}
 	klog.Infoln("hostname:", hostname)
 	klog.Infoln("kernel version:", kv)
 
 	if err = common.SetKernelVersion(kv); err != nil {
-		klog.Exitln(err)
+		return err
 	}
 
 	checkKernelVersion()
@@ -81,7 +86,7 @@ func main() {
 		registry,
 	)
 	if err := registerer.Register(nodeCollector); err != nil {
-		klog.Exitln(err)
+		return err
 	}
 
 	gpuCollector, err := gpu.NewCollector()
@@ -89,7 +94,7 @@ func main() {
 		klog.Warningln("failed to initialize GPU collector:", err)
 	}
 	if err := registerer.Register(gpuCollector); err != nil {
-		klog.Exitln(err)
+		return err
 	}
 	registerer.MustRegister(info("node_agent_info", version))
 
@@ -103,30 +108,33 @@ func main() {
 	processInfoCh, profilingCh := profiling.Init(machineId, hostname)
 	cr, err := containers.NewRegistry(registerer, processInfoCh, profilingCh, gpuCollector.ProcessUsageSampleCh)
 	if err != nil {
-		klog.Exitln(err)
+		return err
 	}
 	profiling.Start()
 
 	if err := prom.StartAgent(registry, machineId, systemUuid); err != nil {
-		klog.Exitln(err)
+		return err
 	}
 
-	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{ErrorLog: logger{}, Registry: registerer}))
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{ErrorLog: logger{}, Registry: registerer}))
 	klog.Infoln("listening on:", *flags.ListenAddress)
 
-	srv := &http.Server{Addr: *flags.ListenAddress}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	srv := &http.Server{Addr: *flags.ListenAddress, Handler: mux}
+	serverErrCh := make(chan error, 1)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			klog.Exitln(err)
+			serverErrCh <- err
 		}
 	}()
 
-	sig := <-sigCh
-	klog.Infof("received %s, shutting down", sig)
+	select {
+	case <-ctx.Done():
+		klog.Infoln("shutdown requested")
+	case err := <-serverErrCh:
+		return err
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -147,6 +155,7 @@ func main() {
 	case <-time.After(10 * time.Second):
 		klog.Warningln("cleanup timed out, forcing exit")
 	}
+	return nil
 }
 
 func info(name, version string) prometheus.Collector {

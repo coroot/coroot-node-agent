@@ -24,6 +24,8 @@ spec:
         prometheus.io/scrape: 'true'
         prometheus.io/port: '80'
     spec:
+      nodeSelector:
+        kubernetes.io/os: linux
       tolerations:
         - operator: Exists
       hostPID: true

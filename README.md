@@ -13,7 +13,8 @@ discovery, and an ETW-backed TCP scaffold for process-isolated Windows
 Docker containers. Docker `json-file` stdout/stderr log-pattern metrics
 are also supported for Windows containers. Remaining Windows tracing
 work is tracked in `plans/windows-port-plan.md` and
-`plans/etw-tracer-plan.md`.
+`plans/etw-tracer-plan.md`. Windows service installation is documented
+in `docs/windows-quickstart.md`.
 
 <img src="https://coroot.com/static/img/blog/ebpf.svg" width="800" />
 

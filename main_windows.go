@@ -3,14 +3,33 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+	"golang.org/x/sys/windows/svc"
 	"k8s.io/klog/v2"
 )
+
+const windowsServiceName = "coroot-node-agent"
+
+func runPlatform() error {
+	isService, err := svc.IsWindowsService()
+	if err != nil {
+		return err
+	}
+	if isService {
+		return svc.Run(windowsServiceName, newWindowsService(runAgent))
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runAgent(ctx)
+}
 
 func uname() (string, string, error) {
 	hostname, err := os.Hostname()

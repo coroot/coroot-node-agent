@@ -1,6 +1,6 @@
 # Windows Port — Master Plan
 
-**Status:** Draft
+**Status:** Milestones complete; final support validation pending
 **Owner:** @shedwards
 **Created:** 2026-05-13
 
@@ -206,17 +206,25 @@ on Windows from a containerized app writing to stdout. Passed on
 2026-06-17 on the Horde Windows VM with process-isolated
 `coroot-m4-log`.
 
-### M5 — Packaging and deployment
+### M5 — Packaging and deployment (complete)
 
-- Windows service installer (likely via `golang.org/x/sys/windows/svc`).
-- Container image for Windows nodes (or `nodeSelector` story if we
-  ship a Linux-pod-on-Windows-node hybrid).
-- `manifests/` updated for Windows-node DaemonSet.
+- Follow `plans/windows-service-installer-plan.md`.
+- Windows builds automatically run as a native Windows service when
+  launched by the Service Control Manager.
+- `docs/windows-quickstart.md` documents build, foreground run, service
+  install, scrape verification, stop, and uninstall.
+- The existing Kubernetes manifest is constrained to Linux nodes.
+  Windows HostProcess image and DaemonSet work is deferred until a
+  Windows Server Kubernetes validation host and publishable Windows
+  image are available.
 
 Exit gate: a documented install procedure works end-to-end on a
 fresh supported Windows host. The normal development validation host is
 Windows 11; final release/support validation must also include Windows
 Server 2022 unless the support matrix is explicitly changed before M5.
+The Windows 11 development gate passed on 2026-06-17 on the Horde
+Windows VM: service install, start, scrape, stop, and delete all
+succeeded.
 
 ## 7. Open questions
 

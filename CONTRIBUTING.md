@@ -6,7 +6,7 @@ Below are some basic guidelines.
 
 ## Requirements
 * Linux ≥v5.1 (amd64, arm64)
-* Windows support is in progress; Windows builds currently provide startup, node-level metrics, Docker-based container discovery, Docker `json-file` log-pattern metrics, and partial ETW TCP metrics for process-isolated Windows Docker containers.
+* Windows support is in progress; Windows builds currently provide startup, node-level metrics, Docker-based container discovery, Docker `json-file` log-pattern metrics, partial ETW TCP metrics for process-isolated Windows Docker containers, and native Windows service execution.
 * Go v1.23
 
 

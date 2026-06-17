@@ -4,15 +4,24 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/proc"
 	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 )
+
+func runPlatform() error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	return runAgent(ctx)
+}
 
 func uname() (string, string, error) {
 	runtime.LockOSThread()
