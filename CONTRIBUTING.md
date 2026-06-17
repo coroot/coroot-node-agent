@@ -6,7 +6,7 @@ Below are some basic guidelines.
 
 ## Requirements
 * Linux ≥v5.1 (amd64, arm64)
-* Windows support is in progress; Windows builds currently provide startup scaffolding only.
+* Windows support is in progress; Windows builds currently provide startup, node-level metrics, Docker-based container discovery, and partial ETW TCP metrics for process-isolated Windows Docker containers.
 * Go v1.23
 
 

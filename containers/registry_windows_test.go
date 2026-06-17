@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 )
@@ -84,12 +85,15 @@ func TestWindowsContainerID(t *testing.T) {
 }
 
 func TestWindowsRegistryCollect(t *testing.T) {
-	r := &Registry{sources: []windowsContainerSource{fakeWindowsContainerSource{
-		containers: []windowsContainer{
-			{ID: "/docker/web", Image: "mcr.microsoft.com/windows/nanoserver:ltsc2022", RestartCount: 2},
-			{ID: "/k8s/default/api-7d9d6b6b7d-q8s2x/api", AppID: "/k8s/default/api", Image: "example/api:v1"},
-		},
-	}}}
+	r := &Registry{
+		sources: []windowsContainerSource{fakeWindowsContainerSource{
+			containers: []windowsContainer{
+				{ID: "/docker/web", Image: "mcr.microsoft.com/windows/nanoserver:ltsc2022", RestartCount: 2},
+				{ID: "/k8s/default/api-7d9d6b6b7d-q8s2x/api", AppID: "/k8s/default/api", Image: "example/api:v1"},
+			},
+		}},
+		network: newWindowsNetworkState(),
+	}
 	reg := prometheus.NewRegistry()
 	if err := reg.Register(r); err != nil {
 		t.Fatalf("register failed: %v", err)
@@ -112,6 +116,27 @@ func TestWindowsRegistryCollect(t *testing.T) {
 	restarts := metricFamily(t, families, "container_restarts_total")
 	if got := len(restarts.Metric); got != 2 {
 		t.Fatalf("container_restarts_total samples=%d, want 2", got)
+	}
+}
+
+func TestWindowsContainerProcessesFromTop(t *testing.T) {
+	processes := windowsContainerProcessesFromTop(
+		windowsContainer{ID: "/docker/web", AppID: "web"},
+		dockercontainer.ContainerTopOKBody{
+			Titles: []string{"Name", "PID", "SessionName"},
+			Processes: [][]string{
+				{"cmd.exe", "4242", "Console"},
+				{"bad.exe", "not-a-pid", "Console"},
+				{"short-row"},
+				{"zero.exe", "0", "Console"},
+			},
+		},
+	)
+	if len(processes) != 1 {
+		t.Fatalf("processes=%+v, want one valid process", processes)
+	}
+	if processes[0] != (windowsContainerProcess{Pid: 4242, ContainerID: "/docker/web", AppID: "web"}) {
+		t.Fatalf("unexpected process: %+v", processes[0])
 	}
 }
 
