@@ -1,6 +1,6 @@
 # Windows Container Runtime Plan
 
-**Status:** In Progress
+**Status:** Complete
 **Parent:** `plans/windows-port-plan.md` M2
 **Created:** 2026-06-16
 
@@ -10,13 +10,10 @@ Discover Windows containers and emit stable `container_info{}` metrics
 without relying on Linux cgroups. M2 assumes M0 cross-builds and M1
 serves real node metrics.
 
-M2 requires a Windows 11 VM with at least one supported Windows
-container runtime for full development validation. The current Horde
-Windows 11 VM has no Docker or containerd runtime installed, and its
-Windows Containers / Hyper-V features are disabled. Installing or
-enabling those features requires a host mutation and reboot, so the
-current implementation slice is validated with Windows unit tests and
-the no-runtime fail-closed scrape only.
+M2 was validated on the Horde Windows VM after enabling the Windows
+Containers and Hyper-V features and installing a Windows Docker Engine.
+The real-runtime smoke used Hyper-V isolated Windows containers and a
+Docker engine reporting `OSType=windows`.
 
 Before Windows support is marked final, repeat the supported-runtime
 smoke test on Windows Server 2022 unless the support matrix is
@@ -38,21 +35,17 @@ Implemented in this slice:
   logs the unavailable runtime and continues serving non-container
   metrics without emitting invented `container_info{}` samples.
 
-Still required before M2 is complete:
+Deferred beyond M2:
 
-- Run the supported-runtime smoke with at least three real Windows
-  containers.
-- Validate identity stability across agent restarts and container
-  restarts with a real runtime.
-- Revisit containerd/CRI and HCS/HNS direct support after the Docker
-  path is proven on a Windows host with containers enabled.
+- Revisit containerd/CRI and HCS/HNS direct support after a Windows host
+  with those runtimes is available for validation.
 
 ## Runtime Support Matrix
 
 | Runtime / mode | Status | Notes |
 |----------------|--------|-------|
-| Docker Engine API with Windows containers | Implemented, pending real-runtime smoke | Uses the Docker API over the host's configured endpoint, normally `npipe:////./pipe/docker_engine`, and requires Docker `Ping.OSType` to be empty or `windows`. |
-| Docker Desktop in Windows-container mode | Expected to work, pending smoke | Acceptable for Windows 11 development validation if the engine reports `OSType=windows`. |
+| Docker Engine API with Windows containers | Implemented and smoke-tested | Uses the Docker API over the host's configured endpoint, normally `npipe:////./pipe/docker_engine`, and requires Docker `Ping.OSType` to be empty or `windows`. |
+| Docker Desktop-provided Windows engine | Smoke-tested | Validated through the Docker Desktop package's Windows `dockerd.exe` registered as a headless Windows service. The engine reported `OSType=windows`, API `1.54`, and Hyper-V isolation. |
 | Docker Desktop in Linux-container / WSL mode | Unsupported, fail closed | Rejected because it reports a Linux engine and would expose Linux containers, not Windows host containers. |
 | containerd / CRI on Windows | Deferred | Not implemented in this slice. Add a source only after a host with Windows containerd / CRI is available for validation. |
 | HCS / HNS direct fallback | Deferred | Use later for Windows-specific lifecycle or network gaps that Docker/containerd cannot expose reliably. |
@@ -118,18 +111,44 @@ On a Windows 11 host:
 - 2026-06-16: Agent smoke on the Horde Windows 11 VM with no Docker or
   containerd runtime installed served `node_info` and emitted no
   `container_info{}` samples, matching the fail-closed requirement.
+- 2026-06-17: Enabled Windows Containers and Hyper-V on the Horde
+  Windows VM, installed Go `1.26.4` and Docker Engine `29.5.3`, and
+  registered the Docker Desktop package's Windows `dockerd.exe` as a
+  headless Windows service. `docker info` reported `OSType=windows`,
+  API `1.54`, and Hyper-V isolation.
+- 2026-06-17: Pulled
+  `mcr.microsoft.com/windows/nanoserver:ltsc2025` and started three
+  Hyper-V isolated containers: `coroot-m2-plain`,
+  `coroot-m2-restart`, and `coroot-m2-k8s` with Kubernetes labels
+  `io.kubernetes.pod.namespace=default`,
+  `io.kubernetes.pod.name=api-7d9d6b6b7d-q8s2x`, and
+  `io.kubernetes.container.name=api`.
+- 2026-06-17: Built the Windows agent binary and ran it on the Horde
+  Windows VM with `DOCKER_HOST=npipe:////./pipe/docker_engine`,
+  `--listen=127.0.0.1:18080`, `--min-container-age=0s`, and
+  `--wal-dir=C:\Temp\coroot-wal`. Scraping `/metrics` emitted
+  `container_info{}` for `/docker/coroot-m2-plain`,
+  `/docker/coroot-m2-restart`, and
+  `/k8s/default/api-7d9d6b6b7d-q8s2x/api`.
+- 2026-06-17: Restarted the agent and verified the emitted
+  `container_id` set stayed
+  `/docker/coroot-m2-plain,/docker/coroot-m2-restart,/k8s/default/api-7d9d6b6b7d-q8s2x/api`.
+  Restarted `coroot-m2-restart`; Docker kept raw container ID
+  `d17cfe995eeb499d432e8ccf303399e9d70fb2771c2cea7ffa643ef39d08a6d0`
+  while its runtime PID changed from `1328` to `1344`, and the emitted
+  logical `container_id` set remained unchanged.
 
 ## Acceptance Criteria
 
 - [x] **M2-CRIT-1:** `make crossbuild-check` and `make test` pass.
 - [x] **M2-CRIT-2:** The supported Windows runtime matrix is recorded
       in this plan or docs before the code is marked complete.
-- [ ] **M2-CRIT-3:** A Windows 11 scrape with 3+ supported containers
+- [x] **M2-CRIT-3:** A Windows 11 scrape with 3+ supported containers
       emits non-zero `container_info{}` for each. Before final support
       validation, repeat this on Windows Server 2022 for every runtime
       mode listed as supported there.
 - [x] **M2-CRIT-4:** `container_info{}` label keys match Linux.
-- [ ] **M2-CRIT-5:** Container logical identity is stable across agent
+- [x] **M2-CRIT-5:** Container logical identity is stable across agent
       restart and documented container restart scenarios.
 - [x] **M2-CRIT-6:** Unsupported runtimes or isolation modes fail
       closed: they are logged and documented, not reported with
