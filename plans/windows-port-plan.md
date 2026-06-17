@@ -136,7 +136,7 @@ parity. This plan tracks between-milestone gates.
 Exit gate: `make crossbuild-check` passes; Linux test suite (`make test`)
 unchanged and green.
 
-### M1 — Node-level metrics on Windows
+### M1 — Node-level metrics on Windows (complete)
 
 - Follow `plans/windows-node-metrics-plan.md`.
 - Complete the Windows implementations behind the `main.go` split
@@ -149,7 +149,7 @@ Exit gate: a Windows VM running the binary exposes `node_*` metrics
 that a Prometheus scrape can ingest, with metric-name parity verified
 against a Linux scrape.
 
-### M2 — Container discovery on Windows
+### M2 — Container discovery on Windows (complete)
 
 - Follow `plans/windows-container-runtime-plan.md`.
 - The Windows `containers/` registry first supports the Docker Engine
@@ -166,7 +166,7 @@ Exit gate: a Windows host running 3+ containers under Docker (or
 containerd) shows non-zero `container_info{}` with stable container
 IDs, image labels, and PID mappings.
 
-### M3 — Tracing layer (the substantial one)
+### M3 — Tracing layer (complete)
 
 - Follow `plans/etw-tracer-plan.md`.
 - `etwtracer/` package consumes the chosen ETW providers for process
