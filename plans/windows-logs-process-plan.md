@@ -37,10 +37,17 @@ Deferred beyond this slice:
   containerd/CRI runtime.
 - File-log discovery inside Windows containers. There is no Windows
   `/var/log` convention equivalent in the current milestone.
-- Per-container process detail beyond the Docker `ContainerTop`
-  process-isolated mapping already added for M3 TCP attribution.
 - Windows profiling remains the existing no-op stub; profiling support
   needs its own plan.
+
+Implemented during support hardening:
+
+- Windows `proc.ListPids` now enumerates host process IDs with
+  `CreateToolhelp32Snapshot`.
+- Windows `proc.GetCmdline` now returns the process image path via
+  `QueryFullProcessImageName` as a best-effort command-line analogue.
+  Full argument capture remains deferred until a safe PEB/WMI strategy
+  is chosen.
 
 ## Metric Semantics
 

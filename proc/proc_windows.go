@@ -6,8 +6,10 @@ import (
 	"errors"
 	"path/filepath"
 	"strconv"
+	"unsafe"
 
 	"github.com/coroot/coroot-node-agent/cgroup"
+	"golang.org/x/sys/windows"
 )
 
 var root = "/proc"
@@ -63,7 +65,11 @@ func HostPath(p string) string {
 }
 
 func GetCmdline(pid uint32) []byte {
-	return nil
+	image, err := processImagePath(pid)
+	if err != nil || image == "" {
+		return nil
+	}
+	return []byte(image)
 }
 
 func GetNsPid(pid uint32) (uint32, error) {
@@ -75,9 +81,47 @@ func GetFlags(pid uint32) (Flags, error) {
 }
 
 func ListPids() ([]uint32, error) {
-	return nil, errors.ErrUnsupported
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer windows.CloseHandle(snapshot)
+
+	entry := windows.ProcessEntry32{}
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		return nil, err
+	}
+	var pids []uint32
+	for {
+		if entry.ProcessID != 0 {
+			pids = append(pids, entry.ProcessID)
+		}
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			if errors.Is(err, windows.ERROR_NO_MORE_FILES) {
+				break
+			}
+			return pids, err
+		}
+	}
+	return pids, nil
 }
 
 func ReadCgroup(pid uint32) (*cgroup.Cgroup, error) {
 	return nil, errors.ErrUnsupported
+}
+
+func processImagePath(pid uint32) (string, error) {
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return "", err
+	}
+	defer windows.CloseHandle(handle)
+
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	size := uint32(len(buf))
+	if err := windows.QueryFullProcessImageName(handle, 0, &buf[0], &size); err != nil {
+		return "", err
+	}
+	return windows.UTF16ToString(buf[:size]), nil
 }

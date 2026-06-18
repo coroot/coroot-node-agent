@@ -1,0 +1,60 @@
+name: Windows Integration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows-integration:
+    runs-on: [self-hosted, windows, x64, coroot-node-agent]
+    env:
+      WINDOWS_TEST_PACKAGES: ". ./containers ./etwtracer ./logs ./node ./proc ./tools/metriclabels"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.9'
+
+      - name: Build Windows binary
+        shell: pwsh
+        run: go build -mod=readonly -o coroot-node-agent.exe .
+
+      - name: Run Windows unit tests
+        shell: pwsh
+        run: |
+          $packages = $env:WINDOWS_TEST_PACKAGES -split " "
+          go test @packages
+
+      - name: Install and verify Windows service
+        shell: pwsh
+        run: |
+          .\scripts\install-windows-service.ps1 `
+            -BinaryPath .\coroot-node-agent.exe `
+            -Listen 127.0.0.1:18087 `
+            -StartupType Manual `
+            -AdditionalArgs "--min-container-age=0s" `
+            -Force
+          try {
+            $body = $null
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $body = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18087/metrics -TimeoutSec 5).Content
+                if ($body -match "node_agent_info|node_info") { break }
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if ($body -notmatch "node_agent_info|node_info") {
+              throw "metrics endpoint did not expose node metrics"
+            }
+          } finally {
+            .\scripts\uninstall-windows-service.ps1
+          }
+
+      - name: Docker Windows runtime smoke
+        shell: pwsh
+        run: |
+          $docker = (Get-Command docker -ErrorAction Stop).Source
+          $serverOs = & $docker version --format '{{.Server.Os}}'
+          if ($serverOs -ne "windows") {
+            throw "Docker server OS is $serverOs, expected windows"
+          }

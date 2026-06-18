@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  GO:
+  Linux:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -24,3 +24,18 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build -mod=readonly .
+
+  Windows:
+    runs-on: windows-latest
+    env:
+      WINDOWS_TEST_PACKAGES: ". ./containers ./etwtracer ./logs ./node ./proc ./tools/metriclabels"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.9'
+      - shell: pwsh
+        run: |
+          $packages = $env:WINDOWS_TEST_PACKAGES -split " "
+          go test @packages
+      - run: go build -mod=readonly ./...

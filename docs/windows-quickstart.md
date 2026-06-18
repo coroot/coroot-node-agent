@@ -4,6 +4,8 @@ This branch supports running `coroot-node-agent` on Windows as either a
 foreground process or a native Windows service. The Windows service mode
 is selected automatically when the binary is launched by the Windows
 Service Control Manager; no service-specific agent flag is required.
+Final support still requires Windows Server 2022 validation; see
+`docs/windows-support-matrix.md`.
 
 ## Requirements
 
@@ -47,18 +49,9 @@ In another PowerShell session:
 Run PowerShell as Administrator:
 
 ```powershell
-$installDir = "C:\Program Files\Coroot"
-$dataDir = "C:\ProgramData\Coroot"
-New-Item -ItemType Directory -Force $installDir, $dataDir, "$dataDir\wal" | Out-Null
-Copy-Item .\coroot-node-agent.exe "$installDir\coroot-node-agent.exe" -Force
-
-$binaryPath = '"' + "$installDir\coroot-node-agent.exe" + '" --listen=0.0.0.0:80 --wal-dir=' + "$dataDir\wal"
-New-Service `
-  -Name coroot-node-agent `
-  -DisplayName "Coroot Node Agent" `
-  -Description "Collects Windows node and container telemetry for Coroot" `
-  -BinaryPathName $binaryPath `
-  -StartupType Automatic
+.\scripts\install-windows-service.ps1 `
+  -BinaryPath .\coroot-node-agent.exe `
+  -Listen 0.0.0.0:80
 ```
 
 Start and verify:
@@ -78,8 +71,7 @@ account is the validated service account on the development VM.
 Run PowerShell as Administrator:
 
 ```powershell
-Stop-Service coroot-node-agent
-sc.exe delete coroot-node-agent
+.\scripts\uninstall-windows-service.ps1
 ```
 
 Remove the binary and runtime data if desired:
@@ -87,6 +79,10 @@ Remove the binary and runtime data if desired:
 ```powershell
 Remove-Item -Recurse -Force "C:\Program Files\Coroot", "C:\ProgramData\Coroot"
 ```
+
+Use `-KeepData` with `scripts\uninstall-windows-service.ps1` to remove
+the service and installed binary while preserving
+`C:\ProgramData\Coroot`.
 
 ## Kubernetes Status
 

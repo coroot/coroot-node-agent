@@ -7,14 +7,14 @@ The agent gathers metrics related to a node and the containers running on it, an
 
 It uses eBPF to track container related events such as TCP connects, so the minimum supported Linux kernel version is 5.1.
 
-Windows support is in progress on this branch. The current Windows
-build supports startup, node-level metrics, Docker-based container
-discovery, and an ETW-backed TCP scaffold for process-isolated Windows
-Docker containers. Docker `json-file` stdout/stderr log-pattern metrics
-are also supported for Windows containers. Remaining Windows tracing
-work is tracked in `plans/windows-port-plan.md` and
-`plans/etw-tracer-plan.md`. Windows service installation is documented
-in `docs/windows-quickstart.md`.
+Windows implementation work is complete for the M0-M5 milestones on
+this branch. Windows builds support startup, node-level metrics,
+Docker-based container discovery, native Windows service execution, an
+ETW-backed TCP scaffold for process-isolated Windows Docker containers,
+and Docker `json-file` stdout/stderr log-pattern metrics. Final
+support still requires Windows Server 2022 validation; see
+`docs/windows-support-matrix.md`. Windows service installation is
+documented in `docs/windows-quickstart.md`.
 
 <img src="https://coroot.com/static/img/blog/ebpf.svg" width="800" />
 

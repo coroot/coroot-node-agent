@@ -354,6 +354,10 @@ master plan.
   service-control story. Drives M5.
 - `plans/windows-container-runtime-plan.md` — resolving the runtime
   support-matrix open question. Drives M2.
+- `plans/windows-profiling-plan.md` — future Windows profiling source
+  selection and profile upload semantics.
+- `plans/windows-support-hardening-plan.md` — final support matrix,
+  packaging polish, metric label compatibility, and CI hardening.
 
 Each sub-plan must also carry its own Acceptance Criteria block per
 [`AGENTS.md`](../AGENTS.md).
