@@ -87,6 +87,19 @@ Release validation:
   `coroot-node-agent-windows-amd64.msi`. The MSI asset had content type
   `application/x-msi`, size `14688256`, and digest
   `sha256:dba514c0e8c068e8bc728b0ef77566abe014b668cbab91fab0699ed09e6ad5ec`.
+  The full release workflow still failed in the Linux binary extraction
+  step because the workflow used the mixed-case repository owner in
+  `ghcr.io/NVShawn/coroot-node-agent`; Docker requires lowercase image
+  references.
+- 2026-06-19: Commit `39a888e` fixed the release workflow by deriving a
+  lowercase image reference before Docker metadata, build, and extraction
+  steps. `make lint`, `make test`, and `make crossbuild-check` passed before
+  commit.
+- 2026-06-19: GitHub release `v1.32.8` completed successfully end-to-end.
+  The release contains Linux `amd64` and `arm64` binaries, the Windows `.exe`,
+  and `coroot-node-agent-windows-amd64.msi`. The MSI asset had content type
+  `application/x-msi`, size `14688256`, and digest
+  `sha256:937e9a41316772fe49bd2a3049b99aecbec134a5a7c68cfed90f805c76fed4b3`.
 
 ## Acceptance Criteria
 
