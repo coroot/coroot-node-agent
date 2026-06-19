@@ -29,7 +29,7 @@
       <Directory Id="ProgramFiles64Folder">
         <Directory Id="INSTALLFOLDER" Name="Coroot">
           <Component Id="AgentExecutableComponent" Guid="{649B2935-073C-450D-9BD7-FB90A3D3AD61}" Win64="yes">
-            <File Id="AgentExecutable" Source="$(var.SourceBinary)" KeyPath="yes" />
+            <File Id="AgentExecutable" Source="$(var.SourceBinary)" Name="coroot-node-agent.exe" KeyPath="yes" />
             <ServiceInstall
               Id="AgentServiceInstall"
               Type="ownProcess"

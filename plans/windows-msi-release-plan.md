@@ -1,6 +1,6 @@
 # Windows MSI Release Plan
 
-**Status:** Implemented; release artifact and uninstall validation pending
+**Status:** Implemented; release artifact validation pending
 **Parent:** `plans/windows-service-installer-plan.md`
 **Created:** 2026-06-18
 
@@ -61,9 +61,20 @@ Release validation:
   `LISTENADDRESS=127.0.0.1:18089`; the service reached `Running` and
   `/metrics` emitted
   `node_agent_info{machine_id="422bdee8088a455997e3f311384a843e",system_uuid="",version="1.2.3"} 1`.
-- 2026-06-18: MSI uninstall validation could not be completed because the
-  Windows VM stopped completing SSH banner exchange after `msiexec /x` was
-  launched. No reboot or destructive recovery action was attempted.
+- 2026-06-18: Initial uninstall observation was inconclusive because the
+  Windows VM temporarily stopped completing SSH banner exchange after
+  `msiexec /x` was launched. When SSH recovered, the uninstall log showed
+  removal status 0, and the service was removed.
+- 2026-06-18: The first MSI installed the service binary under the source
+  asset name (`coroot-node-agent-windows-amd64.exe`). The WiX `File` element
+  now forces the installed filename to `coroot-node-agent.exe`.
+- 2026-06-18: Corrected Windows 11 VM MSI install/start/scrape/uninstall
+  validation passed with `LISTENADDRESS=127.0.0.1:18091`. The installed
+  service path was
+  `"C:\Program Files\Coroot\coroot-node-agent.exe" --listen=127.0.0.1:18091 --wal-dir="C:\ProgramData\Coroot\wal"`,
+  `/metrics` emitted `node_agent_info`, `msiexec /x` returned 0, the service
+  was absent after uninstall, and
+  `C:\Program Files\Coroot\coroot-node-agent.exe` was removed.
 
 ## Acceptance Criteria
 
@@ -80,5 +91,5 @@ Release validation:
       package status.
 - [ ] **MSI-CRIT-5:** A created GitHub release contains the MSI artifact.
       This remains pending until the next release workflow run.
-- [ ] **MSI-CRIT-6:** MSI uninstall is verified on Windows after the VM SSH
+- [x] **MSI-CRIT-6:** MSI uninstall is verified on Windows after the VM SSH
       service recovers or another Windows validation host is available.
