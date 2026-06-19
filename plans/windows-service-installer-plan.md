@@ -52,7 +52,8 @@ named-pipe, and filesystem permissions.
 
 ## Deferred Work
 
-- Windows MSI/MSIX packaging.
+- Windows MSIX packaging. MSI release packaging is tracked by
+  `plans/windows-msi-release-plan.md`.
 - Built-in `install` / `uninstall` subcommands. The current branch keeps
   the agent CLI surface unchanged and relies on standard Windows service
   tooling.

@@ -66,6 +66,33 @@ For Docker-backed container metrics, make sure the service account can
 access the Windows Docker Engine named pipe. The default `LocalSystem`
 account is the validated service account on the development VM.
 
+## Release MSI
+
+GitHub releases publish `coroot-node-agent-windows-amd64.msi` alongside the
+raw Windows `.exe`. The MSI is built on GitHub-hosted Windows runners with
+WiX Toolset v3.14.1 and is not Authenticode-signed yet.
+
+Run PowerShell as Administrator:
+
+```powershell
+msiexec /i .\coroot-node-agent-windows-amd64.msi
+```
+
+The MSI installs `C:\Program Files\Coroot\coroot-node-agent.exe`, creates
+`C:\ProgramData\Coroot\wal`, and starts the `coroot-node-agent` service as
+`LocalSystem` with `--listen=0.0.0.0:80`. Override the listen address at
+install time if needed:
+
+```powershell
+msiexec /i .\coroot-node-agent-windows-amd64.msi LISTENADDRESS=127.0.0.1:18080
+```
+
+Uninstall:
+
+```powershell
+msiexec /x .\coroot-node-agent-windows-amd64.msi
+```
+
 ## Stop And Uninstall
 
 Run PowerShell as Administrator:

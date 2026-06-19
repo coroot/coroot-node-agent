@@ -350,8 +350,9 @@ master plan.
   experiment. Must prove supported program types, deployment, and
   support matrix before any `ebpfwin/` code is used by production
   Windows builds.
-- `plans/windows-service-installer-plan.md` — packaging, MSI, and
+- `plans/windows-service-installer-plan.md` — packaging and
   service-control story. Drives M5.
+- `plans/windows-msi-release-plan.md` — CI-built MSI release artifact.
 - `plans/windows-container-runtime-plan.md` — resolving the runtime
   support-matrix open question. Drives M2.
 - `plans/windows-profiling-plan.md` — future Windows profiling source

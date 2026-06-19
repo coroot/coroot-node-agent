@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <?define ProductName = "Coroot Node Agent" ?>
+  <?define ServiceName = "coroot-node-agent" ?>
+
+  <Product
+    Id="*"
+    Name="$(var.ProductName)"
+    Language="1033"
+    Version="$(var.ProductVersion)"
+    Manufacturer="Coroot"
+    UpgradeCode="{22F230D3-22FB-46A9-977E-5DB8765F6A63}">
+    <Package
+      InstallerVersion="500"
+      Compressed="yes"
+      InstallScope="perMachine"
+      Platform="x64"
+      Description="$(var.ProductName) $(var.ProductVersion)" />
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+      Schedule="afterInstallInitialize" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="LISTENADDRESS" Value="0.0.0.0:80" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="Coroot">
+          <Component Id="AgentExecutableComponent" Guid="{649B2935-073C-450D-9BD7-FB90A3D3AD61}" Win64="yes">
+            <File Id="AgentExecutable" Source="$(var.SourceBinary)" KeyPath="yes" />
+            <ServiceInstall
+              Id="AgentServiceInstall"
+              Type="ownProcess"
+              Vital="yes"
+              Name="$(var.ServiceName)"
+              DisplayName="$(var.ProductName)"
+              Description="Collects Windows node and container telemetry for Coroot"
+              Start="auto"
+              ErrorControl="normal"
+              Account="LocalSystem"
+              Arguments='--listen=[LISTENADDRESS] --wal-dir="[CommonAppDataFolder]Coroot\wal"' />
+            <ServiceControl
+              Id="AgentServiceControl"
+              Name="$(var.ServiceName)"
+              Start="install"
+              Stop="both"
+              Remove="uninstall"
+              Wait="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="DATADIR" Name="Coroot">
+          <Directory Id="WALFOLDER" Name="wal">
+            <Component Id="ProgramDataComponent" Guid="{2C54CF3C-D14B-4612-B800-02A9ABA375A8}" Win64="yes">
+              <CreateFolder />
+              <RegistryValue
+                Root="HKLM"
+                Key="Software\Coroot\NodeAgent"
+                Name="DataDirectory"
+                Value="[CommonAppDataFolder]Coroot"
+                Type="string"
+                KeyPath="yes" />
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="ProductFeature" Title="$(var.ProductName)" Level="1">
+      <ComponentRef Id="AgentExecutableComponent" />
+      <ComponentRef Id="ProgramDataComponent" />
+    </Feature>
+  </Product>
+</Wix>

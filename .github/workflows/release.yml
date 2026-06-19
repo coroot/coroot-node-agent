@@ -7,9 +7,10 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  WIX_VERSION: 3.14.1
 
 jobs:
-  build:
+  build-linux:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -60,10 +61,6 @@ jobs:
           docker create --platform linux/arm64 --name arm64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} &&
           docker cp arm64:/usr/bin/coroot-node-agent /tmp/coroot-node-agent-arm64
 
-      - name: build windows amd64 binary
-        run: |
-          GOOS=windows GOARCH=amd64 go build -mod=readonly -ldflags "-X 'github.com/coroot/coroot-node-agent/flags.Version=${{ steps.meta.outputs.version }}'" -o /tmp/coroot-node-agent-windows-amd64.exe .
-
       - name: upload amd64 binary
         uses: actions/upload-release-asset@v1
         env:
@@ -84,16 +81,68 @@ jobs:
           asset_name: coroot-node-agent-arm64
           asset_content_type: application/octet-stream
 
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.9'
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+
+      - name: build windows amd64 binary
+        shell: pwsh
+        run: |
+          go build -mod=readonly -ldflags "-X 'github.com/coroot/coroot-node-agent/flags.Version=${{ steps.meta.outputs.version }}'" -o "$env:RUNNER_TEMP\coroot-node-agent-windows-amd64.exe" .
+
+      - name: build windows amd64 msi
+        shell: pwsh
+        run: |
+          .\scripts\build-windows-msi.ps1 `
+            -BinaryPath "$env:RUNNER_TEMP\coroot-node-agent-windows-amd64.exe" `
+            -Version "${{ steps.meta.outputs.version }}" `
+            -OutputDir "$env:RUNNER_TEMP" `
+            -WixVersion "${{ env.WIX_VERSION }}"
+
       - name: upload windows amd64 binary
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: /tmp/coroot-node-agent-windows-amd64.exe
+          asset_path: ${{ runner.temp }}\coroot-node-agent-windows-amd64.exe
           asset_name: coroot-node-agent-windows-amd64.exe
           asset_content_type: application/octet-stream
 
+      - name: upload windows amd64 msi
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ runner.temp }}\coroot-node-agent-windows-amd64.msi
+          asset_name: coroot-node-agent-windows-amd64.msi
+          asset_content_type: application/x-msi
+
+  publish-release-metadata:
+    runs-on: ubuntu-22.04
+    needs:
+      - build-linux
+      - build-windows
+    permissions:
+      contents: write
+
+    steps:
       - uses: actions/github-script@v7
         env:
             RELEASE_ID: ${{ github.event.release.id }}

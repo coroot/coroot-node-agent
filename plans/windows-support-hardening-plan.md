@@ -36,7 +36,9 @@ Future-work items:
    validation remains blocked until a Server 2022 host is available.
 2. **Packaging polish.**
    Add PowerShell install/uninstall scripts that wrap the documented
-   Windows service procedure and keep service flags explicit.
+   Windows service procedure and keep service flags explicit. Native MSI
+   release packaging is tracked separately in
+   `plans/windows-msi-release-plan.md`.
 3. **Process detail.**
    Implement Windows `proc.ListPids` and best-effort `proc.GetCmdline`
    via Windows process APIs. This gives Windows code real process

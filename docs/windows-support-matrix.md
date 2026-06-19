@@ -40,6 +40,15 @@ milestones, but final support validation still requires a Windows Server
 | DNS, failed connect, listen metrics | Deferred to `plans/windows-network-fallback-plan.md`. |
 | Profiling | Not supported on Windows yet; the Windows package is an explicit no-op. Tracked in `plans/windows-profiling-plan.md`. |
 
+## Packaging
+
+| Artifact | Windows status |
+|----------|----------------|
+| Raw `.exe` | Built and uploaded by GitHub release CI. |
+| MSI | Built by GitHub release CI on `windows-latest` with WiX Toolset v3.14.1. Windows 11 build and install/scrape validation passed; release artifact and uninstall validation remain pending. |
+| Authenticode signing | Deferred. Release MSIs are currently unsigned. |
+| MSIX | Deferred. |
+
 ## Final Support Gate
 
 Before README and CONTRIBUTING call Windows generally supported:
