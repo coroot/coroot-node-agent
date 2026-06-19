@@ -1,6 +1,6 @@
 # Windows MSI Release Plan
 
-**Status:** Implemented; release artifact validation pending
+**Status:** Complete
 **Parent:** `plans/windows-service-installer-plan.md`
 **Created:** 2026-06-18
 
@@ -75,6 +75,18 @@ Release validation:
   `/metrics` emitted `node_agent_info`, `msiexec /x` returned 0, the service
   was absent after uninstall, and
   `C:\Program Files\Coroot\coroot-node-agent.exe` was removed.
+- 2026-06-19: GitHub release `v1.32.6` exposed a Windows CI checkout gap:
+  Git for Windows failed to check out the long fixture path under
+  `cgroup/fixtures/cgroup/kubepods.slice/...` until `core.longpaths=true`
+  was configured before `actions/checkout`.
+- 2026-06-19: Commit `ca058eb` enabled Git long paths before Windows
+  checkouts in CI, release, and Windows integration workflows. `make lint`,
+  `make test`, and `make crossbuild-check` passed before commit.
+- 2026-06-19: GitHub release `v1.32.7` produced and uploaded
+  `coroot-node-agent-windows-amd64.exe` and
+  `coroot-node-agent-windows-amd64.msi`. The MSI asset had content type
+  `application/x-msi`, size `14688256`, and digest
+  `sha256:dba514c0e8c068e8bc728b0ef77566abe014b668cbab91fab0699ed09e6ad5ec`.
 
 ## Acceptance Criteria
 
@@ -89,7 +101,6 @@ Release validation:
 - [x] **MSI-CRIT-4:** User documentation explains the MSI install,
       configurable `LISTENADDRESS` property, uninstall command, and unsigned
       package status.
-- [ ] **MSI-CRIT-5:** A created GitHub release contains the MSI artifact.
-      This remains pending until the next release workflow run.
+- [x] **MSI-CRIT-5:** A created GitHub release contains the MSI artifact.
 - [x] **MSI-CRIT-6:** MSI uninstall is verified on Windows after the VM SSH
       service recovers or another Windows validation host is available.

@@ -45,7 +45,7 @@ milestones, but final support validation still requires a Windows Server
 | Artifact | Windows status |
 |----------|----------------|
 | Raw `.exe` | Built and uploaded by GitHub release CI. |
-| MSI | Built by GitHub release CI on `windows-latest` with WiX Toolset v3.14.1. Windows 11 build, install/scrape, and uninstall validation passed; release artifact validation remains pending. |
+| MSI | Built by GitHub release CI on `windows-latest` with WiX Toolset v3.14.1. Windows 11 build, install/scrape, uninstall, and GitHub release artifact validation passed. |
 | Authenticode signing | Deferred. Release MSIs are currently unsigned. |
 | MSIX | Deferred. |
 
