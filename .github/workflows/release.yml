@@ -19,6 +19,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: normalize image name
+        id: image
+        run: echo "ref=${REGISTRY}/${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.9'
@@ -35,7 +39,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.image.outputs.ref }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -52,13 +56,13 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
 
       - name: extract amd64 binary from the image
-        run: | 
-          docker create --platform linux/amd64 --name amd64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} && 
+        run: |
+          docker create --platform linux/amd64 --name amd64 ${{ steps.image.outputs.ref }}:${{ steps.meta.outputs.version }} &&
           docker cp amd64:/usr/bin/coroot-node-agent /tmp/coroot-node-agent-amd64
 
       - name: extract arm64 binary from the image
         run: |
-          docker create --platform linux/arm64 --name arm64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} &&
+          docker create --platform linux/arm64 --name arm64 ${{ steps.image.outputs.ref }}:${{ steps.meta.outputs.version }} &&
           docker cp arm64:/usr/bin/coroot-node-agent /tmp/coroot-node-agent-arm64
 
       - name: upload amd64 binary
