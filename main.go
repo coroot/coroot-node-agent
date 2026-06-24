@@ -8,17 +8,18 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 
+	"github.com/coroot/coroot-node-agent/api"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
+	"github.com/coroot/coroot-node-agent/host"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
-	"github.com/coroot/coroot-node-agent/proc"
+	"github.com/coroot/coroot-node-agent/node/metadata"
 	"github.com/coroot/coroot-node-agent/profiling"
 	"github.com/coroot/coroot-node-agent/prom"
 	"github.com/coroot/coroot-node-agent/tracing"
@@ -66,29 +67,6 @@ func uname() (string, string, error) {
 	return hostname, kernelVersion, nil
 }
 
-func machineID() string {
-	for _, p := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id", "/sys/devices/virtual/dmi/id/product_uuid"} {
-		payload, err := os.ReadFile(proc.HostPath(p))
-		if err != nil {
-			klog.Warningln("failed to read machine-id:", err)
-			continue
-		}
-		id := strings.TrimSpace(strings.Replace(string(payload), "-", "", -1))
-		klog.Infoln("machine-id: ", id)
-		return id
-	}
-	return ""
-}
-
-func systemUUID() string {
-	payload, err := os.ReadFile(proc.HostPath("/sys/devices/virtual/dmi/id/product_uuid"))
-	if err != nil {
-		klog.Warningln("failed to read system-uuid:", err)
-		return ""
-	}
-	return strings.TrimSpace(string(payload))
-}
-
 func whitelistNodeExternalNetworks() {
 	netdevs, err := node.NetDevices()
 	if err != nil {
@@ -129,13 +107,23 @@ func main() {
 
 	whitelistNodeExternalNetworks()
 
-	machineId := machineID()
-	systemUuid := systemUUID()
+	machineId := host.MachineID()
+	systemUuid := host.SystemUUID()
 
 	tracing.Init(machineId, hostname, version)
-	logs.Init(machineId, hostname, version)
+	logs.Init(logs.Config{
+		Endpoint:    *flags.LogsEndpoint,
+		AuthHeaders: api.AuthHeaders(*flags.ApiKey),
+		TLSConfig:   api.TlsConfig(*flags.CAFile, *flags.InsecureSkipVerify),
+	}, machineId, hostname, version)
 
-	nodeCollector := node.NewCollector(hostname, kv)
+	nodeCollector := node.NewCollector(hostname, kv, metadata.Overrides{
+		Provider:          flags.GetString(flags.Provider),
+		Region:            flags.GetString(flags.Region),
+		AvailabilityZone:  flags.GetString(flags.AvailabilityZone),
+		InstanceType:      flags.GetString(flags.InstanceType),
+		InstanceLifeCycle: flags.GetString(flags.InstanceLifeCycle),
+	})
 
 	registry := prometheus.NewRegistry()
 
@@ -170,7 +158,14 @@ func main() {
 	}
 	profiling.Start()
 
-	if err := prom.StartAgent(registry, machineId, systemUuid); err != nil {
+	if err := prom.StartAgent(registry, prom.Config{
+		Endpoint:       *flags.MetricsEndpoint,
+		AuthHeaders:    api.AuthHeaders(*flags.ApiKey),
+		TLSConfig:      api.TlsConfig(*flags.CAFile, *flags.InsecureSkipVerify),
+		ScrapeInterval: *flags.ScrapeInterval,
+		WalDir:         *flags.WalDir,
+		MaxSpoolSize:   int64(*flags.MaxSpoolSize),
+	}, machineId, systemUuid); err != nil {
 		klog.Exitln(err)
 	}
 
@@ -202,6 +197,7 @@ func main() {
 		defer close(done)
 		cr.Close()
 		profiling.Stop()
+		logs.Shutdown(context.Background())
 	}()
 
 	select {

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coroot/coroot-node-agent/api"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/coroot/coroot-node-agent/flags"
@@ -38,7 +39,7 @@ var (
 	httpClient  = http.Client{
 		Timeout: UploadTimeout,
 		Transport: &http.Transport{
-			TLSClientConfig: common.TlsConfig(),
+			TLSClientConfig: api.TlsConfig(*flags.CAFile, *flags.InsecureSkipVerify),
 		},
 	}
 	endpointUrl       *url.URL
@@ -379,7 +380,7 @@ func post(u url.URL, q url.Values, body *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	for k, v := range common.AuthHeaders() {
+	for k, v := range api.AuthHeaders(*flags.ApiKey) {
 		req.Header.Set(k, v)
 	}
 	resp, err := httpClient.Do(req)

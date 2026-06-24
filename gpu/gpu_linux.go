@@ -13,57 +13,10 @@ import (
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"github.com/coroot/coroot-node-agent/flags"
+	"github.com/coroot/coroot-node-agent/metrics"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/klog/v2"
-)
-
-var (
-	gpuInfo = prometheus.NewDesc(
-		"node_gpu_info",
-		"Meta information about the GPU",
-		[]string{"gpu_uuid", "name"}, nil,
-	)
-	gpuMemoryTotal = prometheus.NewDesc(
-		"node_resources_gpu_memory_total_bytes",
-		"Total memory available on the GPU in bytes",
-		[]string{"gpu_uuid"}, nil,
-	)
-	gpuMemoryUsed = prometheus.NewDesc(
-		"node_resources_gpu_memory_used_bytes",
-		"GPU memory currently in use in bytes",
-		[]string{"gpu_uuid"}, nil,
-	)
-	gpuMemoryUsageAvg = prometheus.NewDesc(
-		"node_resources_gpu_memory_utilization_percent_avg",
-		"Average GPU memory utilization (percentage) over the collection interval",
-		[]string{"gpu_uuid"}, nil,
-	)
-	gpuTemperature = prometheus.NewDesc(
-		"node_resources_gpu_temperature_celsius",
-		"Current temperature of the GPU in Celsius",
-		[]string{"gpu_uuid"}, nil,
-	)
-	gpuPowerWatts = prometheus.NewDesc(
-		"node_resources_gpu_power_usage_watts",
-		"Current power usage of the GPU in watts",
-		[]string{"gpu_uuid"}, nil,
-	)
-	gpuMemoryUsagePeak = prometheus.NewDesc(
-		"node_resources_gpu_memory_utilization_percent_peak",
-		"Peak GPU memory utilization (percentage) over the collection interval",
-		[]string{"gpu_uuid"}, nil,
-	)
-	gpuUsageAvg = prometheus.NewDesc(
-		"node_resources_gpu_utilization_percent_avg",
-		"Average GPU core utilization (percentage) over the collection interval",
-		[]string{"gpu_uuid"}, nil,
-	)
-	gpuUsagePeak = prometheus.NewDesc(
-		"node_resources_gpu_utilization_percent_peak",
-		"Peak GPU core utilization (percentage) over the collection interval",
-		[]string{"gpu_uuid"}, nil,
-	)
 )
 
 type Collector struct {
@@ -162,33 +115,37 @@ func (c *Collector) processUtilizationPoller() {
 }
 
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- gpuInfo
-	ch <- gpuMemoryTotal
-	ch <- gpuMemoryUsed
-	ch <- gpuMemoryUsageAvg
-	ch <- gpuMemoryUsagePeak
-	ch <- gpuUsageAvg
-	ch <- gpuUsagePeak
-	ch <- gpuTemperature
-	ch <- gpuPowerWatts
+	ch <- metrics.NodeGpuInfo
+	ch <- metrics.NodeGpuMemoryTotal
+	ch <- metrics.NodeGpuMemoryUsed
+	ch <- metrics.NodeGpuMemoryUsageAvg
+	ch <- metrics.NodeGpuMemoryUsagePeak
+	ch <- metrics.NodeGpuUsageAvg
+	ch <- metrics.NodeGpuUsagePeak
+	ch <- metrics.NodeGpuTemperature
+	ch <- metrics.NodeGpuPowerWatts
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
+	if c.iface == nil {
+		return
+	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	driverVersion, _ := c.iface.SystemGetDriverVersion()
 	for _, dev := range c.devices {
-		ch <- gauge(gpuInfo, 1, dev.UUID, dev.Name)
+		ch <- metrics.Gauge(metrics.NodeGpuInfo, 1, dev.UUID, dev.Name, driverVersion)
 
 		mi, ret := dev.device.GetMemoryInfo()
 		if ret == nvml.SUCCESS {
-			ch <- gauge(gpuMemoryTotal, float64(mi.Total), dev.UUID)
-			ch <- gauge(gpuMemoryUsed, float64(mi.Used), dev.UUID)
+			ch <- metrics.Gauge(metrics.NodeGpuMemoryTotal, float64(mi.Total), dev.UUID)
+			ch <- metrics.Gauge(metrics.NodeGpuMemoryUsed, float64(mi.Used), dev.UUID)
 		}
 		if t, ret := dev.device.GetTemperature(nvml.TEMPERATURE_GPU); ret == nvml.SUCCESS {
-			ch <- gauge(gpuTemperature, float64(t), dev.UUID)
+			ch <- metrics.Gauge(metrics.NodeGpuTemperature, float64(t), dev.UUID)
 		}
 		if mw, ret := dev.device.GetPowerUsage(); ret == nvml.SUCCESS {
-			ch <- gauge(gpuPowerWatts, float64(mw)/1000., dev.UUID)
+			ch <- metrics.Gauge(metrics.NodeGpuPowerWatts, float64(mw)/1000., dev.UUID)
 		}
 		for _, st := range []nvml.SamplingType{nvml.GPU_UTILIZATION_SAMPLES, nvml.MEMORY_UTILIZATION_SAMPLES} {
 			lastTs := dev.lastSampleTime[st]
@@ -217,11 +174,11 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 			if count > 0 {
 				switch st {
 				case nvml.GPU_UTILIZATION_SAMPLES:
-					ch <- gauge(gpuUsageAvg, total/count, dev.UUID)
-					ch <- gauge(gpuUsagePeak, peak, dev.UUID)
+					ch <- metrics.Gauge(metrics.NodeGpuUsageAvg, total/count, dev.UUID)
+					ch <- metrics.Gauge(metrics.NodeGpuUsagePeak, peak, dev.UUID)
 				case nvml.MEMORY_UTILIZATION_SAMPLES:
-					ch <- gauge(gpuMemoryUsageAvg, total/count, dev.UUID)
-					ch <- gauge(gpuMemoryUsagePeak, peak, dev.UUID)
+					ch <- metrics.Gauge(metrics.NodeGpuMemoryUsageAvg, total/count, dev.UUID)
+					ch <- metrics.Gauge(metrics.NodeGpuMemoryUsagePeak, peak, dev.UUID)
 				}
 			}
 			dev.lastSampleTime[st] = lastTs
@@ -289,8 +246,4 @@ func valueToFloat(valueType nvml.ValueType, value [8]byte) (float64, error) {
 	default:
 		return 0, fmt.Errorf("unsupported value type %d", valueType)
 	}
-}
-
-func gauge(desc *prometheus.Desc, value float64, labelValues ...string) prometheus.Metric {
-	return prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, labelValues...)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
+	"github.com/coroot/coroot-node-agent/metrics"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
@@ -149,7 +150,7 @@ func (r *Registry) Collect(ch chan<- prometheus.Metric) {
 	defer r.ip2fqdnLock.RUnlock()
 	for ip, domain := range r.ip2fqdn {
 		if domain.SpecifyIP {
-			ch <- gauge(metrics.Ip2Fqdn, 1, ip.String(), domain.FQDN)
+			ch <- metrics.Gauge(metrics.Ip2Fqdn, 1, ip.String(), domain.FQDN)
 		}
 	}
 }

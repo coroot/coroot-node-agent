@@ -3,6 +3,7 @@ package prom
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,8 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coroot/coroot-node-agent/common"
-	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/golang/snappy"
 	"github.com/jpillora/backoff"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,9 +27,20 @@ import (
 
 const RemoteWriteTimeout = 30 * time.Second
 
+type Config struct {
+	Endpoint       *url.URL
+	AuthHeaders    map[string]string
+	TLSConfig      *tls.Config
+	ScrapeInterval time.Duration
+	WalDir         string
+	MaxSpoolSize   int64
+}
+
+const jobName = "coroot-node-agent"
+
 type Agent struct {
 	reg    *prometheus.Registry
-	url    *url.URL
+	cfg    Config
 	labels map[string]string
 
 	httpClient http.Client
@@ -39,11 +49,11 @@ type Agent struct {
 	maxSpoolSize int64
 }
 
-func StartAgent(reg *prometheus.Registry, machineId, systemUuid string) error {
-	if *flags.MetricsEndpoint == nil {
+func StartAgent(reg *prometheus.Registry, cfg Config, machineId, systemUuid string) error {
+	if cfg.Endpoint == nil {
 		return nil
 	}
-	klog.Infoln("metrics remote write endpoint:", (*flags.MetricsEndpoint).String())
+	klog.Infoln("metrics remote write endpoint:", cfg.Endpoint.String())
 
 	up := prometheus.NewGauge(prometheus.GaugeOpts{Name: "up"})
 	up.Set(1)
@@ -59,22 +69,22 @@ func StartAgent(reg *prometheus.Registry, machineId, systemUuid string) error {
 
 	a := &Agent{
 		reg: reg,
-		url: *flags.MetricsEndpoint,
+		cfg: cfg,
 		labels: map[string]string{
 			model.InstanceLabel: instance,
-			model.JobLabel:      "coroot-node-agent",
+			model.JobLabel:      jobName,
 		},
 		httpClient: http.Client{
 			Timeout: RemoteWriteTimeout,
 			Transport: &http.Transport{
-				TLSClientConfig: common.TlsConfig(),
+				TLSClientConfig: cfg.TLSConfig,
 			},
 		},
-		spoolDir:     path.Join(*flags.WalDir, "spool"),
-		maxSpoolSize: int64(*flags.MaxSpoolSize),
+		spoolDir:     path.Join(cfg.WalDir, "spool"),
+		maxSpoolSize: cfg.MaxSpoolSize,
 	}
-	if _, err := os.Stat(*flags.WalDir); os.IsNotExist(err) {
-		if err = os.Mkdir(*flags.WalDir, 0750); err != nil {
+	if _, err := os.Stat(cfg.WalDir); os.IsNotExist(err) {
+		if err = os.MkdirAll(cfg.WalDir, 0750); err != nil {
 			return err
 		}
 	}
@@ -92,7 +102,7 @@ func (a *Agent) scrapeLoop() {
 	if err := a.scrape(); err != nil {
 		klog.Warningln("failed to scrape metrics:", err)
 	}
-	ticker := time.NewTicker(*flags.ScrapeInterval)
+	ticker := time.NewTicker(a.cfg.ScrapeInterval)
 	for range ticker.C {
 		if err := a.scrape(); err != nil {
 			klog.Warningln("failed to scrape metrics:", err)
@@ -121,7 +131,7 @@ func (a *Agent) sendLoop() {
 			dur := b.Duration()
 			klog.Warningf(
 				"failed to send metrics to %s, next attempt in %s: %s",
-				a.url, dur.String(), err,
+				a.cfg.Endpoint, dur.String(), err,
 			)
 			time.Sleep(dur)
 			continue
@@ -137,14 +147,14 @@ func (a *Agent) send(fPath string) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, a.url.String(), bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, a.cfg.Endpoint.String(), bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
-	for k, v := range common.AuthHeaders() {
+	for k, v := range a.cfg.AuthHeaders {
 		req.Header.Set(k, v)
 	}
-	req.Header.Set("User-Agent", "coroot-node-agent")
+	req.Header.Set("User-Agent", jobName)
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("Content-Encoding", "snappy")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
@@ -168,10 +178,6 @@ func (a *Agent) scrape() error {
 	if err != nil {
 		return err
 	}
-	mfsByName := make(map[string]*dto.MetricFamily)
-	for _, mf := range mfs {
-		mfsByName[mf.GetName()] = mf
-	}
 	wr := buildWriteRequest(mfs, timestamp, a.labels)
 	decompressed, err := wr.Marshal()
 	if err != nil {
@@ -179,8 +185,7 @@ func (a *Agent) scrape() error {
 	}
 
 	compressed := snappy.Encode(nil, decompressed)
-	err = a.writeToSpool(timestamp, compressed)
-	return err
+	return a.writeToSpool(timestamp, compressed)
 }
 
 func (a *Agent) writeToSpool(timestamp int64, payload []byte) error {

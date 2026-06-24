@@ -1,45 +1,18 @@
 package metadata
 
 import (
-	"context"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 
-	"github.com/coroot/coroot-node-agent/proc"
 	"k8s.io/klog/v2"
 )
 
 func getGcpMetadata() *CloudMetadata {
 	md := &CloudMetadata{Provider: CloudProviderGCP}
 
-	hostNetNs, err := proc.GetHostNetNs()
-	if err != nil {
-		klog.Errorf("failed to get host netns: %v", err)
-		return md
-	}
-	defer hostNetNs.Close()
-	agentNetNs, err := proc.GetSelfNetNs()
-	if err != nil {
-		klog.Errorf("failed to get self netns: %v", err)
-		return md
-	}
-	defer agentNetNs.Close()
-
-	c := &http.Client{
-		Timeout: metadataServiceTimeout,
-		Transport: &http.Transport{
-			DisableKeepAlives: true,
-			DialContext: func(ctx context.Context, network, addr string) (conn net.Conn, err error) {
-				err = proc.ExecuteInNetNs(hostNetNs, agentNetNs, func() error {
-					conn, err = net.DialTimeout(network, addr, metadataServiceTimeout)
-					return err
-				})
-				return conn, err
-			},
-		},
-	}
+	c, cleanup := newMetadataClient()
+	defer cleanup()
 
 	if md.AccountId = getGcpMetadataVariable(c, "project/project-id"); md.AccountId == "" {
 		return nil
