@@ -39,18 +39,18 @@ Product requirements:
 
 Acceptance criteria:
 
-- [ ] **EVT-CRIT-1:** `GOOS=windows go test ./logs` exercises the Event
+- [x] **EVT-CRIT-1:** `GOOS=windows go test ./logs` exercises the Event
       Log collector label contract without importing Linux-only log
       sources.
-- [ ] **EVT-CRIT-2:** `make lint`, `make test`, and
+- [x] **EVT-CRIT-2:** `make lint`, `make test`, and
       `make crossbuild-check` pass.
-- [ ] **EVT-CRIT-3:** A Windows run with default settings subscribes to
+- [x] **EVT-CRIT-3:** A Windows run with default settings subscribes to
       `Application` and `System`, and `/metrics` can expose
       `windows_event_log_messages_total`.
-- [ ] **EVT-CRIT-4:** `--disable-windows-event-log-monitoring` disables
+- [x] **EVT-CRIT-4:** `--disable-windows-event-log-monitoring` disables
       Event Log collection while leaving Docker JSON log parsing
       unchanged.
-- [ ] **EVT-CRIT-5:** User docs list the Event Log flags, default
+- [x] **EVT-CRIT-5:** User docs list the Event Log flags, default
       channels, metric name, and required permissions.
 
 Testing requirements:
@@ -61,6 +61,19 @@ Testing requirements:
   APIs.
 - A Windows smoke test must write or locate a recent Application/System
   event and verify the metric appears.
+
+Verification log:
+
+- 2026-06-25: `make lint`, `make test`, and `make crossbuild-check`
+  passed on the Linux workspace.
+- 2026-06-25: On Windows 11 VM
+  `coroot-win-gpu-buildtest-20260616-0308`, `go test ./logs` passed.
+- 2026-06-25: On the same Windows VM, the built agent ran with
+  `--listen=127.0.0.1:18092` and default Event Log settings. It
+  subscribed to `[Application System]`, `eventcreate` wrote an
+  Application error from provider `CorootEventLogSmoke` with event ID
+  `778`, and `/metrics` emitted
+  `windows_event_log_messages_total{channel="Application",event_id="778",level="error",provider="CorootEventLogSmoke",sample="ERROR coroot event log smoke 20260625 second",...} 1`.
 
 ### M6.2 — Windows OTLP trace export
 

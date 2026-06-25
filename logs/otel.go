@@ -83,20 +83,7 @@ func OtelLogEmitter(containerId string) logparser.OnMsgCallbackF {
 		return nil
 	}
 	return func(ts time.Time, level logparser.Level, patternHash string, msg string) {
-		severityText := level.String()
-		severityNumber := otelLogs.UNSPECIFIED
-		switch level {
-		case logparser.LevelCritical:
-			severityNumber = otelLogs.FATAL
-		case logparser.LevelError:
-			severityNumber = otelLogs.ERROR
-		case logparser.LevelWarning:
-			severityNumber = otelLogs.WARN
-		case logparser.LevelInfo:
-			severityNumber = otelLogs.INFO
-		case logparser.LevelDebug:
-			severityNumber = otelLogs.DEBUG
-		}
+		severityText, severityNumber := otelSeverity(level)
 
 		otelLogger.Emit(
 			otelLogs.NewLogRecord(otelLogs.LogRecordConfig{
@@ -114,4 +101,49 @@ func OtelLogEmitter(containerId string) logparser.OnMsgCallbackF {
 			}),
 		)
 	}
+}
+
+func EventLogEmitter(channel, provider string, eventID uint32) logparser.OnMsgCallbackF {
+	if otelLogger == nil {
+		return nil
+	}
+	return func(ts time.Time, level logparser.Level, patternHash string, msg string) {
+		severityText, severityNumber := otelSeverity(level)
+
+		otelLogger.Emit(
+			otelLogs.NewLogRecord(otelLogs.LogRecordConfig{
+				ObservedTimestamp: ts,
+				SeverityText:      &severityText,
+				SeverityNumber:    &severityNumber,
+				Body:              &msg,
+				Resource: resource.NewSchemaless(
+					semconv.ServiceName("coroot-node-agent"),
+				),
+				Attributes: &[]attribute.KeyValue{
+					attribute.Key("eventlog.channel").String(channel),
+					attribute.Key("eventlog.provider").String(provider),
+					attribute.Key("eventlog.event_id").Int(int(eventID)),
+					attribute.Key("pattern.hash").String(patternHash),
+				},
+			}),
+		)
+	}
+}
+
+func otelSeverity(level logparser.Level) (string, otelLogs.SeverityNumber) {
+	severityText := level.String()
+	severityNumber := otelLogs.UNSPECIFIED
+	switch level {
+	case logparser.LevelCritical:
+		severityNumber = otelLogs.FATAL
+	case logparser.LevelError:
+		severityNumber = otelLogs.ERROR
+	case logparser.LevelWarning:
+		severityNumber = otelLogs.WARN
+	case logparser.LevelInfo:
+		severityNumber = otelLogs.INFO
+	case logparser.LevelDebug:
+		severityNumber = otelLogs.DEBUG
+	}
+	return severityText, severityNumber
 }

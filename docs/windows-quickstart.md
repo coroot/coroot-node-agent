@@ -19,8 +19,8 @@ Final support still requires Windows Server 2022 validation; see
 
 Current Windows metrics include startup, node-level metrics, Docker
 container discovery, Docker `json-file` stdout/stderr log-pattern
-metrics, and partial ETW TCP metrics for process-isolated Windows Docker
-containers.
+metrics, Windows Event Log pattern metrics, and partial ETW TCP metrics
+for process-isolated Windows Docker containers.
 
 ## Build
 
@@ -43,6 +43,35 @@ In another PowerShell session:
 ```powershell
 (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18080/metrics).Content
 ```
+
+## Windows Event Logs
+
+By default, the Windows binary subscribes to future events from the
+`Application` and `System` channels and exposes
+`windows_event_log_messages_total` with `channel`, `provider`,
+`event_id`, `level`, `pattern_hash`, and `sample` labels.
+
+Add channels by repeating `--windows-event-log-channel`:
+
+```powershell
+.\coroot-node-agent.exe `
+  --listen=127.0.0.1:18080 `
+  --wal-dir=C:\ProgramData\Coroot\wal `
+  --windows-event-log-channel Application `
+  --windows-event-log-channel System `
+  --windows-event-log-channel Security
+```
+
+Disable Event Log collection without disabling container log parsing:
+
+```powershell
+.\coroot-node-agent.exe --disable-windows-event-log-monitoring
+```
+
+If `--logs-endpoint` or `--collector-endpoint` is configured, parsed
+Event Log patterns are also sent through OTLP logs with
+`eventlog.channel`, `eventlog.provider`, `eventlog.event_id`, and
+`pattern.hash` attributes.
 
 ## Service Install
 

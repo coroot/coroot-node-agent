@@ -60,7 +60,7 @@ func GetString(fl *string) string {
 }
 
 func init() {
-	if strings.HasSuffix(os.Args[0], ".test") {
+	if isGoTestBinary(os.Args[0]) {
 		return
 	}
 
@@ -86,4 +86,9 @@ func init() {
 	if *MetricsEndpoint != nil {
 		*ListenAddress = "127.0.0.1:10300"
 	}
+}
+
+func isGoTestBinary(name string) bool {
+	name = strings.ToLower(name)
+	return strings.HasSuffix(name, ".test") || strings.HasSuffix(name, ".test.exe")
 }

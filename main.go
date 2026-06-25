@@ -118,6 +118,7 @@ func runAgent(ctx context.Context) error {
 			registerer = prometheus.WrapRegistererWith(prometheus.Labels{"az": az, "region": region}, registerer)
 		}
 	}
+	cleanupPlatformCollectors := registerPlatformCollectors(registerer)
 	processInfoCh, profilingCh := profiling.Init(machineID, hostname)
 	cr, err := containers.NewRegistry(registerer, processInfoCh, profilingCh, gpuCollector.ProcessUsageSampleCh)
 	if err != nil {
@@ -166,6 +167,7 @@ func runAgent(ctx context.Context) error {
 	go func() {
 		defer close(done)
 		cr.Close()
+		cleanupPlatformCollectors()
 		profiling.Stop()
 		logs.Shutdown(context.Background())
 	}()

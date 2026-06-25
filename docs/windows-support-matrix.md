@@ -36,6 +36,7 @@ milestones, but final support validation still requires a Windows Server
 | Startup and `node_*` metrics | Implemented and Windows 11 validated. |
 | `container_info` and restarts | Implemented for Docker Windows containers. |
 | Docker stdout/stderr log patterns | Implemented for Docker `json-file` log driver. |
+| Windows Event Log patterns | Implemented for `Application` and `System` by default. Exposes `windows_event_log_messages_total` and can subscribe to additional channels with `--windows-event-log-channel`. |
 | TCP connect/bytes/active metrics | Implemented for process-isolated Docker containers where ETW data events carry host PIDs. |
 | DNS, failed connect, listen metrics | Deferred to `plans/windows-network-fallback-plan.md`. |
 | Profiling | Not supported on Windows yet; the Windows package is an explicit no-op. Tracked in `plans/windows-profiling-plan.md`. |
