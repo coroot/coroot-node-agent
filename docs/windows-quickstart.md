@@ -73,6 +73,25 @@ Event Log patterns are also sent through OTLP logs with
 `eventlog.channel`, `eventlog.provider`, `eventlog.event_id`, and
 `pattern.hash` attributes.
 
+## OpenTelemetry Trace Export
+
+Windows trace export is supported for agent lifecycle spans. It is not
+Linux L7 tracing parity: HTTP, database, DNS, and per-container trace
+spans are still Linux-only.
+
+Send lifecycle spans to an OTLP HTTP trace endpoint:
+
+```powershell
+.\coroot-node-agent.exe `
+  --listen=127.0.0.1:18080 `
+  --wal-dir=C:\ProgramData\Coroot\wal `
+  --traces-endpoint=https://collector.example.com/v1/traces `
+  --traces-sampling=1.0
+```
+
+When `--collector-endpoint` is set and `--traces-endpoint` is omitted,
+the Windows binary derives `--traces-endpoint=<collector>/v1/traces`.
+
 ## Service Install
 
 Run PowerShell as Administrator:

@@ -89,16 +89,16 @@ Product requirements:
 
 Acceptance criteria:
 
-- [ ] **TRACE-CRIT-1:** `GOOS=windows go test ./tracing` validates
+- [x] **TRACE-CRIT-1:** `GOOS=windows go test ./tracing` validates
       Windows sampling configuration and disabled-endpoint behavior.
-- [ ] **TRACE-CRIT-2:** `make lint`, `make test`, and
+- [x] **TRACE-CRIT-2:** `make lint`, `make test`, and
       `make crossbuild-check` pass.
-- [ ] **TRACE-CRIT-3:** When `--traces-endpoint` is unset, Windows trace
+- [x] **TRACE-CRIT-3:** When `--traces-endpoint` is unset, Windows trace
       setup is a no-op and startup continues.
-- [ ] **TRACE-CRIT-4:** When `--traces-endpoint` is set, the Windows
+- [x] **TRACE-CRIT-4:** When `--traces-endpoint` is set, the Windows
       binary initializes an OTLP trace provider with the configured
       sampling ratio and emits at least one lifecycle span.
-- [ ] **TRACE-CRIT-5:** User docs describe Windows trace export as
+- [x] **TRACE-CRIT-5:** User docs describe Windows trace export as
       lifecycle-only and do not imply L7 tracing parity.
 
 Testing requirements:
@@ -108,6 +108,16 @@ Testing requirements:
 - Cross-build confirms Linux tracing remains Linux-tagged and unchanged.
 - A local OTLP test receiver or mocked exporter validates lifecycle span
   emission on Windows.
+
+Verification log:
+
+- 2026-06-25: `make lint`, `make test`, and `make crossbuild-check`
+  passed on the Linux workspace.
+- 2026-06-25: On Windows 11 VM
+  `coroot-win-gpu-buildtest-20260616-0308`, `go test ./tracing`
+  passed. The Windows test suite covered nil-endpoint no-op behavior,
+  sampling normalization, and lifecycle span delivery to an
+  `httptest` OTLP HTTP receiver.
 
 ### M6.3 — Windows profiling MVP
 
