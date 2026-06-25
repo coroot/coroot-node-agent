@@ -165,7 +165,28 @@ account is the validated service account on the development VM.
 
 GitHub releases publish `coroot-node-agent-windows-amd64.msi` alongside the
 raw Windows `.exe`. The MSI is built on GitHub-hosted Windows runners with
-WiX Toolset v3.14.1 and is not Authenticode-signed yet.
+WiX Toolset v3.14.1. Release CI signs the `.exe` and `.msi` when the
+maintainer repository has `WINDOWS_SIGNING_CERT_BASE64` and
+`WINDOWS_SIGNING_CERT_PASSWORD` secrets configured; otherwise the assets
+are intentionally uploaded unsigned. Each Windows release also includes
+`SHA256SUMS-windows-amd64.txt`.
+
+Verify checksums:
+
+```powershell
+Get-Content .\SHA256SUMS-windows-amd64.txt | ForEach-Object {
+  $hash, $name = $_ -split '\s+', 2
+  $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $name).Hash.ToLowerInvariant()
+  if ($actual -ne $hash) { throw "checksum mismatch for $name" }
+}
+```
+
+Verify Authenticode signatures when the release is signed:
+
+```powershell
+Get-AuthenticodeSignature .\coroot-node-agent-windows-amd64.exe
+Get-AuthenticodeSignature .\coroot-node-agent-windows-amd64.msi
+```
 
 Run PowerShell as Administrator:
 

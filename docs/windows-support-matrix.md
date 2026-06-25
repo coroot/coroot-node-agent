@@ -49,7 +49,8 @@ milestones, but final support validation still requires a Windows Server
 |----------|----------------|
 | Raw `.exe` | Built and uploaded by GitHub release CI. |
 | MSI | Built by GitHub release CI on `windows-latest` with WiX Toolset v3.14.1. Windows 11 build, install/scrape, uninstall, and GitHub release artifact validation passed. |
-| Authenticode signing | Deferred. Release MSIs are currently unsigned. |
+| Checksums | Windows releases upload `SHA256SUMS-windows-amd64.txt` for the `.exe` and `.msi`. |
+| Authenticode signing | Release CI signs the Windows `.exe` and `.msi` when `WINDOWS_SIGNING_CERT_BASE64` and `WINDOWS_SIGNING_CERT_PASSWORD` secrets are configured. Artifacts are unsigned when those secrets are absent. |
 | MSIX | Deferred. |
 
 ## Final Support Gate

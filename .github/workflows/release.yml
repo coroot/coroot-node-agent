@@ -135,6 +135,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+      WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
 
     steps:
       - name: Enable Git long paths
@@ -155,6 +158,13 @@ jobs:
         run: |
           go build -mod=readonly -ldflags "-X 'github.com/coroot/coroot-node-agent/flags.Version=${{ github.event.release.tag_name }}'" -o "$env:RUNNER_TEMP\coroot-node-agent-windows-amd64.exe" .
 
+      - name: Sign Windows amd64 binary
+        if: ${{ env.WINDOWS_SIGNING_CERT_BASE64 != '' && env.WINDOWS_SIGNING_CERT_PASSWORD != '' }}
+        shell: pwsh
+        run: |
+          .\scripts\sign-windows-artifact.ps1 `
+            -Path "$env:RUNNER_TEMP\coroot-node-agent-windows-amd64.exe"
+
       - name: Build Windows amd64 MSI
         shell: pwsh
         run: |
@@ -164,12 +174,33 @@ jobs:
             -OutputDir "$env:RUNNER_TEMP" `
             -WixVersion "${{ env.WIX_VERSION }}"
 
+      - name: Sign Windows amd64 MSI
+        if: ${{ env.WINDOWS_SIGNING_CERT_BASE64 != '' && env.WINDOWS_SIGNING_CERT_PASSWORD != '' }}
+        shell: pwsh
+        run: |
+          .\scripts\sign-windows-artifact.ps1 `
+            -Path "$env:RUNNER_TEMP\coroot-node-agent-windows-amd64.msi"
+
+      - name: Report unsigned Windows artifacts
+        if: ${{ env.WINDOWS_SIGNING_CERT_BASE64 == '' || env.WINDOWS_SIGNING_CERT_PASSWORD == '' }}
+        shell: pwsh
+        run: |
+          Write-Warning "WINDOWS_SIGNING_CERT_BASE64 and WINDOWS_SIGNING_CERT_PASSWORD are not both configured; Windows release artifacts will be unsigned."
+
+      - name: Generate Windows checksums
+        shell: pwsh
+        run: |
+          .\scripts\write-windows-checksums.ps1 `
+            -Path "$env:RUNNER_TEMP\coroot-node-agent-windows-amd64.exe", "$env:RUNNER_TEMP\coroot-node-agent-windows-amd64.msi" `
+            -OutputPath "$env:RUNNER_TEMP\SHA256SUMS-windows-amd64.txt"
+
       - name: Upload Windows artifacts to the release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ runner.temp }}/coroot-node-agent-windows-amd64.exe
             ${{ runner.temp }}/coroot-node-agent-windows-amd64.msi
+            ${{ runner.temp }}/SHA256SUMS-windows-amd64.txt
 
   finalize:
     needs: [linux, merge, build-windows]

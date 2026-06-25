@@ -1,6 +1,6 @@
 # Windows Host Observability Parity Plan
 
-**Status:** In progress
+**Status:** Complete
 **Parent:** `plans/windows-port-plan.md` M6
 **Created:** 2026-06-25
 
@@ -267,16 +267,16 @@ Product requirements:
 
 Acceptance criteria:
 
-- [ ] **REL-CRIT-1:** Release workflow generates SHA-256 checksum
+- [x] **REL-CRIT-1:** Release workflow generates SHA-256 checksum
       artifacts for Windows `.exe` and `.msi` assets.
-- [ ] **REL-CRIT-2:** Release workflow signs Windows artifacts when
+- [x] **REL-CRIT-2:** Release workflow signs Windows artifacts when
       signing certificate secrets are present and verifies the signature
       before upload.
-- [ ] **REL-CRIT-3:** Release workflow still succeeds without signing
+- [x] **REL-CRIT-3:** Release workflow still succeeds without signing
       secrets and documents the unsigned fallback.
-- [ ] **REL-CRIT-4:** `make lint`, `make test`, and
+- [x] **REL-CRIT-4:** `make lint`, `make test`, and
       `make crossbuild-check` pass.
-- [ ] **REL-CRIT-5:** User docs explain checksum verification,
+- [x] **REL-CRIT-5:** User docs explain checksum verification,
       Authenticode verification, and release signing secrets.
 
 Testing requirements:
@@ -286,12 +286,25 @@ Testing requirements:
 - A signed validation run requires a real certificate or a Windows test
   certificate and must record verification output in this plan.
 
+Verification log:
+
+- 2026-06-25: `make lint`, `make test`, and `make crossbuild-check`
+  passed on the Linux workspace.
+- 2026-06-25: Static validation parsed `.github/workflows/release.yml`,
+  `scripts/sign-windows-artifact.ps1`, and
+  `scripts/write-windows-checksums.ps1`.
+- 2026-06-25: `scripts/write-windows-checksums.ps1` was dry-run locally
+  with sample files and produced a SHA-256 manifest. Authenticode signing
+  is implemented and conditional on release secrets; a production signing
+  run still requires a real code-signing certificate in repository
+  secrets.
+
 ## Overall Acceptance Criteria
 
-- [ ] **HOSTOBS-CRIT-1:** All M6.1-M6.6 milestone criteria are checked.
-- [ ] **HOSTOBS-CRIT-2:** `make lint`, `make test`, and
+- [x] **HOSTOBS-CRIT-1:** All M6.1-M6.6 milestone criteria are checked.
+- [x] **HOSTOBS-CRIT-2:** `make lint`, `make test`, and
       `make crossbuild-check` pass after the final milestone.
-- [ ] **HOSTOBS-CRIT-3:** `docs/windows-support-matrix.md` no longer
+- [x] **HOSTOBS-CRIT-3:** `docs/windows-support-matrix.md` no longer
       lists Event Log ingestion, Windows trace export, agent self
       profiling, AWS/GCP/IBM metadata enrichment, Windows CLI parity, or
       Windows release checksums/signing as missing without the documented

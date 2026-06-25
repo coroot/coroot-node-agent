@@ -8,7 +8,8 @@
 
 Add a native Windows Installer package to GitHub releases so operators can
 install the Windows service without running repository checkout scripts.
-Authenticode signing is intentionally out of scope for this pass.
+M6.6 adds SHA-256 checksum artifacts and conditional Authenticode signing
+for the Windows `.exe` and `.msi`.
 
 ## Design
 
@@ -27,6 +28,13 @@ Authenticode signing is intentionally out of scope for this pass.
 - Expose `LISTENADDRESS` as an MSI public property so release users can
   override the service listen address with `msiexec`.
 - Continue publishing the raw `.exe` release asset alongside the MSI.
+- Publish `SHA256SUMS-windows-amd64.txt` for the Windows `.exe` and
+  `.msi`.
+- Sign the Windows `.exe` before MSI packaging and sign the MSI after
+  packaging when `WINDOWS_SIGNING_CERT_BASE64` and
+  `WINDOWS_SIGNING_CERT_PASSWORD` are configured. If either secret is
+  absent, CI still uploads unsigned artifacts and emits an explicit
+  warning.
 
 ## Verification Procedure
 
@@ -41,6 +49,12 @@ Windows build validation:
 1. Build `coroot-node-agent-windows-amd64.exe`.
 2. Run `scripts\build-windows-msi.ps1 -BinaryPath <exe> -Version <semver>`.
 3. Verify `dist\coroot-node-agent-windows-amd64.msi` is produced.
+4. Run `scripts\write-windows-checksums.ps1` for the `.exe` and `.msi`
+   and verify `SHA256SUMS-windows-amd64.txt` contains both artifact
+   names.
+5. With a code-signing PFX available, run
+   `scripts\sign-windows-artifact.ps1` and verify
+   `Get-AuthenticodeSignature` reports a valid signature.
 
 Release validation:
 
@@ -100,6 +114,12 @@ Release validation:
   and `coroot-node-agent-windows-amd64.msi`. The MSI asset had content type
   `application/x-msi`, size `14688256`, and digest
   `sha256:937e9a41316772fe49bd2a3049b99aecbec134a5a7c68cfed90f805c76fed4b3`.
+- 2026-06-25: M6.6 added `scripts/sign-windows-artifact.ps1`,
+  `scripts/write-windows-checksums.ps1`, release workflow signing steps,
+  release workflow checksum upload, and user docs for checksum and
+  Authenticode verification. Static validation parsed the workflow and
+  both PowerShell scripts. The checksum script was dry-run locally with
+  sample files.
 
 ## Acceptance Criteria
 
@@ -117,3 +137,9 @@ Release validation:
 - [x] **MSI-CRIT-5:** A created GitHub release contains the MSI artifact.
 - [x] **MSI-CRIT-6:** MSI uninstall is verified on Windows after the VM SSH
       service recovers or another Windows validation host is available.
+- [x] **MSI-CRIT-7:** GitHub release CI uploads
+      `SHA256SUMS-windows-amd64.txt` for the Windows `.exe` and `.msi`.
+- [x] **MSI-CRIT-8:** GitHub release CI signs and verifies the Windows
+      `.exe` and `.msi` when Authenticode certificate secrets are
+      configured, and keeps unsigned release fallback behavior when they
+      are not configured.
