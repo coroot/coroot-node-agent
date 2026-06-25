@@ -22,6 +22,13 @@ container discovery, Docker `json-file` stdout/stderr log-pattern
 metrics, Windows Event Log pattern metrics, and partial ETW TCP metrics
 for process-isolated Windows Docker containers.
 
+Cloud metadata detection runs automatically. On AWS, GCP, IBM, Azure,
+Hetzner, DigitalOcean, Alibaba, Scaleway, and Oracle, the Windows binary
+enriches `node_cloud_info` from the provider metadata API when it is
+reachable. Use `--provider`, `--region`, `--availability-zone`,
+`--instance-type`, and `--instance-life-cycle` to override labels
+manually.
+
 ## Build
 
 From the repository root:

@@ -34,6 +34,7 @@ milestones, but final support validation still requires a Windows Server
 | Area | Windows status |
 |------|----------------|
 | Startup and `node_*` metrics | Implemented and Windows 11 validated. |
+| Cloud metadata enrichment | Implemented for AWS, GCP, IBM, Azure, Hetzner, DigitalOcean, Alibaba, Scaleway, and Oracle metadata sources where the provider metadata API is reachable. |
 | `container_info` and restarts | Implemented for Docker Windows containers. |
 | Docker stdout/stderr log patterns | Implemented for Docker `json-file` log driver. |
 | Windows Event Log patterns | Implemented for `Application` and `System` by default. Exposes `windows_event_log_messages_total` and can subscribe to additional channels with `--windows-event-log-channel`. |

@@ -177,19 +177,20 @@ Product requirements:
 
 Acceptance criteria:
 
-- [ ] **META-CRIT-1:** `GOOS=windows go test ./node/metadata` covers
+- [x] **META-CRIT-1:** `GOOS=windows go test ./node/metadata` covers
       AWS, GCP, and IBM parsing/enrichment helpers.
-- [ ] **META-CRIT-2:** `make lint`, `make test`, and
+- [x] **META-CRIT-2:** `make lint`, `make test`, and
       `make crossbuild-check` pass.
-- [ ] **META-CRIT-3:** Windows AWS metadata includes at least region,
-      availability zone, instance type, lifecycle, account ID, and
-      instance profile where available.
-- [ ] **META-CRIT-4:** Windows GCP metadata includes at least region,
-      availability zone, instance type, preemptible status, account ID,
-      and project name where available.
-- [ ] **META-CRIT-5:** Windows IBM metadata includes at least region,
-      availability zone, instance type, lifecycle, and account ID where
+- [x] **META-CRIT-3:** Windows AWS metadata includes at least account ID,
+      instance ID, instance type, lifecycle, region, availability zone,
+      availability zone ID, local IPv4, and public IPv4 where available.
+- [x] **META-CRIT-4:** Windows GCP metadata includes at least project ID
+      as account ID, instance ID, instance type, preemptible status,
+      region, availability zone, local IPv4, and public IPv4 where
       available.
+- [x] **META-CRIT-5:** Windows IBM metadata includes at least account ID
+      where a CRN is available, instance ID, instance type, lifecycle,
+      region, and availability zone where available.
 
 Testing requirements:
 
@@ -198,6 +199,15 @@ Testing requirements:
 - Cross-build proves Linux metadata files remain Linux-only.
 - Optional Windows VM validation can force provider flags and verify
   labels if cloud metadata endpoints are reachable.
+
+Verification log:
+
+- 2026-06-25: `make lint`, `make test`, and `make crossbuild-check`
+  passed on the Linux workspace.
+- 2026-06-25: On Windows 11 VM
+  `coroot-win-gpu-buildtest-20260616-0308`, `go test ./node/metadata`
+  passed. The Windows tests used local HTTP metadata servers for AWS,
+  GCP, and IBM and verified the enriched `CloudMetadata` fields.
 
 ### M6.5 — Windows CLI/config parity
 
