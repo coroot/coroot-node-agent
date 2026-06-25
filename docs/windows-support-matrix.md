@@ -40,7 +40,7 @@ milestones, but final support validation still requires a Windows Server
 | TCP connect/bytes/active metrics | Implemented for process-isolated Docker containers where ETW data events carry host PIDs. |
 | DNS, failed connect, listen metrics | Deferred to `plans/windows-network-fallback-plan.md`. |
 | OTLP trace export | Implemented for Windows agent lifecycle spans when `--traces-endpoint` or `--collector-endpoint` is configured. Linux L7 trace parity remains unsupported on Windows. |
-| Profiling | Not supported on Windows yet; the Windows package is an explicit no-op. Tracked in `plans/windows-profiling-plan.md`. |
+| Profiling | Agent self CPU profiling is implemented with `--windows-profile=agent-cpu` and `--profiles-endpoint`. Host process and container profiling remain deferred in `plans/windows-profiling-plan.md`. |
 
 ## Packaging
 

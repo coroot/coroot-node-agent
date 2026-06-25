@@ -92,6 +92,27 @@ Send lifecycle spans to an OTLP HTTP trace endpoint:
 When `--collector-endpoint` is set and `--traces-endpoint` is omitted,
 the Windows binary derives `--traces-endpoint=<collector>/v1/traces`.
 
+## Windows Profiling
+
+Windows profiling is disabled by default. The supported MVP mode is
+agent self CPU profiling: the agent periodically collects a Go CPU pprof
+for `coroot-node-agent.exe` itself and uploads it to the configured
+profiles endpoint. Host process profiling and container profiling are
+future work.
+
+```powershell
+.\coroot-node-agent.exe `
+  --listen=127.0.0.1:18080 `
+  --wal-dir=C:\ProgramData\Coroot\wal `
+  --profiles-endpoint=https://collector.example.com/v1/profiles `
+  --windows-profile=agent-cpu `
+  --windows-profile-interval=1m `
+  --windows-profile-duration=10s
+```
+
+When `--collector-endpoint` is set and `--profiles-endpoint` is omitted,
+the Windows binary derives `--profiles-endpoint=<collector>/v1/profiles`.
+
 ## Service Install
 
 Run PowerShell as Administrator:

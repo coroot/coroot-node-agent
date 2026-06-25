@@ -21,10 +21,18 @@ var (
 
 	TracesEndpoint = kingpin.Flag("traces-endpoint", "The URL of the endpoint to send traces to").Envar(envar("TRACES_ENDPOINT")).URL()
 	TracesSampling = kingpin.Flag("traces-sampling", "Trace sampling rate (0.0 to 1.0)").Default("1.0").Envar(envar("TRACES_SAMPLING")).Float64()
+
+	ProfilesEndpoint       = kingpin.Flag("profiles-endpoint", "The URL of the endpoint to send profiles to").Envar(envar("PROFILES_ENDPOINT")).URL()
+	WindowsProfile         = kingpin.Flag("windows-profile", "Windows profiling mode: disabled, agent-cpu").Default("disabled").Envar(envar("WINDOWS_PROFILE")).Enum("disabled", "agent-cpu")
+	WindowsProfileInterval = kingpin.Flag("windows-profile-interval", "How often to collect Windows agent self profiles").Default("1m").Envar(envar("WINDOWS_PROFILE_INTERVAL")).Duration()
+	WindowsProfileDuration = kingpin.Flag("windows-profile-duration", "How long each Windows agent self CPU profile samples").Default("10s").Envar(envar("WINDOWS_PROFILE_DURATION")).Duration()
 )
 
 func platformEndpoints(u *url.URL) {
 	if *TracesEndpoint == nil {
 		*TracesEndpoint = u.JoinPath("/v1/traces")
+	}
+	if *ProfilesEndpoint == nil {
+		*ProfilesEndpoint = u.JoinPath("/v1/profiles")
 	}
 }

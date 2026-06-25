@@ -134,16 +134,16 @@ Product requirements:
 
 Acceptance criteria:
 
-- [ ] **PROF-CRIT-1:** `GOOS=windows go test ./profiling` validates the
+- [x] **PROF-CRIT-1:** `GOOS=windows go test ./profiling` validates the
       disabled/default state and request-building behavior.
-- [ ] **PROF-CRIT-2:** `make lint`, `make test`, and
+- [x] **PROF-CRIT-2:** `make lint`, `make test`, and
       `make crossbuild-check` pass.
-- [ ] **PROF-CRIT-3:** With `--profiles-endpoint` and
+- [x] **PROF-CRIT-3:** With `--profiles-endpoint` and
       `--windows-profile=agent-cpu`, the Windows binary periodically
       uploads Go CPU pprof payloads for the agent process.
-- [ ] **PROF-CRIT-4:** With default settings, Windows profiling starts no
+- [x] **PROF-CRIT-4:** With default settings, Windows profiling starts no
       goroutines and sends no profile uploads.
-- [ ] **PROF-CRIT-5:** Docs identify the MVP as agent self profiling and
+- [x] **PROF-CRIT-5:** Docs identify the MVP as agent self profiling and
       keep host/container process profiling listed as future work.
 
 Testing requirements:
@@ -152,6 +152,16 @@ Testing requirements:
 - A Windows smoke test runs with a short interval and verifies an upload
   reaches a test HTTP endpoint.
 - Cross-build confirms Linux profiling behavior is not changed.
+
+Verification log:
+
+- 2026-06-25: `make lint`, `make test`, and `make crossbuild-check`
+  passed on the Linux workspace.
+- 2026-06-25: On Windows 11 VM
+  `coroot-win-gpu-buildtest-20260616-0308`, `go test ./profiling`
+  passed. The Windows tests covered default disabled behavior, upload
+  request labels, and a short agent CPU pprof upload to an `httptest`
+  receiver.
 
 ### M6.4 — Rich Windows cloud metadata
 
