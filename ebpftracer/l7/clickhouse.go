@@ -2,11 +2,17 @@ package l7
 
 import (
 	"bytes"
+	"unicode/utf8"
 
 	"github.com/ClickHouse/ch-go/proto"
 )
 
-func ParseClickhouse(payload []byte) string {
+func ParseClickhouse(payload []byte) (query string) {
+	defer func() {
+		if recover() != nil {
+			query = ""
+		}
+	}()
 	r := proto.NewReader(bytes.NewReader(payload))
 	var err error
 	if _, err = r.Byte(); err != nil {
@@ -53,14 +59,17 @@ func ParseClickhouse(payload []byte) string {
 	if err != nil {
 		return ""
 	}
-	query := make([]byte, min(l, 1024))
-	n, _ := r.Read(query)
-	query = bytes.TrimSpace(query[:n])
-	if len(query) == 0 {
+	buf := make([]byte, min(l, 1024))
+	n, _ := r.Read(buf)
+	buf = bytes.TrimSpace(buf[:n])
+	if len(buf) == 0 {
+		return ""
+	}
+	if !utf8.Valid(buf) { // not a real query: misclassified or corrupted payload
 		return ""
 	}
 	if n < l {
-		query = append(query[:len(query)-1], []byte("...<TRUNCATED>")...)
+		buf = append(buf[:len(buf)-1], []byte("...<TRUNCATED>")...)
 	}
-	return string(query)
+	return string(buf)
 }

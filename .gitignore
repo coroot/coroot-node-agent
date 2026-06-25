@@ -1,2 +1,6 @@
 .idea
 .vagrant
+/build.sh
+*.exe
+*.msi
+*.wixobj

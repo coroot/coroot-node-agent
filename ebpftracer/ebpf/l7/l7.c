@@ -67,7 +67,8 @@ struct l7_event {
     __u64 duration;
     __u8 protocol;
     __u8 method;
-    __u16 padding;
+    __u8 is_inbound;
+    __u8 padding;
     __u32 statement_id;
     __u64 payload_size;
     char payload[MAX_PAYLOAD_SIZE];
@@ -221,7 +222,15 @@ __u64 read_iovec(char *iovec, __u64 iovlen, __u64 ret, char *buf, __u64 *total_s
 }
 
 static inline __attribute__((__always_inline__))
-int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, __u64 iovlen) {
+int handle_request(void *ctx, struct connection_id cid, struct connection *conn,
+                   __u16 is_tls, char *payload, __u64 size, __u64 total_size);
+
+static inline __attribute__((__always_inline__))
+int handle_response(void *ctx, struct connection_id cid, struct connection *conn,
+                    __u16 is_tls, char *payload, __u64 ret, __u64 total_size);
+
+static inline __attribute__((__always_inline__))
+int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, __u8 socket_only, char *buf, __u64 size, __u64 iovlen) {
     __u64 id = bpf_get_current_pid_tgid();
     char *plain_buf = 0;
     __u64 plain_size = 0;
@@ -241,7 +250,17 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
 
     struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
     if (!conn) {
-        return 0;
+        if (!socket_only) {
+            return 0;
+        }
+        struct connection new_conn = {};
+        new_conn.timestamp = bpf_ktime_get_ns();
+        new_conn.is_inbound = 0;
+        bpf_map_update_elem(&active_connections, &cid, &new_conn, BPF_NOEXIST);
+        conn = bpf_map_lookup_elem(&active_connections, &cid);
+        if (!conn) {
+            return 0;
+        }
     }
 
     char* payload = buf;
@@ -267,6 +286,23 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         is_tls = 1;
     }
 
+    if (conn->is_inbound) {
+        return handle_response(ctx, cid, conn, is_tls, payload, size, total_size);
+    }
+    return handle_request(ctx, cid, conn, is_tls, payload, size, total_size);
+}
+
+static inline __attribute__((__always_inline__))
+int handle_request(void *ctx, struct connection_id cid, struct connection *conn,
+                   __u16 is_tls, char *payload, __u64 size, __u64 total_size) {
+    __u32 zero = 0;
+    struct l7_request_key k = {.pid = cid.pid, .fd = cid.fd, .is_tls = is_tls, .stream_id = -1};
+
+    struct l7_request *pending = bpf_map_lookup_elem(&active_l7_requests, &k);
+    if (pending && pending->protocol == PROTOCOL_UNKNOWN && pending->partial == 1) {
+        bpf_map_delete_elem(&active_l7_requests, &k);
+    }
+
     struct l7_request *req = bpf_map_lookup_elem(&l7_request_heap, &zero);
     if (!req) {
         return 0;
@@ -274,24 +310,24 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     req->protocol = PROTOCOL_UNKNOWN;
     req->partial = 0;
     req->request_id = 0;
+    req->request_type = 0;
     req->ns = 0;
     req->payload_size = size;
-    struct l7_request_key k = {};
-    k.pid = cid.pid;
-    k.fd = cid.fd;
-    k.is_tls = is_tls;
-    k.stream_id = -1;
 
     if (is_http_request(payload)) {
         req->protocol = PROTOCOL_HTTP;
     } else if (is_postgres_query(payload, size, &req->request_type)) {
         if (req->request_type == POSTGRES_FRAME_CLOSE) {
+            if (conn->is_inbound) {
+                return 0;
+            }
             struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
             if (!e) {
                 return 0;
             }
             e->protocol = PROTOCOL_POSTGRES;
             e->method = METHOD_STATEMENT_CLOSE;
+            e->is_inbound = 0;
             e->payload_size = size;
             COPY_PAYLOAD(e->payload, size, payload);
             send_event(ctx, e, cid, conn);
@@ -302,14 +338,18 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         req->protocol = PROTOCOL_REDIS;
     } else if (is_memcached_query(payload, size)) {
         req->protocol = PROTOCOL_MEMCACHED;
-    } else if (is_mysql_query(payload, size, &req->request_type)) {
+    } else if (is_mysql_query(payload, size, &req->request_type, pending)) {
         if (req->request_type == MYSQL_COM_STMT_CLOSE) {
+            if (conn->is_inbound) {
+                return 0;
+            }
             struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
             if (!e) {
                 return 0;
             }
             e->protocol = PROTOCOL_MYSQL;
             e->method = METHOD_STATEMENT_CLOSE;
+            e->is_inbound = 0;
             e->payload_size = size;
             COPY_PAYLOAD(e->payload, size, payload);
             send_event(ctx, e, cid, conn);
@@ -318,22 +358,28 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         req->protocol = PROTOCOL_MYSQL;
     } else if (is_mongo_query(payload, size)) {
         req->protocol = PROTOCOL_MONGO;
-    } else if (is_rabbitmq_produce(payload, size)) {
-        struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
-        if (!e) {
-            return 0;
+    } else if (is_rabbitmq_method_frame(payload, size)) {
+        if (!conn->is_inbound && rabbitmq_method_matches(payload, RABBITMQ_METHOD_PUBLISH)) {
+            struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
+            if (!e) {
+                return 0;
+            }
+            e->protocol = PROTOCOL_RABBITMQ;
+            e->method = METHOD_PRODUCE;
+            e->status = STATUS_OK;
+            e->is_inbound = 0;
+            send_event(ctx, e, cid, conn);
         }
-        e->protocol = PROTOCOL_RABBITMQ;
-        e->method = METHOD_PRODUCE;
-        send_event(ctx, e, cid, conn);
         return 0;
-    } else if (nats_method(payload, size) == METHOD_PRODUCE) {
+    } else if (!conn->is_inbound && nats_method(payload, size) == METHOD_PRODUCE) {
         struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
         if (!e) {
             return 0;
         }
         e->protocol = PROTOCOL_NATS;
         e->method = METHOD_PRODUCE;
+        e->status = STATUS_OK;
+        e->is_inbound = 0;
         send_event(ctx, e, cid, conn);
         return 0;
     } else if (is_cassandra_request(payload, size, &k.stream_id)) {
@@ -345,6 +391,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         }
         e->protocol = PROTOCOL_HTTP2;
         e->method = METHOD_HTTP2_CLIENT_FRAMES;
+        e->is_inbound = conn->is_inbound;
         e->duration = bpf_ktime_get_ns();
         e->payload_size = size;
         COPY_PAYLOAD(e->payload, size, payload);
@@ -354,7 +401,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
         req->protocol = PROTOCOL_CLICKHOUSE;
     } else if (is_zk_request(payload, total_size)) {
         req->protocol = PROTOCOL_ZOOKEEPER;
-    }  else if (is_kafka_request(payload, size, &req->request_id)) {
+    } else if (is_kafka_request(payload, size, &req->request_id)) {
         req->protocol = PROTOCOL_KAFKA;
         struct l7_request *prev_req = bpf_map_lookup_elem(&active_l7_requests, &k);
         if (prev_req && prev_req->protocol == PROTOCOL_KAFKA) {
@@ -369,6 +416,13 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
     }
 
     if (req->protocol == PROTOCOL_UNKNOWN) {
+        __u32 payload_length;
+        if (conn->is_inbound && is_mysql_partial_header(payload, size, &payload_length)) {
+            req->partial = 1;
+            req->payload_size = payload_length;
+            req->ns = bpf_ktime_get_ns();
+            bpf_map_update_elem(&active_l7_requests, &k, req, BPF_NOEXIST);
+        }
         return 0;
     }
     if (req->ns == 0) {
@@ -380,7 +434,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, char *buf, __u64 size, 
 }
 
 static inline __attribute__((__always_inline__))
-int trace_enter_read(__u64 id, __u32 pid, __u64 fd, char *buf, __u64 *ret, __u64 iovlen) {
+int trace_enter_read(__u64 id, __u32 pid, __u64 fd, __u8 socket_only, char *buf, __u64 *ret, __u64 iovlen) {
     if (bpf_map_lookup_elem(&rustls_pids, &pid)) {
         bpf_map_update_elem(&rustls_last_read_fd, &id, &fd, BPF_ANY);
     }
@@ -388,13 +442,13 @@ int trace_enter_read(__u64 id, __u32 pid, __u64 fd, char *buf, __u64 *ret, __u64
         bpf_map_update_elem(&java_tls_last_read_fd, &id, &fd, BPF_ANY);
     }
 
-    struct connection_id cid = {};
-    cid.pid = pid;
-    cid.fd = fd;
-
-    struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
-    if (!conn) {
-        return 0;
+    if (!socket_only) {
+        struct connection_id cid = {};
+        cid.pid = pid;
+        cid.fd = fd;
+        if (!bpf_map_lookup_elem(&active_connections, &cid)) {
+            return 0;
+        }
     }
 
     struct read_args args = {};
@@ -415,17 +469,6 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     struct connection_id cid = {};
     cid.pid = pid;
     cid.fd = args->fd;
-    struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
-    if (!conn) {
-        bpf_map_delete_elem(&active_reads, &id);
-        return 0;
-    }
-    struct l7_request_key k = {};
-    k.pid = cid.pid;
-    k.fd = cid.fd;
-    k.is_tls = is_tls;
-    k.stream_id = -1;
-
     bpf_map_delete_elem(&active_reads, &id);
 
     if (ret <= 0) {
@@ -436,6 +479,18 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
             return 0;
         };
         if (ret <= 0) {
+            return 0;
+        }
+    }
+
+    struct connection *conn = bpf_map_lookup_elem(&active_connections, &cid);
+    if (!conn) {
+        struct connection new_conn = {};
+        new_conn.timestamp = bpf_ktime_get_ns();
+        new_conn.is_inbound = 1;
+        bpf_map_update_elem(&active_connections, &cid, &new_conn, BPF_NOEXIST);
+        conn = bpf_map_lookup_elem(&active_connections, &cid);
+        if (!conn) {
             return 0;
         }
     }
@@ -458,6 +513,17 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         __sync_fetch_and_add(&conn->bytes_received, total_size);
     }
 
+    if (conn->is_inbound) {
+        return handle_request(ctx, cid, conn, is_tls, payload, ret, total_size);
+    }
+    return handle_response(ctx, cid, conn, is_tls, payload, ret, total_size);
+}
+
+static inline __attribute__((__always_inline__))
+int handle_response(void *ctx, struct connection_id cid, struct connection *conn,
+                    __u16 is_tls, char *payload, __u64 ret, __u64 total_size) {
+    int zero = 0;
+    struct l7_request_key k = {.pid = cid.pid, .fd = cid.fd, .is_tls = is_tls, .stream_id = -1};
     struct l7_event *e = bpf_map_lookup_elem(&l7_event_heap, &zero);
     if (!e) {
         return 0;
@@ -467,18 +533,25 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
     e->method = METHOD_UNKNOWN;
     e->statement_id = 0;
     e->payload_size = 0;
+    e->is_inbound = conn->is_inbound;
 
-    if (is_rabbitmq_consume(payload, ret)) {
-        e->protocol = PROTOCOL_RABBITMQ;
-        e->method = METHOD_CONSUME;
-        send_event(ctx, e, cid, conn);
-        return 0;
-    }
-    if (nats_method(payload, ret) == METHOD_CONSUME) {
-        e->protocol = PROTOCOL_NATS;
-        e->method = METHOD_CONSUME;
-        send_event(ctx, e, cid, conn);
-        return 0;
+    if (!conn->is_inbound) {
+        if (is_rabbitmq_method_frame(payload, ret)) {
+            if (rabbitmq_method_matches(payload, RABBITMQ_METHOD_DELIVER)) {
+                e->protocol = PROTOCOL_RABBITMQ;
+                e->method = METHOD_CONSUME;
+                e->status = STATUS_OK;
+                send_event(ctx, e, cid, conn);
+            }
+            return 0;
+        }
+        if (nats_method(payload, ret) == METHOD_CONSUME) {
+            e->protocol = PROTOCOL_NATS;
+            e->method = METHOD_CONSUME;
+            e->status = STATUS_OK;
+            send_event(ctx, e, cid, conn);
+            return 0;
+        }
     }
 
     struct l7_request *req = bpf_map_lookup_elem(&active_l7_requests, &k);
@@ -579,7 +652,7 @@ int ssl_check_write(__u64 tid, void *ctx, __u64 fd) {
     char *buf = args->buf;
     __u64 size = args->size;
     bpf_map_delete_elem(&ssl_pending, &tid);
-    return trace_enter_write(ctx, fd, 1, buf, size, 0);
+    return trace_enter_write(ctx, fd, 1, 1, buf, size, 0);
 }
 
 static inline __attribute__((__always_inline__))
@@ -590,6 +663,7 @@ int ssl_check_read_enter(__u64 tid, __u64 fd) {
     }
     if (!args->fd) {
         args->fd = fd;
+        bpf_map_update_elem(&ssl_last_fd, &tid, &fd, BPF_ANY);
         return 0;
     }
     return -1;
@@ -610,7 +684,7 @@ int sys_enter_write(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     if (ssl_check_write(tid, ctx, ctx->fd) >= 0) {
         return 0;
     }
-    return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size, 0);
+    return trace_enter_write(ctx, ctx->fd, 0, 0, ctx->buf, ctx->size, 0);
 }
 
 SEC("tracepoint/syscalls/sys_enter_writev")
@@ -619,7 +693,7 @@ int sys_enter_writev(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     if (ssl_check_write(tid, ctx, ctx->fd) >= 0) {
         return 0;
     }
-    return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, 0, ctx->size);
+    return trace_enter_write(ctx, ctx->fd, 0, 0, ctx->buf, 0, ctx->size);
 }
 
 SEC("tracepoint/syscalls/sys_enter_sendmsg")
@@ -632,7 +706,7 @@ int sys_enter_sendmsg(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     if (bpf_probe_read(&msghdr, sizeof(msghdr), (void *)ctx->buf)) {
         return 0;
     }
-    return trace_enter_write(ctx, ctx->fd, 0, (char*)msghdr.msg_iov, 0, msghdr.msg_iovlen);
+    return trace_enter_write(ctx, ctx->fd, 0, 1, (char*)msghdr.msg_iov, 0, msghdr.msg_iovlen);
 }
 
 struct mmsghdr {
@@ -657,7 +731,7 @@ int sys_enter_sendmmsg(struct trace_event_raw_sys_enter_rw__stub* ctx) {
             return 0;
         }
         offset += sizeof(h);
-        trace_enter_write(ctx, ctx->fd, 0, (char*)h.msg_hdr.msg_iov, 0, h.msg_hdr.msg_iovlen);
+        trace_enter_write(ctx, ctx->fd, 0, 1, (char*)h.msg_hdr.msg_iov, 0, h.msg_hdr.msg_iovlen);
     }
     return 0;
 }
@@ -668,7 +742,7 @@ int sys_enter_sendto(struct trace_event_raw_sys_enter_rw__stub* ctx) {
     if (ssl_check_write(tid, ctx, ctx->fd) >= 0) {
         return 0;
     }
-    return trace_enter_write(ctx, ctx->fd, 0, ctx->buf, ctx->size, 0);
+    return trace_enter_write(ctx, ctx->fd, 0, 1, ctx->buf, ctx->size, 0);
 }
 
 SEC("tracepoint/syscalls/sys_enter_read")
@@ -678,7 +752,7 @@ int sys_enter_read(struct trace_event_raw_sys_enter_rw__stub* ctx) {
         return 0;
     }
     __u32 pid = id >> 32;
-    return trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, 0);
+    return trace_enter_read(id, pid, ctx->fd, 0, ctx->buf, 0, 0);
 }
 
 SEC("tracepoint/syscalls/sys_enter_readv")
@@ -688,7 +762,7 @@ int sys_enter_readv(struct trace_event_raw_sys_enter_rw__stub* ctx) {
         return 0;
     }
     __u32 pid = id >> 32;
-    return trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, ctx->size);
+    return trace_enter_read(id, pid, ctx->fd, 0, ctx->buf, 0, ctx->size);
 }
 
 SEC("tracepoint/syscalls/sys_enter_recvmsg")
@@ -702,7 +776,7 @@ int sys_enter_recvmsg(struct trace_event_raw_sys_enter_rw__stub* ctx) {
         return 0;
     }
     __u32 pid = id >> 32;
-    return trace_enter_read(id, pid, ctx->fd, (char*)msghdr.msg_iov, 0, msghdr.msg_iovlen);
+    return trace_enter_read(id, pid, ctx->fd, 1, (char*)msghdr.msg_iov, 0, msghdr.msg_iovlen);
 }
 
 SEC("tracepoint/syscalls/sys_enter_recvfrom")
@@ -712,7 +786,7 @@ int sys_enter_recvfrom(struct trace_event_raw_sys_enter_rw__stub* ctx) {
         return 0;
     }
     __u32 pid = id >> 32;
-    return trace_enter_read(id, pid, ctx->fd, ctx->buf, 0, 0);
+    return trace_enter_read(id, pid, ctx->fd, 1, ctx->buf, 0, 0);
 }
 
 SEC("tracepoint/syscalls/sys_exit_read")

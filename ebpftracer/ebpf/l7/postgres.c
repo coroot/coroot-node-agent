@@ -17,14 +17,15 @@ int is_postgres_query(char *buf, __u64 buf_size, __u8 *request_type) {
     bpf_read(buf+1, f_length);
     f_length = bpf_htonl(f_length);
 
-    *request_type = f_cmd;
     if ((f_cmd == POSTGRES_FRAME_SIMPLE_QUERY || f_cmd == POSTGRES_FRAME_CLOSE) && f_length+1 == buf_size) {
+        *request_type = f_cmd;
         return 1;
     }
     char sync[5];
     TRUNCATE_PAYLOAD_SIZE(buf_size);
     bpf_read(buf+buf_size-5, sync);
     if (sync[0] == 'S' && sync[1] == 0 && sync[2] == 0 && sync[3] == 0 && sync[4] == 4) {
+        *request_type = f_cmd;
         return 1;
     }
     return 0;

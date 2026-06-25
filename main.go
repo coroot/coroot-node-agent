@@ -8,12 +8,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/coroot/coroot-node-agent/api"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
+	"github.com/coroot/coroot-node-agent/host"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
+	"github.com/coroot/coroot-node-agent/node/metadata"
 	"github.com/coroot/coroot-node-agent/profiling"
 	"github.com/coroot/coroot-node-agent/prom"
 	"github.com/coroot/coroot-node-agent/tracing"
@@ -71,18 +74,28 @@ func runAgent(ctx context.Context) error {
 
 	whitelistNodeExternalNetworks()
 
-	machineId := machineID()
-	systemUuid := systemUUID()
+	machineID := host.MachineID()
+	systemUUID := host.SystemUUID()
 
-	tracing.Init(machineId, hostname, version)
-	logs.Init(machineId, hostname, version)
+	tracing.Init(machineID, hostname, version)
+	logs.Init(logs.Config{
+		Endpoint:    *flags.LogsEndpoint,
+		AuthHeaders: api.AuthHeaders(*flags.ApiKey),
+		TLSConfig:   api.TlsConfig(*flags.CAFile, *flags.InsecureSkipVerify),
+	}, machineID, hostname, version)
 
-	nodeCollector := node.NewCollector(hostname, kv)
+	nodeCollector := node.NewCollector(hostname, kv, metadata.Overrides{
+		Provider:          flags.GetString(flags.Provider),
+		Region:            flags.GetString(flags.Region),
+		AvailabilityZone:  flags.GetString(flags.AvailabilityZone),
+		InstanceType:      flags.GetString(flags.InstanceType),
+		InstanceLifeCycle: flags.GetString(flags.InstanceLifeCycle),
+	})
 
 	registry := prometheus.NewRegistry()
 
 	registerer := prometheus.WrapRegistererWith(
-		prometheus.Labels{"machine_id": machineId, "system_uuid": systemUuid},
+		prometheus.Labels{"machine_id": machineID, "system_uuid": systemUUID},
 		registry,
 	)
 	if err := registerer.Register(nodeCollector); err != nil {
@@ -105,14 +118,21 @@ func runAgent(ctx context.Context) error {
 			registerer = prometheus.WrapRegistererWith(prometheus.Labels{"az": az, "region": region}, registerer)
 		}
 	}
-	processInfoCh, profilingCh := profiling.Init(machineId, hostname)
+	processInfoCh, profilingCh := profiling.Init(machineID, hostname)
 	cr, err := containers.NewRegistry(registerer, processInfoCh, profilingCh, gpuCollector.ProcessUsageSampleCh)
 	if err != nil {
 		return err
 	}
 	profiling.Start()
 
-	if err := prom.StartAgent(registry, machineId, systemUuid); err != nil {
+	if err := prom.StartAgent(registry, prom.Config{
+		Endpoint:       *flags.MetricsEndpoint,
+		AuthHeaders:    api.AuthHeaders(*flags.ApiKey),
+		TLSConfig:      api.TlsConfig(*flags.CAFile, *flags.InsecureSkipVerify),
+		ScrapeInterval: *flags.ScrapeInterval,
+		WalDir:         *flags.WalDir,
+		MaxSpoolSize:   int64(*flags.MaxSpoolSize),
+	}, machineID, systemUUID); err != nil {
 		return err
 	}
 
@@ -147,6 +167,7 @@ func runAgent(ctx context.Context) error {
 		defer close(done)
 		cr.Close()
 		profiling.Stop()
+		logs.Shutdown(context.Background())
 	}()
 
 	select {

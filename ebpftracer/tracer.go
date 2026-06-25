@@ -71,6 +71,7 @@ type Event struct {
 	TrafficStats  *TrafficStats
 	Mnt           uint64
 	Log           bool
+	IsInbound     bool
 }
 
 type perfMapType uint8
@@ -97,10 +98,11 @@ type Tracer struct {
 	hostNetNs        netns.NsHandle
 	selfNetNs        netns.NsHandle
 
-	collection *ebpf.Collection
-	readers    map[string]*perf.Reader
-	links      []link.Link
-	uprobes    map[string]*ebpf.Program
+	collectionSpec *ebpf.CollectionSpec
+	collection     *ebpf.Collection
+	readers        map[string]*perf.Reader
+	links          []link.Link
+	uprobes        map[string]*ebpf.Program
 
 	globalUprobes     map[UprobeKey]*globalUprobe
 	globalUprobesLock sync.Mutex
@@ -129,6 +131,9 @@ func (t *Tracer) Run(events chan<- Event) error {
 		return err
 	}
 	if err := t.init(events); err != nil {
+		return err
+	}
+	if err := t.attachPrograms(); err != nil {
 		return err
 	}
 	return nil
@@ -200,6 +205,10 @@ func (t *Tracer) ActiveConnectionsIterator() *ebpf.MapIterator {
 	return t.collection.Maps["active_connections"].Iterate()
 }
 
+func (t *Tracer) DeleteActiveConnection(cid ConnectionId) error {
+	return t.collection.Maps["active_connections"].Delete(&cid)
+}
+
 func (t *Tracer) NodejsStatsIterator() *ebpf.MapIterator {
 	return t.collection.Maps["nodejs_stats"].Iterate()
 }
@@ -226,6 +235,8 @@ type Connection struct {
 	Timestamp     uint64
 	BytesSent     uint64
 	BytesReceived uint64
+	IsInbound     uint8
+	_             [7]uint8
 }
 
 type perfMap struct {
@@ -320,7 +331,12 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		go runEventsReader(pm.name, r, ch, pm.typ, pm.readTimeout)
 	}
 
-	for _, programSpec := range collectionSpec.Programs {
+	t.collectionSpec = collectionSpec
+	return nil
+}
+
+func (t *Tracer) attachPrograms() error {
+	for _, programSpec := range t.collectionSpec.Programs {
 		program := t.collection.Programs[programSpec.Name]
 		if t.disableL7Tracing {
 			switch programSpec.Name {
@@ -333,6 +349,7 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 			}
 		}
 		var l link.Link
+		var err error
 		switch programSpec.Type {
 		case ebpf.TracePoint:
 			parts := strings.SplitN(programSpec.AttachTo, "/", 2)
@@ -414,6 +431,8 @@ type tcpEvent struct {
 	SAddr         [16]byte
 	DAddr         [16]byte
 	AAddr         [16]byte
+	IsInbound     uint8
+	_             [7]uint8
 }
 
 type fileEvent struct {
@@ -432,7 +451,8 @@ type l7Event struct {
 	Duration            uint64
 	Protocol            uint8
 	Method              uint8
-	Padding             uint16
+	IsInbound           uint8
+	Padding             uint8
 	StatementId         uint32
 	PayloadSize         uint64
 }
@@ -471,6 +491,7 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 				Duration:    time.Duration(v.Duration),
 				Method:      l7.Method(v.Method),
 				StatementId: v.StatementId,
+				IsInbound:   v.IsInbound != 0,
 			}
 			switch {
 			case v.PayloadSize == 0:
@@ -509,6 +530,7 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 				Fd:            v.Fd,
 				Timestamp:     v.Timestamp,
 				Duration:      time.Duration(v.Duration),
+				IsInbound:     v.IsInbound != 0,
 			}
 			if v.Type == EventTypeConnectionClose {
 				event.TrafficStats = &TrafficStats{

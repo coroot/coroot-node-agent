@@ -4,6 +4,7 @@ package containers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -12,11 +13,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cilium/ebpf"
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
+	"github.com/coroot/coroot-node-agent/metrics"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netns"
@@ -149,7 +152,7 @@ func (r *Registry) Collect(ch chan<- prometheus.Metric) {
 	defer r.ip2fqdnLock.RUnlock()
 	for ip, domain := range r.ip2fqdn {
 		if domain.SpecifyIP {
-			ch <- gauge(metrics.Ip2Fqdn, 1, ip.String(), domain.FQDN)
+			ch <- metrics.Gauge(metrics.Ip2Fqdn, 1, ip.String(), domain.FQDN)
 		}
 	}
 }
@@ -212,6 +215,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 				}
 			}
 			r.ip2fqdnLock.Unlock()
+			r.gcActiveConnections()
 		case u := <-r.trafficStatsUpdateCh:
 			if u == nil {
 				continue
@@ -285,6 +289,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			case ebpftracer.EventTypeListenOpen:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
 					c.onListenOpen(e.Pid, e.SrcAddr, false)
+					c.attachTlsUprobes(r.tracer, e.Pid)
 				} else {
 					klog.Infoln("TCP listen open from unknown container", e)
 				}
@@ -438,6 +443,26 @@ func (r *Registry) updateStatsFromEbpfMapsIfNecessary() {
 	r.updatePythonStats()
 
 	r.ebpfStatsLastUpdated = time.Now()
+}
+
+func (r *Registry) gcActiveConnections() {
+	iter := r.tracer.ActiveConnectionsIterator()
+	cid := ebpftracer.ConnectionId{}
+	conn := ebpftracer.Connection{}
+	var stale []ebpftracer.ConnectionId
+	for iter.Next(&cid, &conn) {
+		if _, err := os.Stat(proc.Path(cid.PID, "fd", strconv.FormatUint(cid.FD, 10))); err != nil {
+			stale = append(stale, cid)
+		}
+	}
+	if err := iter.Err(); err != nil {
+		klog.Warningln(err)
+	}
+	for _, k := range stale {
+		if err := r.tracer.DeleteActiveConnection(k); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+			klog.Warningln(err)
+		}
+	}
 }
 
 func (r *Registry) updateTrafficStats() {

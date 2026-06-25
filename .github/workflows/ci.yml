@@ -7,8 +7,12 @@ on:
       - main
 
 jobs:
-  Linux:
-    runs-on: ubuntu-22.04
+  GO:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-22.04-arm]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -28,7 +32,8 @@ jobs:
   Windows:
     runs-on: windows-latest
     env:
-      WINDOWS_TEST_PACKAGES: ". ./containers ./etwtracer ./logs ./node ./proc ./tools/metriclabels"
+      CGO_ENABLED: '0'
+      WINDOWS_TEST_PACKAGES: ". ./containers ./etwtracer ./logs ./node ./proc ./tools/metriclabels ./windows/... ./apptype/... ./metrics/..."
     steps:
       - name: Enable Git long paths
         shell: pwsh
@@ -37,8 +42,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.9'
-      - shell: pwsh
+      - name: vet
+        run: go vet -unsafeptr=false ./windows/... ./cmd/coroot-windows-agent
+      - name: test
+        shell: pwsh
         run: |
           $packages = $env:WINDOWS_TEST_PACKAGES -split " "
           go test @packages
-      - run: go build -mod=readonly ./...
+      - name: build
+        run: go build -mod=readonly ./...

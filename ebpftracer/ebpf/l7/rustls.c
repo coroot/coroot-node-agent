@@ -27,7 +27,7 @@ int rustls_read_enter(struct pt_regs *ctx) {
 
     char *buf = (char *)PT_REGS_PARM2(ctx);
     __u64 id = tid | IS_TLS_READ_ID;
-    return trace_enter_read(id, pid, fd, buf, 0, 0);
+    return trace_enter_read(id, pid, fd, 1, buf, 0, 0);
 }
 
 SEC("uprobe/rustls_read_exit")

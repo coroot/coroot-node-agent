@@ -221,6 +221,18 @@ func TestParseClickHouse(t *testing.T) {
 		ParseClickhouse(payload),
 	)
 
+	payload = []byte{ // malformed: huge string length must not panic the parser
+		0x01,
+		0x00,
+		0x01,
+		0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, // string length = 2^56
+	}
+
+	assert.Equal(t,
+		``,
+		ParseClickhouse(payload),
+	)
+
 }
 
 func TestParseZookeeper(t *testing.T) {

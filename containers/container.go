@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coroot/coroot-node-agent/apptype"
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
@@ -16,6 +17,7 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/jvm"
 	"github.com/coroot/coroot-node-agent/logs"
+	"github.com/coroot/coroot-node-agent/metrics"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/pinger"
 	"github.com/coroot/coroot-node-agent/proc"
@@ -29,10 +31,9 @@ import (
 )
 
 var (
-	gcInterval                = 10 * time.Minute
-	pingTimeout               = 300 * time.Millisecond
-	multilineCollectorTimeout = time.Second
-	gpuStatsWindow            = 15 * time.Second
+	gcInterval     = 10 * time.Minute
+	pingTimeout    = 300 * time.Millisecond
+	gpuStatsWindow = 15 * time.Second
 )
 
 type ContainerID string
@@ -57,18 +58,6 @@ type ContainerMetadata struct {
 type Delays struct {
 	cpu  time.Duration
 	disk time.Duration
-}
-
-type LogParser struct {
-	parser *logparser.Parser
-	stop   func()
-}
-
-func (p *LogParser) Stop() {
-	if p.stop != nil {
-		p.stop()
-	}
-	p.parser.Stop()
 }
 
 type ConnectionKey struct {
@@ -101,6 +90,12 @@ type PidFd struct {
 	Fd  uint64
 }
 
+type pendingHttp2State struct {
+	parser    *l7.Http2Parser
+	timestamp uint64
+	updatedAt time.Time
+}
+
 type ConnectionStats struct {
 	Count           uint64
 	TotalTime       time.Duration
@@ -131,10 +126,12 @@ type Container struct {
 	lastConnectionAttempts   map[common.HostPort]time.Time
 	activeConnections        map[ConnectionKey]*ActiveConnection
 	connectionsByPidFd       map[PidFd]*ActiveConnection
+	pendingHttp2Parsers      map[PidFd]*pendingHttp2State
 
-	l7Stats   L7Stats
-	dnsStats  *L7Metrics
-	seenFQDNs map[string]struct{}
+	l7Stats        L7Stats
+	l7InboundStats L7InboundStats
+	dnsStats       *L7Metrics
+	seenFQDNs      map[string]struct{}
 
 	gpuStats map[string]*GpuUsage
 
@@ -148,7 +145,7 @@ type Container struct {
 	mounts     map[string]proc.MountInfo
 	seenMounts map[uint64]struct{}
 
-	logParsers map[string]*LogParser
+	logParsers map[string]*logs.Pipeline
 
 	tracer *tracing.Tracer
 
@@ -188,7 +185,9 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		lastConnectionAttempts:   map[common.HostPort]time.Time{},
 		activeConnections:        map[ConnectionKey]*ActiveConnection{},
 		connectionsByPidFd:       map[PidFd]*ActiveConnection{},
+		pendingHttp2Parsers:      map[PidFd]*pendingHttp2State{},
 		l7Stats:                  L7Stats{},
+		l7InboundStats:           L7InboundStats{},
 		dnsStats:                 &L7Metrics{},
 		seenFQDNs:                map[string]struct{}{},
 
@@ -197,7 +196,7 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		mounts:     map[string]proc.MountInfo{},
 		seenMounts: map[uint64]struct{}{},
 
-		logParsers: map[string]*LogParser{},
+		logParsers: map[string]*logs.Pipeline{},
 
 		tracer: tracing.GetContainerTracer(string(id)),
 
@@ -266,63 +265,68 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	if c.metadata.image != "" || !c.metadata.systemd.IsEmpty() {
-		ch <- gauge(metrics.ContainerInfo, 1, c.metadata.image, c.metadata.systemd.TriggeredBy, c.metadata.systemd.Type)
+		ch <- metrics.Gauge(metrics.ContainerInfo, 1, c.metadata.image, c.metadata.systemd.TriggeredBy, c.metadata.systemd.Type)
 	}
 
-	ch <- counter(metrics.Restarts, float64(c.restarts))
+	ch <- metrics.Counter(metrics.Restarts, float64(c.restarts))
 
 	if cpu := c.cgroup.CpuStat(); cpu != nil {
 		if cpu.LimitCores > 0 {
-			ch <- gauge(metrics.CPULimit, cpu.LimitCores)
+			ch <- metrics.Gauge(metrics.CPULimit, cpu.LimitCores)
 		}
-		ch <- counter(metrics.CPUUsage, cpu.UsageSeconds)
-		ch <- counter(metrics.ThrottledTime, cpu.ThrottledTimeSeconds)
+		ch <- metrics.Counter(metrics.CPUUsage, cpu.UsageSeconds)
+		ch <- metrics.Counter(metrics.ThrottledTime, cpu.ThrottledTimeSeconds)
 	}
 
 	if taskstatsClient != nil {
-		ch <- counter(metrics.CPUDelay, float64(c.delays.cpu)/float64(time.Second))
-		ch <- counter(metrics.DiskDelay, float64(c.delays.disk)/float64(time.Second))
+		ch <- metrics.Counter(metrics.CPUDelay, float64(c.delays.cpu)/float64(time.Second))
+		ch <- metrics.Counter(metrics.DiskDelay, float64(c.delays.disk)/float64(time.Second))
 	}
 
 	if s := c.cgroup.MemoryStat(); s != nil {
-		ch <- gauge(metrics.MemoryRss, float64(s.RSS))
-		ch <- gauge(metrics.MemoryCache, float64(s.Cache))
+		ch <- metrics.Gauge(metrics.MemoryRss, float64(s.RSS))
+		ch <- metrics.Gauge(metrics.MemoryCache, float64(s.Cache))
 		if s.Limit > 0 {
-			ch <- gauge(metrics.MemoryLimit, float64(s.Limit))
+			ch <- metrics.Gauge(metrics.MemoryLimit, float64(s.Limit))
 		}
 	}
 
 	if psi := c.cgroup.PSI(); psi != nil {
-		ch <- counter(metrics.PsiCPU, psi.CPUSecondsSome, "some")
-		ch <- counter(metrics.PsiCPU, psi.CPUSecondsFull, "full")
-		ch <- counter(metrics.PsiMemory, psi.MemorySecondsSome, "some")
-		ch <- counter(metrics.PsiMemory, psi.MemorySecondsFull, "full")
-		ch <- counter(metrics.PsiIO, psi.IOSecondsSome, "some")
-		ch <- counter(metrics.PsiIO, psi.IOSecondsFull, "full")
+		ch <- metrics.Counter(metrics.PsiCPU, psi.CPUSecondsSome, "some")
+		ch <- metrics.Counter(metrics.PsiCPU, psi.CPUSecondsFull, "full")
+		ch <- metrics.Counter(metrics.PsiMemory, psi.MemorySecondsSome, "some")
+		ch <- metrics.Counter(metrics.PsiMemory, psi.MemorySecondsFull, "full")
+		ch <- metrics.Counter(metrics.PsiIO, psi.IOSecondsSome, "some")
+		ch <- metrics.Counter(metrics.PsiIO, psi.IOSecondsFull, "full")
 	}
 
 	if c.oomKills > 0 {
-		ch <- counter(metrics.OOMKills, float64(c.oomKills))
+		ch <- metrics.Counter(metrics.OOMKills, float64(c.oomKills))
 	}
 
 	if disks, err := node.GetDisks(); err == nil {
 		ioStat := c.cgroup.IOStat()
+		seenVolumes := map[string]struct{}{}
 		for majorMinor, mounts := range c.getMounts() {
 			var device string
 			if dev := disks.GetParentBlockDevice(majorMinor); dev != nil {
 				device = dev.Name
 			}
 			for mountPoint, fsStat := range mounts {
+				if _, ok := seenVolumes[mountPoint+":"+device]; ok {
+					continue
+				}
+				seenVolumes[mountPoint+":"+device] = struct{}{}
 				dls := []string{mountPoint, device, c.metadata.volumes[mountPoint]}
-				ch <- gauge(metrics.DiskSize, float64(fsStat.CapacityBytes), dls...)
-				ch <- gauge(metrics.DiskUsed, float64(fsStat.UsedBytes), dls...)
-				ch <- gauge(metrics.DiskReserved, float64(fsStat.ReservedBytes), dls...)
+				ch <- metrics.Gauge(metrics.DiskSize, float64(fsStat.CapacityBytes), dls...)
+				ch <- metrics.Gauge(metrics.DiskUsed, float64(fsStat.UsedBytes), dls...)
+				ch <- metrics.Gauge(metrics.DiskReserved, float64(fsStat.ReservedBytes), dls...)
 				if ioStat != nil {
 					if io, ok := ioStat[majorMinor]; ok {
-						ch <- counter(metrics.DiskReadOps, float64(io.ReadOps), dls...)
-						ch <- counter(metrics.DiskReadBytes, float64(io.ReadBytes), dls...)
-						ch <- counter(metrics.DiskWriteOps, float64(io.WriteOps), dls...)
-						ch <- counter(metrics.DiskWriteBytes, float64(io.WrittenBytes), dls...)
+						ch <- metrics.Counter(metrics.DiskReadOps, float64(io.ReadOps), dls...)
+						ch <- metrics.Counter(metrics.DiskReadBytes, float64(io.ReadBytes), dls...)
+						ch <- metrics.Counter(metrics.DiskWriteOps, float64(io.WriteOps), dls...)
+						ch <- metrics.Counter(metrics.DiskWriteBytes, float64(io.WrittenBytes), dls...)
 					}
 				}
 			}
@@ -330,25 +334,25 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	for addr, open := range c.getListens() {
-		ch <- gauge(metrics.NetListenInfo, float64(open), addr.String(), "")
+		ch <- metrics.Gauge(metrics.NetListenInfo, float64(open), addr.String(), "")
 	}
 	for proxy, addrs := range c.getProxiedListens() {
 		for addr := range addrs {
-			ch <- gauge(metrics.NetListenInfo, 1, addr.String(), proxy)
+			ch <- metrics.Gauge(metrics.NetListenInfo, 1, addr.String(), proxy)
 		}
 	}
 
 	for d, stats := range c.connectionStats {
-		ch <- counter(metrics.NetConnectionsSuccessful, float64(stats.Count), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
-		ch <- counter(metrics.NetConnectionsTotalTime, stats.TotalTime.Seconds(), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
+		ch <- metrics.Counter(metrics.NetConnectionsSuccessful, float64(stats.Count), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
+		ch <- metrics.Counter(metrics.NetConnectionsTotalTime, stats.TotalTime.Seconds(), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
 		if stats.Retransmissions > 0 {
-			ch <- counter(metrics.NetRetransmits, float64(stats.Retransmissions), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
+			ch <- metrics.Counter(metrics.NetRetransmits, float64(stats.Retransmissions), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
 		}
-		ch <- counter(metrics.NetBytesSent, float64(stats.BytesSent), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
-		ch <- counter(metrics.NetBytesReceived, float64(stats.BytesReceived), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
+		ch <- metrics.Counter(metrics.NetBytesSent, float64(stats.BytesSent), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
+		ch <- metrics.Counter(metrics.NetBytesReceived, float64(stats.BytesReceived), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
 	}
 	for dst, count := range c.failedConnectionAttempts {
-		ch <- counter(metrics.NetConnectionsFailed, float64(count), dst.String())
+		ch <- metrics.Counter(metrics.NetConnectionsFailed, float64(count), dst.String())
 	}
 
 	connections := map[common.DestinationKey]int{}
@@ -359,12 +363,12 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		connections[conn.DestinationKey]++
 	}
 	for d, count := range connections {
-		ch <- gauge(metrics.NetConnectionsActive, float64(count), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
+		ch <- metrics.Gauge(metrics.NetConnectionsActive, float64(count), d.DestinationLabelValue(), d.ActualDestinationLabelValue())
 	}
 
 	for source, p := range c.logParsers {
-		for _, c := range p.parser.GetCounters() {
-			ch <- counter(metrics.LogMessages, float64(c.Messages), source, c.Level.String(), c.Hash, common.TruncateUtf8(c.Sample, *flags.MaxLabelLength))
+		for _, c := range p.Counters() {
+			ch <- metrics.Counter(metrics.LogMessages, float64(c.Messages), source, c.Level.String(), c.Hash, common.TruncateUtf8(c.Sample, *flags.MaxLabelLength))
 		}
 	}
 
@@ -382,11 +386,11 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		if len(cmdline) == 0 {
 			continue
 		}
-		if appType := guessApplicationTypeByCmdline(cmdline); appType != "" {
+		if appType := apptype.GuessByCmdline(cmdline); appType != "" {
 			appTypes[appType] = struct{}{}
 		} else {
 			if exe, err := os.Readlink(proc.Path(pid, "exe")); err == nil {
-				if appType = guessApplicationTypeByExe(exe); appType != "" {
+				if appType = apptype.GuessByExe(exe); appType != "" {
 					appTypes[appType] = struct{}{}
 				}
 			}
@@ -431,22 +435,22 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 	for uuid, usage := range c.gpuStats {
-		ch <- gauge(metrics.GpuUsagePercent, usage.GPU, uuid)
-		ch <- gauge(metrics.GpuMemoryUsagePercent, usage.Memory, uuid)
+		ch <- metrics.Gauge(metrics.GpuUsagePercent, usage.GPU, uuid)
+		ch <- metrics.Gauge(metrics.GpuMemoryUsagePercent, usage.Memory, uuid)
 	}
 
 	for appType := range appTypes {
-		ch <- gauge(metrics.ApplicationType, 1, appType)
+		ch <- metrics.Gauge(metrics.ApplicationType, 1, appType)
 	}
 	if c.pythonStats != nil {
-		ch <- counter(metrics.PythonThreadLockWaitTime, c.pythonStats.ThreadLockWaitTime.Seconds())
+		ch <- metrics.Counter(metrics.PythonThreadLockWaitTime, c.pythonStats.ThreadLockWaitTime.Seconds())
 	}
 	if c.nodejsStats != nil {
-		ch <- counter(metrics.NodejsEventLoopBlockedTime, c.nodejsStats.EventLoopBlockedTime.Seconds())
+		ch <- metrics.Counter(metrics.NodejsEventLoopBlockedTime, c.nodejsStats.EventLoopBlockedTime.Seconds())
 	}
 	if s := c.goProfilingStats; s != nil {
-		ch <- counter(metrics.GoAllocBytes, float64(s.AllocBytes))
-		ch <- counter(metrics.GoAllocObjects, float64(s.AllocObjects))
+		ch <- metrics.Counter(metrics.GoAllocBytes, float64(s.AllocBytes))
+		ch <- metrics.Counter(metrics.GoAllocObjects, float64(s.AllocObjects))
 	}
 
 	if c.dnsStats.Requests != nil {
@@ -456,10 +460,11 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 		c.dnsStats.Latency.Collect(ch)
 	}
 	c.l7Stats.collect(ch)
+	c.l7InboundStats.collect(ch)
 
 	if !*flags.DisablePinger {
 		for ip, rtt := range c.ping() {
-			ch <- gauge(metrics.NetLatency, rtt, ip.String())
+			ch <- metrics.Gauge(metrics.NetLatency, rtt, ip.String())
 		}
 	}
 }
@@ -653,11 +658,39 @@ func (c *Container) onConnectionOpen(pid uint32, fd uint64, src, dst, actualDst 
 			prev.Closed = time.Now()
 		}
 		c.connectionsByPidFd[k] = connection
+		if pending, ok := c.pendingHttp2Parsers[k]; ok {
+			if pending.timestamp == 0 || pending.timestamp == timestamp {
+				connection.http2Parser = pending.parser
+			}
+			delete(c.pendingHttp2Parsers, k)
+		}
 	}
 	c.lastConnectionAttempts[key.Destination()] = time.Now()
 }
 
+func (c *Container) feedPendingHttp2(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) {
+	k := PidFd{Pid: pid, Fd: fd}
+	st := c.pendingHttp2Parsers[k]
+	if st == nil || (timestamp != 0 && st.timestamp != 0 && st.timestamp != timestamp) {
+		st = &pendingHttp2State{parser: l7.NewHttp2Parser(), timestamp: timestamp}
+		c.pendingHttp2Parsers[k] = st
+	}
+	if st.timestamp == 0 {
+		st.timestamp = timestamp
+	}
+	st.updatedAt = time.Now()
+	_ = st.parser.Parse(r.Method, r.Payload, uint64(r.Duration))
+}
+
 func (c *Container) onConnectionClose(e ebpftracer.Event) {
+	if e.IsInbound {
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		if p := c.processes[e.Pid]; p != nil {
+			delete(p.inboundHttp2Parsers, e.Fd)
+		}
+		return
+	}
 	c.lock.Lock()
 	conn := c.connectionsByPidFd[PidFd{Pid: e.Pid, Fd: e.Fd}]
 	c.lock.Unlock()
@@ -765,12 +798,20 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	if r.IsInbound {
+		c.observeInboundL7(pid, fd, timestamp, r)
+		return nil
+	}
+
 	if r.Protocol == l7.ProtocolDNS {
 		return c.onDNSRequest(r)
 	}
 
 	conn := c.connectionsByPidFd[PidFd{Pid: pid, Fd: fd}]
 	if conn == nil {
+		if r.Protocol == l7.ProtocolHTTP2 {
+			c.feedPendingHttp2(pid, fd, timestamp, r)
+		}
 		return nil
 	}
 	if timestamp != 0 && conn.Timestamp != timestamp {
@@ -859,6 +900,55 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 		stats.observe(r.Status.String(), "", r.Duration)
 	}
 	return nil
+}
+
+func (c *Container) observeInboundL7(pid uint32, fd uint64, timestamp uint64, r *l7.RequestData) {
+	protocol := r.Protocol
+	if protocol == l7.ProtocolHTTP2 {
+		p := c.processes[pid]
+		if p == nil {
+			return
+		}
+		if p.inboundHttp2Parsers == nil {
+			p.inboundHttp2Parsers = map[uint64]*inboundHttp2State{}
+		}
+		state := p.inboundHttp2Parsers[fd]
+		if state == nil || state.connTimestamp != timestamp {
+			state = &inboundHttp2State{
+				parser:        l7.NewHttp2Parser(),
+				connTimestamp: timestamp,
+			}
+			p.inboundHttp2Parsers[fd] = state
+		}
+		requests := state.parser.Parse(r.Method, r.Payload, uint64(r.Duration))
+		if len(requests) == 0 {
+			return
+		}
+		stats := c.l7InboundStats.get(l7.ProtocolHTTP)
+		for _, req := range requests {
+			if common.HttpFilter.ShouldBeSkipped(req.Path) {
+				continue
+			}
+			status := req.Status.Http()
+			if req.GrpcStatus >= 0 {
+				status = req.GrpcStatus.GRPC()
+			}
+			stats.observe(status, "", req.Duration)
+		}
+		return
+	}
+	if _, ok := L7InboundRequests[protocol]; !ok {
+		return
+	}
+	stats := c.l7InboundStats.get(protocol)
+	switch protocol {
+	case l7.ProtocolHTTP:
+		stats.observe(r.Status.Http(), "", r.Duration)
+	case l7.ProtocolZookeeper:
+		stats.observe(r.Status.Zookeeper(), "", r.Duration)
+	default:
+		stats.observe(r.Status.String(), "", r.Duration)
+	}
 }
 
 func (c *Container) onRetransmission(src netaddr.IPPort, dst netaddr.IPPort) bool {
@@ -954,6 +1044,21 @@ func (c *Container) updatePythonStats(s PythonStatsUpdate) {
 func (c *Container) getMounts() map[string]map[string]*proc.FSStat {
 	if len(c.mounts) == 0 {
 		return nil
+	}
+	var current map[string]proc.MountInfo
+	for pid := range c.processes {
+		if current = proc.GetMountInfo(pid); current != nil {
+			break
+		}
+	}
+	if len(current) > 0 {
+		for mntId := range c.mounts {
+			if mi, ok := current[mntId]; ok {
+				c.mounts[mntId] = mi
+			} else {
+				delete(c.mounts, mntId)
+			}
+		}
 	}
 	res := map[string]map[string]*proc.FSStat{}
 	for _, mi := range c.mounts {
@@ -1131,7 +1236,7 @@ func (c *Container) runLogParser(logPath string) {
 			return
 		}
 		ch := make(chan logparser.LogEntry)
-		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId), multilineCollectorTimeout, *flags.LogPatternsPerContainer)
+		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer)
 		reader, err := logs.NewTailReader(proc.HostPath(logPath), ch)
 		if err != nil {
 			klog.Warningln(err)
@@ -1139,7 +1244,7 @@ func (c *Container) runLogParser(logPath string) {
 			return
 		}
 		klog.InfoS("started varlog logparser", "cg", c.cgroup.Id, "log", logPath)
-		c.logParsers[logPath] = &LogParser{parser: parser, stop: reader.Stop}
+		c.logParsers[logPath] = logs.NewPipeline(parser, reader.Stop)
 		return
 	}
 
@@ -1150,12 +1255,12 @@ func (c *Container) runLogParser(logPath string) {
 			klog.Warningln(err)
 			return
 		}
-		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId), multilineCollectorTimeout, *flags.LogPatternsPerContainer)
+		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer)
 		stop := func() {
 			JournaldUnsubscribe(c.metadata.systemd.Unit)
 		}
 		klog.InfoS("started journald logparser", "cg", c.cgroup.Id)
-		c.logParsers["journald"] = &LogParser{parser: parser, stop: stop}
+		c.logParsers["journald"] = logs.NewPipeline(parser, stop)
 
 	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeCrio:
 		if c.metadata.logPath == "" {
@@ -1166,7 +1271,7 @@ func (c *Container) runLogParser(logPath string) {
 			delete(c.logParsers, "stdout/stderr")
 		}
 		ch := make(chan logparser.LogEntry)
-		parser := logparser.NewParser(ch, c.metadata.logDecoder, logs.OtelLogEmitter(containerId), multilineCollectorTimeout, *flags.LogPatternsPerContainer)
+		parser := logparser.NewParser(ch, c.metadata.logDecoder, logs.OtelLogEmitter(containerId), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer)
 		reader, err := logs.NewTailReader(proc.HostPath(c.metadata.logPath), ch)
 		if err != nil {
 			klog.Warningln(err)
@@ -1174,7 +1279,7 @@ func (c *Container) runLogParser(logPath string) {
 			return
 		}
 		klog.InfoS("started container logparser", "cg", c.cgroup.Id)
-		c.logParsers["stdout/stderr"] = &LogParser{parser: parser, stop: reader.Stop}
+		c.logParsers["stdout/stderr"] = logs.NewPipeline(parser, reader.Stop)
 	}
 }
 
@@ -1186,6 +1291,22 @@ func (c *Container) gc(now time.Time) {
 	listens := map[netaddr.IPPort]string{}
 	seenNamespaces := map[string]bool{}
 	for _, p := range c.processes {
+		if len(p.inboundHttp2Parsers) > 0 {
+			fds, err := proc.ReadFds(p.Pid)
+			if err == nil {
+				openFds := map[uint64]struct{}{}
+				for _, fd := range fds {
+					if fd.SocketInode != "" {
+						openFds[fd.Fd] = struct{}{}
+					}
+				}
+				for fd := range p.inboundHttp2Parsers {
+					if _, ok := openFds[fd]; !ok {
+						delete(p.inboundHttp2Parsers, fd)
+					}
+				}
+			}
+		}
 		if seenNamespaces[p.NetNsId()] {
 			continue
 		}
@@ -1222,6 +1343,11 @@ func (c *Container) gc(now time.Time) {
 			if conn == c.connectionsByPidFd[pidFd] {
 				delete(c.connectionsByPidFd, pidFd)
 			}
+		}
+	}
+	for k, st := range c.pendingHttp2Parsers {
+		if now.Sub(st.updatedAt) > gcInterval {
+			delete(c.pendingHttp2Parsers, k)
 		}
 	}
 	for dst, at := range c.lastConnectionAttempts {
@@ -1372,12 +1498,4 @@ func resolveFd(pid uint32, fd uint64) (mntId string, logPath string) {
 		logPath = info.Dest
 	}
 	return
-}
-
-func counter(desc *prometheus.Desc, value float64, labelValues ...string) prometheus.Metric {
-	return prometheus.MustNewConstMetric(desc, prometheus.CounterValue, value, labelValues...)
-}
-
-func gauge(desc *prometheus.Desc, value float64, labelValues ...string) prometheus.Metric {
-	return prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, labelValues...)
 }

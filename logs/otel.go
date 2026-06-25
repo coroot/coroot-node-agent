@@ -2,6 +2,8 @@ package logs
 
 import (
 	"context"
+	"crypto/tls"
+	"net/url"
 	"time"
 
 	otel "github.com/agoda-com/opentelemetry-logs-go"
@@ -10,7 +12,6 @@ import (
 	otelLogs "github.com/agoda-com/opentelemetry-logs-go/logs"
 	sdk "github.com/agoda-com/opentelemetry-logs-go/sdk/logs"
 	"github.com/coroot/coroot-node-agent/common"
-	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/logparser"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -18,33 +19,45 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var otelLogger otelLogs.Logger
+// MultilineCollectorTimeout is how long the log parser waits before deciding a
+// multi-line log message is complete.
+const MultilineCollectorTimeout = time.Second
 
-func Init(machineId, hostname, version string) {
-	endpointUrl := *flags.LogsEndpoint
-	if endpointUrl == nil {
+type Config struct {
+	Endpoint    *url.URL
+	AuthHeaders map[string]string
+	TLSConfig   *tls.Config
+}
+
+var (
+	loggerProvider *sdk.LoggerProvider
+	otelLogger     otelLogs.Logger
+)
+
+func Init(cfg Config, machineId, hostname, version string) {
+	if cfg.Endpoint == nil {
 		klog.Infoln("no OpenTelemetry logs collector endpoint configured")
 		return
 	}
-	klog.Infoln("OpenTelemetry logs collector endpoint:", endpointUrl.String())
-	path := endpointUrl.Path
+	klog.Infoln("OpenTelemetry logs collector endpoint:", cfg.Endpoint.String())
+	path := cfg.Endpoint.Path
 	if path == "" {
 		path = "/"
 	}
 
 	opts := []otlplogshttp.Option{
-		otlplogshttp.WithEndpoint(endpointUrl.Host),
+		otlplogshttp.WithEndpoint(cfg.Endpoint.Host),
 		otlplogshttp.WithURLPath(path),
-		otlplogshttp.WithHeaders(common.AuthHeaders()),
-		otlplogshttp.WithTLSClientConfig(common.TlsConfig()),
+		otlplogshttp.WithHeaders(cfg.AuthHeaders),
+		otlplogshttp.WithTLSClientConfig(cfg.TLSConfig),
 	}
-	if endpointUrl.Scheme != "https" {
+	if cfg.Endpoint.Scheme != "https" {
 		opts = append(opts, otlplogshttp.WithInsecure())
 	}
 	client := otlplogshttp.NewClient(opts...)
 	exporter, _ := otlplogs.NewExporter(context.Background(), otlplogs.WithClient(client))
 
-	loggerProvider := sdk.NewLoggerProvider(
+	loggerProvider = sdk.NewLoggerProvider(
 		sdk.WithBatcher(exporter),
 		sdk.WithResource(
 			resource.NewWithAttributes(
@@ -57,6 +70,12 @@ func Init(machineId, hostname, version string) {
 	)
 	otel.SetLoggerProvider(loggerProvider)
 	otelLogger = loggerProvider.Logger("coroot-node-agent", otelLogs.WithInstrumentationVersion(version))
+}
+
+func Shutdown(ctx context.Context) {
+	if loggerProvider != nil {
+		_ = loggerProvider.Shutdown(ctx)
+	}
 }
 
 func OtelLogEmitter(containerId string) logparser.OnMsgCallbackF {
