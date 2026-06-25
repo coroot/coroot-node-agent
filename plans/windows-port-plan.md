@@ -218,6 +218,19 @@ on Windows from a containerized app writing to stdout. Passed on
   Windows Server Kubernetes validation host and publishable Windows
   image are available.
 
+### M6 — Host observability parity (in progress)
+
+- Follow `plans/windows-host-observability-plan.md`.
+- Close the major non-container Windows parity gaps: Event Log
+  ingestion, OTLP trace export, Windows profiling MVP, rich cloud
+  metadata, Windows CLI/config parity, and Windows release
+  checksum/signing support.
+- Container/VM/Windows Server validation gaps remain deferred to their
+  dedicated plans.
+
+Exit gate: every acceptance criterion in the host observability plan is
+checked, and `make lint`, `make test`, and `make crossbuild-check` pass.
+
 Exit gate: a documented install procedure works end-to-end on a
 fresh supported Windows host. The normal development validation host is
 Windows 11; final release/support validation must also include Windows
