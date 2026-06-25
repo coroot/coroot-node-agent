@@ -222,15 +222,15 @@ Product requirements:
 
 Acceptance criteria:
 
-- [ ] **CLI-CRIT-1:** `GOOS=windows go test ./flags` covers Windows
+- [x] **CLI-CRIT-1:** `GOOS=windows go test ./flags` covers Windows
       collector endpoint derivation and Windows-only flag defaults.
-- [ ] **CLI-CRIT-2:** `make lint`, `make test`, and
+- [x] **CLI-CRIT-2:** `make lint`, `make test`, and
       `make crossbuild-check` pass.
-- [ ] **CLI-CRIT-3:** Windows help includes Event Log, trace endpoint,
+- [x] **CLI-CRIT-3:** Windows help includes Event Log, trace endpoint,
       profile endpoint, and Windows profile flags.
-- [ ] **CLI-CRIT-4:** Windows help does not expose Linux-only eBPF,
+- [x] **CLI-CRIT-4:** Windows help does not expose Linux-only eBPF,
       cgroup, pinger, or Java async-profiler flags.
-- [ ] **CLI-CRIT-5:** Docs list the Windows-supported flag set and
+- [x] **CLI-CRIT-5:** Docs list the Windows-supported flag set and
       identify Linux-only exclusions.
 
 Testing requirements:
@@ -238,6 +238,21 @@ Testing requirements:
 - Unit tests validate derived endpoint behavior.
 - A Windows help snapshot or smoke command verifies visible flags.
 - Cross-build confirms Linux flag behavior remains unchanged.
+
+Verification log:
+
+- 2026-06-25: `make lint`, `make test`, and `make crossbuild-check`
+  passed on the Linux workspace.
+- 2026-06-25: On Windows 11 VM
+  `coroot-win-gpu-buildtest-20260616-0308`, `go test ./flags` passed.
+- 2026-06-25: On the same Windows VM, `coroot-node-agent.exe --help`
+  included `--disable-windows-event-log-monitoring`,
+  `--windows-event-log-channel`, `--traces-endpoint`,
+  `--traces-sampling`, `--profiles-endpoint`, `--windows-profile`,
+  `--windows-profile-interval`, and `--windows-profile-duration`; it did
+  not include `--cgroupfs-root`, `--disable-pinger`,
+  `--disable-l7-tracing`, `--enable-java-async-profiler`,
+  `--go-heap-profiler`, or `--skip-systemd-system-containers`.
 
 ### M6.6 — Windows release signing and checksums
 

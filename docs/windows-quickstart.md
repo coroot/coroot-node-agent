@@ -120,6 +120,25 @@ future work.
 When `--collector-endpoint` is set and `--profiles-endpoint` is omitted,
 the Windows binary derives `--profiles-endpoint=<collector>/v1/profiles`.
 
+## Windows Flag Surface
+
+Windows supports the shared runtime, filtering, metadata override, OTLP,
+WAL, and logging flags plus these Windows-specific flags:
+
+- `--disable-windows-event-log-monitoring`
+- `--windows-event-log-channel`
+- `--windows-profile`
+- `--windows-profile-interval`
+- `--windows-profile-duration`
+
+Windows also supports `--traces-endpoint`, `--traces-sampling`, and
+`--profiles-endpoint`; when `--collector-endpoint` is set, trace and
+profile endpoints are derived as `/v1/traces` and `/v1/profiles`.
+
+Linux-only flags are intentionally absent from the Windows help text,
+including cgroup, pinger, L7 tracing, Java TLS/async-profiler, Go heap
+profiler, instrumentation delay, and systemd service filtering flags.
+
 ## Service Install
 
 Run PowerShell as Administrator:
