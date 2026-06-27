@@ -79,6 +79,14 @@ func systemUUID() string {
 	return strings.TrimSpace(string(payload))
 }
 
+func setKernelVersion(version string) error {
+	return common.SetKernelVersion(version)
+}
+
+func nodeInfoKernelVersion(version string) string {
+	return version
+}
+
 func checkKernelVersion() {
 	if !common.GetKernelVersion().GreaterOrEqual(common.NewVersion(4, 16, 0)) {
 		klog.Exitln("the minimum Linux kernel version required is 4.16 or later")

@@ -66,7 +66,7 @@ func runAgent(ctx context.Context) error {
 	klog.Infoln("hostname:", hostname)
 	klog.Infoln("kernel version:", kv)
 
-	if err = common.SetKernelVersion(kv); err != nil {
+	if err = setKernelVersion(kv); err != nil {
 		return err
 	}
 
@@ -84,7 +84,7 @@ func runAgent(ctx context.Context) error {
 		TLSConfig:   api.TlsConfig(*flags.CAFile, *flags.InsecureSkipVerify),
 	}, machineID, hostname, version)
 
-	nodeCollector := node.NewCollector(hostname, kv, metadata.Overrides{
+	nodeCollector := node.NewCollector(hostname, nodeInfoKernelVersion(kv), metadata.Overrides{
 		Provider:          flags.GetString(flags.Provider),
 		Region:            flags.GetString(flags.Region),
 		AvailabilityZone:  flags.GetString(flags.AvailabilityZone),

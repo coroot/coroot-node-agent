@@ -20,7 +20,7 @@ Required M1 metrics:
 
 | Metric | Windows source | Notes |
 |--------|----------------|-------|
-| `node_info{hostname,kernel_version}` | `os.Hostname()` plus `RtlGetVersion` | Keep label keys unchanged. `kernel_version` carries Windows `major.minor.build` text on Windows. |
+| `node_info{hostname,kernel_version}` | `os.Hostname()` plus `RtlGetVersion` | Keep label keys unchanged. `kernel_version` is prefixed with `Windows ` on Windows so Coroot classifies the node OS correctly; Coroot strips that prefix from the displayed version. |
 | `node_cloud_info{...}` | Existing cloud metadata HTTP paths plus explicit flags | Linux `/sys` DMI probes are omitted on Windows. Empty labels are acceptable when metadata is unavailable. |
 | `node_uptime_seconds` | `GetTickCount64` via `windows.DurationSinceBoot` | Must be seconds since boot. |
 | `node_resources_cpu_usage_seconds_total{mode}` | `GetSystemTimes` | Must be monotonically increasing seconds. Emit Linux-compatible modes when meaningful; document any modes that are always zero on Windows. |

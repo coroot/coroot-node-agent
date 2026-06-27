@@ -70,4 +70,15 @@ func systemUUID() string {
 	return ""
 }
 
+func setKernelVersion(string) error {
+	return nil
+}
+
+func nodeInfoKernelVersion(version string) string {
+	if strings.HasPrefix(strings.ToLower(version), "windows") {
+		return version
+	}
+	return "Windows " + version
+}
+
 func checkKernelVersion() {}

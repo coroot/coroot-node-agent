@@ -20,7 +20,7 @@ linux_only{foo="bar"} 1
 	right, err := loadMetricLabels(strings.NewReader(`
 # HELP node_info Meta information
 # TYPE node_info gauge
-node_info{hostname="windows",kernel_version="10.0.26100"} 1
+node_info{hostname="windows",kernel_version="Windows 10.0.26100"} 1
 `))
 	if err != nil {
 		t.Fatal(err)

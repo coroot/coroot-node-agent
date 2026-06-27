@@ -16,3 +16,12 @@ func TestWindowsUname(t *testing.T) {
 		t.Fatalf("expected concrete Windows version, got %q", version)
 	}
 }
+
+func TestWindowsNodeInfoKernelVersionLabel(t *testing.T) {
+	if got := nodeInfoKernelVersion("10.0.19045"); got != "Windows 10.0.19045" {
+		t.Fatalf("nodeInfoKernelVersion() = %q, want %q", got, "Windows 10.0.19045")
+	}
+	if got := nodeInfoKernelVersion("Windows 10.0.19045"); got != "Windows 10.0.19045" {
+		t.Fatalf("nodeInfoKernelVersion() should not double-prefix Windows versions, got %q", got)
+	}
+}
