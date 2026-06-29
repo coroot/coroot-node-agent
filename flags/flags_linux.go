@@ -22,7 +22,7 @@ var (
 	GoHeapProfilerMode      = kingpin.Flag("go-heap-profiler", "Go heap profiling mode: disabled, enabled (collect from apps with profiling on), force (enable profiling in all Go apps)").Default("enabled").Envar("GO_HEAP_PROFILER").String()
 	InstrumentationDelay    = kingpin.Flag("instrumentation-delay", "Delay before enabling Python GIL and Node.js event loop instrumentation, after a process is started").Default("30s").Envar("INSTRUMENTATION_DELAY").Duration()
 
-	SkipSystemdSystemServices = kingpin.Flag("skip-systemd-system-containers", "Skip well-known systemd system containers (apt, motd, udev, etc.)").Default("true").Envar("SKIP_SYSTEMD_SYSTEM_SERVICES").Bool()
+	SkipSystemdSystemServices = kingpin.Flag("skip-systemd-system-services", "Skip well-known systemd system containers (apt, motd, udev, etc.)").Default("true").Envar("SKIP_SYSTEMD_SYSTEM_SERVICES").Bool()
 
 	LogPerSecond = kingpin.Flag("log-per-second", "The number of logs per second").Default("10.0").Envar("LOG_PER_SECOND").Float64()
 	LogBurst     = kingpin.Flag("log-burst", "The maximum number of tokens that can be consumed in a single call to allow").Default("100").Envar("LOG_BURST").Int()
