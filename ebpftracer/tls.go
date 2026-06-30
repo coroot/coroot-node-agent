@@ -20,18 +20,26 @@ const (
 var silentErrors = []string{
 	"not a Go executable",
 	"not found",
+	"no symbols found",
 	"no such file or directory",
 	"no such process",
 	"permission denied",
 }
 
+func isSilentError(err error) bool {
+	for _, s := range silentErrors {
+		if strings.HasSuffix(err.Error(), s) {
+			return true
+		}
+	}
+	return false
+}
+
 func uprobeLog(pid uint32, prefix string) func(string, error) {
 	return func(msg string, err error) {
 		if err != nil {
-			for _, s := range silentErrors {
-				if strings.HasSuffix(err.Error(), s) {
-					return
-				}
+			if isSilentError(err) {
+				return
 			}
 			klog.ErrorfDepth(2, "pid=%d%s: %s: %s", pid, prefix, msg, err)
 			return
