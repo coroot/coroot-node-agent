@@ -1436,6 +1436,20 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 	if p == nil {
 		return
 	}
+	if delay := *flags.TlsInstrumentationDelay; delay > 0 && !p.StartedAt.IsZero() {
+		if wait := delay - time.Since(p.StartedAt); wait > 0 {
+			p.tlsDelayLock.Lock()
+			if p.tlsDelayTimer == nil {
+				p.tlsDelayTimer = time.AfterFunc(wait, func() {
+					c.attachTlsUprobes(tracer, pid)
+				})
+			}
+			p.tlsDelayLock.Unlock()
+			return
+		}
+	}
+	p.tlsDelayLock.Lock()
+	defer p.tlsDelayLock.Unlock()
 	if !p.openSslUprobesChecked {
 		if key := tracer.AttachOpenSslUprobes(pid); key != nil {
 			p.addUprobeKey(*key)
