@@ -56,6 +56,9 @@ type Process struct {
 	nodejsPrevStats       *ebpftracer.NodejsStats
 	pythonPrevStats       *ebpftracer.PythonStats
 
+	tlsDelayLock  sync.Mutex
+	tlsDelayTimer *time.Timer
+
 	gpuUsageSamples []gpu.ProcessUsageSample
 
 	inboundHttp2Parsers map[uint64]*inboundHttp2State
@@ -215,6 +218,11 @@ func (p *Process) addUprobeKey(key ebpftracer.UprobeKey) {
 
 func (p *Process) Close() {
 	p.cancelFunc()
+	p.tlsDelayLock.Lock()
+	if p.tlsDelayTimer != nil {
+		p.tlsDelayTimer.Stop()
+	}
+	p.tlsDelayLock.Unlock()
 	<-p.instrumentDone
 	p.uprobeKeysLock.Lock()
 	p.closed = true

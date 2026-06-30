@@ -21,6 +21,7 @@ var (
 	JavaAsyncProfilerDelay  = kingpin.Flag("java-async-profiler-delay", "Delay in seconds before starting async-profiler after JVM process is detected").Default("30s").Envar("JAVA_ASYNC_PROFILER_DELAY").Duration()
 	GoHeapProfilerMode      = kingpin.Flag("go-heap-profiler", "Go heap profiling mode: disabled, enabled (collect from apps with profiling on), force (enable profiling in all Go apps)").Default("enabled").Envar("GO_HEAP_PROFILER").String()
 	InstrumentationDelay    = kingpin.Flag("instrumentation-delay", "Delay before enabling Python GIL and Node.js event loop instrumentation, after a process is started").Default("30s").Envar("INSTRUMENTATION_DELAY").Duration()
+	TlsInstrumentationDelay = kingpin.Flag("tls-instrumentation-delay", "Delay before attaching TLS uprobes to a process, to skip short-lived processes (e.g., exec probes)").Default("5s").Envar("TLS_INSTRUMENTATION_DELAY").Duration()
 
 	SkipSystemdSystemServices = kingpin.Flag("skip-systemd-system-services", "Skip well-known systemd system containers (apt, motd, udev, etc.)").Default("true").Envar("SKIP_SYSTEMD_SYSTEM_SERVICES").Bool()
 
