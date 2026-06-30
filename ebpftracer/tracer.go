@@ -91,6 +91,25 @@ type globalUprobe struct {
 	refcount int
 }
 
+// negativeUprobe records that a binary had nothing to instrument (e.g. a
+// stripped Go binary such as kubectl), so it is not re-opened and re-parsed for
+// every process that runs it. It is keyed by dev+inode; size and mtime are kept
+// in the value and re-checked on every lookup so an in-place replacement or a
+// recycled inode is re-evaluated instead of being served a stale verdict. The
+// entry also self-expires after negativeUprobeCacheTTL. This is a heuristic, not
+// tamper-proof: a replacement that preserves both size and mtime within the
+// filesystem's timestamp granularity is only re-evaluated once the TTL elapses.
+type negativeUprobe struct {
+	size      int64
+	mtime     int64
+	expiresAt time.Time
+}
+
+// negativeUprobeCacheTTL bounds how long a "nothing to instrument" verdict is
+// trusted, so a binary that is later replaced in a way size+mtime cannot detect
+// is still eventually re-evaluated. A var (not const) so tests can shorten it.
+var negativeUprobeCacheTTL = 10 * time.Minute
+
 type Tracer struct {
 	disableL7Tracing bool
 	hostNetNs        netns.NsHandle
@@ -103,7 +122,10 @@ type Tracer struct {
 	uprobes        map[string]*ebpf.Program
 
 	globalUprobes     map[UprobeKey]*globalUprobe
+	negativeUprobes   map[UprobeKey]negativeUprobe
+	negativeSweepAt   time.Time
 	globalUprobesLock sync.Mutex
+	now               func() time.Time // overridable in tests
 }
 
 func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Tracer {
@@ -115,9 +137,11 @@ func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Trac
 		hostNetNs:        hostNetNs,
 		selfNetNs:        selfNetNs,
 
-		readers:       map[string]*perf.Reader{},
-		uprobes:       map[string]*ebpf.Program{},
-		globalUprobes: map[UprobeKey]*globalUprobe{},
+		readers:         map[string]*perf.Reader{},
+		uprobes:         map[string]*ebpf.Program{},
+		globalUprobes:   map[UprobeKey]*globalUprobe{},
+		negativeUprobes: map[UprobeKey]negativeUprobe{},
+		now:             time.Now,
 	}
 }
 
@@ -154,6 +178,7 @@ func (t *Tracer) Close() {
 		}
 	}
 	t.globalUprobes = nil
+	t.negativeUprobes = nil
 	t.globalUprobesLock.Unlock()
 	t.collection.Close()
 }
@@ -164,6 +189,7 @@ func (t *Tracer) AcquireGlobalUprobe(path string, attach func() []link.Link) (Up
 		return UprobeKey{}, false
 	}
 	key := UprobeKey{Dev: stat.Dev, Ino: stat.Ino}
+	size, mtime := stat.Size, stat.Mtim.Nano()
 
 	t.globalUprobesLock.Lock()
 	defer t.globalUprobesLock.Unlock()
@@ -172,12 +198,37 @@ func (t *Tracer) AcquireGlobalUprobe(path string, attach func() []link.Link) (Up
 		gu.refcount++
 		return key, true
 	}
+	if neg, ok := t.negativeUprobes[key]; ok {
+		if t.now().Before(neg.expiresAt) && neg.size == size && neg.mtime == mtime {
+			return UprobeKey{}, false // known-empty, unchanged, not expired
+		}
+		delete(t.negativeUprobes, key) // expired or replaced: re-evaluate below
+	}
 	links := attach()
 	if len(links) == 0 {
+		t.cacheNegativeUprobe(key, size, mtime)
 		return UprobeKey{}, false
 	}
 	t.globalUprobes[key] = &globalUprobe{links: links, refcount: 1}
 	return key, true
+}
+
+// cacheNegativeUprobe remembers that key has nothing to instrument. Expired
+// entries are swept here, but at most once per TTL (negativeSweepAt), so a burst
+// of distinct binaries does not turn every insert into a full-map scan under the
+// lock. Stale entries are also dropped lazily on lookup in AcquireGlobalUprobe.
+// The caller must hold globalUprobesLock.
+func (t *Tracer) cacheNegativeUprobe(key UprobeKey, size, mtime int64) {
+	now := t.now()
+	if now.Sub(t.negativeSweepAt) >= negativeUprobeCacheTTL {
+		for k, neg := range t.negativeUprobes {
+			if now.After(neg.expiresAt) {
+				delete(t.negativeUprobes, k)
+			}
+		}
+		t.negativeSweepAt = now
+	}
+	t.negativeUprobes[key] = negativeUprobe{size: size, mtime: mtime, expiresAt: now.Add(negativeUprobeCacheTTL)}
 }
 
 func (t *Tracer) ReleaseGlobalUprobes(keys ...UprobeKey) {
