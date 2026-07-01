@@ -17,6 +17,7 @@ var (
 
 	DisableLogParsing    = kingpin.Flag("disable-log-parsing", "Disable container log parsing").Default("false").Envar(envar("DISABLE_LOG_PARSING")).Bool()
 	DisableGPUMonitoring = kingpin.Flag("disable-gpu-monitoring", "Disable GPU monitoring (NVML)").Default("false").Envar(envar("DISABLE_GPU_MONITORING")).Bool()
+	DisableCloudMetadata = kingpin.Flag("no-cloud-metadata", "Don't query the cloud metadata service. The provider is auto-detected per node by default, so this is only needed to force it off (locked-down or misdetected nodes)").Default("false").Envar(envar("NO_CLOUD_METADATA")).Bool()
 
 	ContainerAllowlist = kingpin.Flag("container-allowlist", "List of allowed containers (regex patterns)").Envar(envar("CONTAINER_ALLOWLIST")).Strings()
 	ContainerDenylist  = kingpin.Flag("container-denylist", "List of denied containers (regex patterns)").Envar(envar("CONTAINER_DENYLIST")).Strings()
@@ -28,7 +29,7 @@ var (
 	ExternalNetworksWhitelist = kingpin.Flag("track-public-network", "Allow track connections to the specified IP networks, all private networks are allowed by default (e.g., Y.Y.Y.Y/mask)").Envar(envar("TRACK_PUBLIC_NETWORK")).Default("0.0.0.0/0").Strings()
 	EphemeralPortRange        = kingpin.Flag("ephemeral-port-range", "Destination and Listen TCP ports from this range will be skipped").Default("32768-60999").Envar(envar("EPHEMERAL_PORT_RANGE")).String()
 
-	Provider          = kingpin.Flag("provider", "`provider` label for `node_cloud_info` metric").Envar(envar("PROVIDER")).String()
+	Provider          = kingpin.Flag("provider", "Cloud provider (aws, gcp, azure, hetzner, digitalocean, alibaba, scaleway, ibm, oracle). Sets the `provider` label and forces the metadata service of that provider to be queried, overriding per-node auto-detection").Envar(envar("PROVIDER")).String()
 	Region            = kingpin.Flag("region", "`region` label for `node_cloud_info` metric").Envar(envar("REGION")).String()
 	AvailabilityZone  = kingpin.Flag("availability-zone", "`availability_zone` label for `node_cloud_info` metric").Envar(envar("AVAILABILITY_ZONE")).String()
 	InstanceType      = kingpin.Flag("instance-type", "`instance_type` label for `node_cloud_info` metric").Envar(envar("INSTANCE_TYPE")).String()

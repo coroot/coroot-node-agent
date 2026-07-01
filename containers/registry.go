@@ -96,8 +96,10 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, pr
 	if err = cgroup.Init(); err != nil {
 		return nil, err
 	}
-	if err = DockerdInit(); err != nil {
-		klog.Warningln(err)
+	if !*flags.DisableDockerd {
+		if err = DockerdInit(); err != nil {
+			klog.Warningln(err)
+		}
 	}
 	if err = ContainerdInit(); err != nil {
 		klog.Warningln(err)
@@ -105,8 +107,13 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, pr
 	if err = CrioInit(); err != nil {
 		klog.Warningln(err)
 	}
-	if err = JournaldInit(); err != nil {
-		klog.Warningln(err)
+	if !*flags.DisableJournald {
+		if err = JournaldInit(); err != nil {
+			klog.Warningln(err)
+		}
+	}
+	if !*flags.DisableCilium {
+		InitCilium()
 	}
 
 	r := &Registry{
@@ -584,6 +591,9 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 	switch cg.ContainerType {
 	case cgroup.ContainerTypeSystemdService:
+		if *flags.DisableSystemd {
+			return &ContainerMetadata{}, nil
+		}
 		var err error
 		md := &ContainerMetadata{}
 		md.systemd, err = getSystemdProperties(cg.Id)

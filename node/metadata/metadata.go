@@ -39,11 +39,12 @@ type CloudMetadata struct {
 }
 
 type Overrides struct {
-	Provider          string
-	Region            string
-	AvailabilityZone  string
-	InstanceType      string
-	InstanceLifeCycle string
+	Provider             string
+	Region               string
+	AvailabilityZone     string
+	InstanceType         string
+	InstanceLifeCycle    string
+	DisableCloudMetadata bool
 }
 
 func (md *CloudMetadata) ApplyOverrides(o Overrides) {

@@ -34,7 +34,11 @@ var ciliumMaps = map[string]ciliumMapDefinition{
 	lbmap.Backend6MapV3Name: {key: &lbmap.Backend6KeyV3{}, value: &lbmap.Backend6ValueV3{}},
 }
 
-func init() {
+// InitCilium probes the host BPF filesystem for Cilium's conntrack and
+// load-balancer maps. It is called explicitly after flag parsing (rather than
+// from a package init) so it can be skipped via --no-cilium and so the probe
+// order stays consistent with the other integrations set up in NewRegistry.
+func InitCilium() {
 	var err error
 
 	ciliumCt4, err = bpf.OpenMap(
