@@ -2,6 +2,7 @@ package containers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -13,6 +14,12 @@ import (
 	"github.com/coreos/go-systemd/v22/dbus"
 	gdbus "github.com/godbus/dbus/v5"
 )
+
+// ErrUnitPropertiesUnavailable is returned when a systemd unit's properties
+// have already failed to be read once (e.g. the host's SELinux policy denies
+// access to the private systemd bus). It is used to suppress repeated,
+// identical log lines for the same unit.
+var ErrUnitPropertiesUnavailable = errors.New("systemd unit properties are unavailable")
 
 var (
 	dbusTimeout = time.Second
@@ -37,13 +44,15 @@ var (
 )
 
 type DbusClient struct {
-	conn  *dbus.Conn
-	cache map[string]map[string]any
+	conn   *dbus.Conn
+	cache  map[string]map[string]any
+	failed map[string]bool
 }
 
 func NewDbusClient() *DbusClient {
 	return &DbusClient{
-		cache: map[string]map[string]any{},
+		cache:  map[string]map[string]any{},
+		failed: map[string]bool{},
 	}
 }
 
@@ -78,6 +87,13 @@ func (c *DbusClient) GetAllPropertiesContext(ctx context.Context, unit string, r
 	if res, ok := c.cache[unit]; ok {
 		return res, nil
 	}
+	// A unit whose properties could not be read once (most often because the
+	// host's SELinux policy denies access to the private systemd bus) will keep
+	// failing. Remember it and return a sentinel error so callers can avoid both
+	// re-querying the bus and re-logging the same failure on every scan.
+	if c.failed[unit] {
+		return nil, ErrUnitPropertiesUnavailable
+	}
 	if c.conn == nil {
 		if err := c.connect(); err != nil {
 			return nil, err
@@ -92,6 +108,7 @@ func (c *DbusClient) GetAllPropertiesContext(ctx context.Context, unit string, r
 		c.close()
 		return c.GetAllPropertiesContext(ctx, unit, false)
 	default:
+		c.failed[unit] = true
 		return nil, err
 	}
 }

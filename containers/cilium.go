@@ -43,7 +43,7 @@ func init() {
 		&ctmap.CtEntry{},
 	)
 	if err != nil {
-		klog.Infoln(err)
+		klog.Infof("cilium ebpf-map %s is not available, assuming Cilium is not used: %s", ctmap.MapNameTCP4Global, err)
 	} else {
 		klog.Infoln("found cilium ebpf-map:", ctmap.MapNameTCP4Global)
 	}
@@ -53,7 +53,7 @@ func init() {
 		&ctmap.CtEntry{},
 	)
 	if err != nil {
-		klog.Infoln(err)
+		klog.Infof("cilium ebpf-map %s is not available, assuming Cilium is not used: %s", ctmap.MapNameTCP6Global, err)
 	} else {
 		klog.Infoln("found cilium ebpf-map:", ctmap.MapNameTCP6Global)
 	}
@@ -61,7 +61,7 @@ func init() {
 		def := ciliumMaps[n]
 		backends4Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), def.key, def.value)
 		if err != nil {
-			klog.Infoln(err)
+			klog.Infof("cilium ebpf-map %s is not available, assuming Cilium is not used: %s", n, err)
 		} else {
 			klog.Infoln("found cilium ebpf-map:", n)
 			break
@@ -71,7 +71,7 @@ func init() {
 		def := ciliumMaps[n]
 		backends6Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), def.key, def.value)
 		if err != nil {
-			klog.Infoln(err)
+			klog.Infof("cilium ebpf-map %s is not available, assuming Cilium is not used: %s", n, err)
 		} else {
 			klog.Infoln("found cilium ebpf-map:", n)
 			break
