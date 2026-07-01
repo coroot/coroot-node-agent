@@ -24,6 +24,11 @@ var (
 
 	SkipSystemdSystemServices = kingpin.Flag("skip-systemd-system-services", "Skip well-known systemd system containers (apt, motd, udev, etc.)").Default("true").Envar("SKIP_SYSTEMD_SYSTEM_SERVICES").Bool()
 
+	DisableDockerd  = kingpin.Flag("no-docker", "Don't probe the Docker daemon socket (useful on nodes with no Docker, e.g. Bottlerocket)").Default("false").Envar("NO_DOCKER").Bool()
+	DisableSystemd  = kingpin.Flag("no-systemd", "Don't query systemd unit properties over D-Bus (useful where the host SELinux policy denies access)").Default("false").Envar("NO_SYSTEMD").Bool()
+	DisableJournald = kingpin.Flag("no-journald", "Don't read the systemd journal").Default("false").Envar("NO_JOURNALD").Bool()
+	DisableCilium   = kingpin.Flag("no-cilium", "Don't attach to Cilium eBPF maps (useful on nodes not running Cilium)").Default("false").Envar("NO_CILIUM").Bool()
+
 	LogPerSecond = kingpin.Flag("log-per-second", "The number of logs per second").Default("10.0").Envar("LOG_PER_SECOND").Float64()
 	LogBurst     = kingpin.Flag("log-burst", "The maximum number of tokens that can be consumed in a single call to allow").Default("100").Envar("LOG_BURST").Int()
 

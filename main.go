@@ -118,11 +118,12 @@ func main() {
 	}, machineId, hostname, version)
 
 	nodeCollector := node.NewCollector(hostname, kv, metadata.Overrides{
-		Provider:          flags.GetString(flags.Provider),
-		Region:            flags.GetString(flags.Region),
-		AvailabilityZone:  flags.GetString(flags.AvailabilityZone),
-		InstanceType:      flags.GetString(flags.InstanceType),
-		InstanceLifeCycle: flags.GetString(flags.InstanceLifeCycle),
+		Provider:             flags.GetString(flags.Provider),
+		Region:               flags.GetString(flags.Region),
+		AvailabilityZone:     flags.GetString(flags.AvailabilityZone),
+		InstanceType:         flags.GetString(flags.InstanceType),
+		InstanceLifeCycle:    flags.GetString(flags.InstanceLifeCycle),
+		DisableCloudMetadata: *flags.DisableCloudMetadata,
 	})
 
 	registry := prometheus.NewRegistry()

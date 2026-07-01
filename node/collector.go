@@ -14,7 +14,7 @@ type Collector struct {
 }
 
 func NewCollector(hostname, kernelVersion string, overrides metadata.Overrides) *Collector {
-	md := metadata.GetInstanceMetadata()
+	md := metadata.GetInstanceMetadata(overrides)
 	if md == nil {
 		md = &metadata.CloudMetadata{}
 	}
