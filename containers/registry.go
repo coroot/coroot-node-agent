@@ -97,16 +97,16 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, pr
 		return nil, err
 	}
 	if err = DockerdInit(); err != nil {
-		klog.Warningln(err)
+		klog.Infoln("dockerd integration is not available:", err)
 	}
 	if err = ContainerdInit(); err != nil {
-		klog.Warningln(err)
+		klog.Infoln("containerd integration is not available:", err)
 	}
 	if err = CrioInit(); err != nil {
-		klog.Warningln(err)
+		klog.Infoln("cri-o integration is not available:", err)
 	}
 	if err = JournaldInit(); err != nil {
-		klog.Warningln(err)
+		klog.Infoln("journald integration is not available:", err)
 	}
 
 	r := &Registry{
@@ -371,7 +371,12 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 	}
 	md, err := getContainerMetadata(cg)
 	if err != nil {
-		klog.Warningf("failed to get container metadata for pid %d -> %s: %s", pid, cg.Id, err)
+		// Some hosts (e.g. Bottlerocket) deny reading systemd unit properties
+		// via SELinux. Such failures are permanent and identical for a given
+		// unit, so log them only once instead of on every scan.
+		if !errors.Is(err, ErrUnitPropertiesUnavailable) {
+			klog.Warningf("failed to get container metadata for pid %d -> %s: %s", pid, cg.Id, err)
+		}
 		return nil
 	}
 	id := calcId(cg, md)

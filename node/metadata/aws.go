@@ -64,7 +64,9 @@ func getAwsMetadataVariable(token string, path string) string {
 	r.Header.Set("X-aws-ec2-metadata-token", string(token))
 	resp, err := httpCallWithTimeout(r)
 	if err != nil {
-		klog.Errorln(err)
+		// A missing optional field (e.g. public-ipv4 on a private instance)
+		// returns a non-200 response; that is expected and not an error.
+		klog.Infof("aws metadata %q is not available: %s", path, err)
 		return ""
 	}
 	defer resp.Body.Close()
