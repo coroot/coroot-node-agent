@@ -78,7 +78,7 @@ func runAgent(stop <-chan struct{}) {
 		TLSConfig:   api.TlsConfig(*flags.CAFile, *flags.InsecureSkipVerify),
 	}, machineId, hostname, version)
 
-	nodeCollector := node.NewCollector(hostname, osVersion, metadata.Overrides{
+	nodeCollector := node.NewCollector(hostname, osVersion, version, metadata.Overrides{
 		Provider:          flags.GetString(flags.Provider),
 		Region:            flags.GetString(flags.Region),
 		AvailabilityZone:  flags.GetString(flags.AvailabilityZone),

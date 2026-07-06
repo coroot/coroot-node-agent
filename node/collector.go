@@ -10,10 +10,11 @@ import (
 type Collector struct {
 	hostname         string
 	kernelVersion    string
+	agentVersion     string
 	instanceMetadata *metadata.CloudMetadata
 }
 
-func NewCollector(hostname, kernelVersion string, overrides metadata.Overrides) *Collector {
+func NewCollector(hostname, kernelVersion, agentVersion string, overrides metadata.Overrides) *Collector {
 	md := metadata.GetInstanceMetadata()
 	if md == nil {
 		md = &metadata.CloudMetadata{}
@@ -23,6 +24,7 @@ func NewCollector(hostname, kernelVersion string, overrides metadata.Overrides) 
 	return &Collector{
 		hostname:         hostname,
 		kernelVersion:    kernelVersion,
+		agentVersion:     agentVersion,
 		instanceMetadata: md,
 	}
 }

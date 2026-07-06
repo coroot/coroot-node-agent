@@ -78,7 +78,7 @@ var (
 	NodeGpuTemperature     = metric("node_resources_gpu_temperature_celsius", "Current temperature of the GPU in Celsius", "gpu_uuid")
 	NodeGpuPowerWatts      = metric("node_resources_gpu_power_usage_watts", "Current power usage of the GPU in watts", "gpu_uuid")
 
-	NodeInfo            = metric("node_info", "Meta information about the node", "hostname", "kernel_version")
+	NodeInfo            = metric("node_info", "Meta information about the node", "hostname", "kernel_version", "agent_version")
 	NodeCloudInfo       = metric("node_cloud_info", "Meta information about the cloud instance", "provider", "account_id", "instance_id", "instance_type", "instance_life_cycle", "region", "availability_zone", "availability_zone_id", "local_ipv4", "public_ipv4")
 	NodeUptime          = metric("node_uptime_seconds", "Uptime of the node in seconds")
 	NodeCPUUsage        = metric("node_resources_cpu_usage_seconds_total", "The amount of CPU time spent in each mode", "mode")

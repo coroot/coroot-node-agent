@@ -35,7 +35,7 @@ type CpuUsage struct {
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
-	ch <- metrics.Gauge(metrics.NodeInfo, 1, c.hostname, c.kernelVersion)
+	ch <- metrics.Gauge(metrics.NodeInfo, 1, c.hostname, c.kernelVersion, c.agentVersion)
 
 	v, err := uptime(procRoot)
 	if err != nil {

@@ -117,7 +117,7 @@ func main() {
 		TLSConfig:   api.TlsConfig(*flags.CAFile, *flags.InsecureSkipVerify),
 	}, machineId, hostname, version)
 
-	nodeCollector := node.NewCollector(hostname, kv, metadata.Overrides{
+	nodeCollector := node.NewCollector(hostname, kv, version, metadata.Overrides{
 		Provider:          flags.GetString(flags.Provider),
 		Region:            flags.GetString(flags.Region),
 		AvailabilityZone:  flags.GetString(flags.AvailabilityZone),

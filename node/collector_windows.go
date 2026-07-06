@@ -18,7 +18,7 @@ import (
 )
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
-	ch <- metrics.Gauge(metrics.NodeInfo, 1, c.hostname, c.kernelVersion)
+	ch <- metrics.Gauge(metrics.NodeInfo, 1, c.hostname, c.kernelVersion, c.agentVersion)
 
 	if up, err := host.Uptime(); err != nil {
 		klog.Errorln("failed to get uptime:", err)
