@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -220,7 +221,22 @@ func info(name, version string) prometheus.Collector {
 type logger struct{}
 
 func (l logger) Println(v ...interface{}) {
+	for _, arg := range v {
+		if err, ok := arg.(error); ok && isClientDisconnect(err) {
+			// A scraper (e.g. Prometheus) closed the connection before the
+			// /metrics response was fully written. This is benign - usually a
+			// scrape timeout or the scraper restarting - and promhttp reports it
+			// once per metric family, so keep it out of the error stream to avoid
+			// log spam.
+			klog.V(1).Infoln(v...)
+			return
+		}
+	}
 	klog.Errorln(v...)
+}
+
+func isClientDisconnect(err error) bool {
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET)
 }
 
 type RateLimitedLogOutput struct {
