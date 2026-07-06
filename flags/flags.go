@@ -83,7 +83,11 @@ func init() {
 		platformEndpoints(u)
 	}
 
-	if *MetricsEndpoint != nil {
+	if *MetricsEndpoint != nil && *ListenAddress == defaultListenAddress {
+		// In remote-write mode the built-in HTTP server is only needed for the
+		// agent's own metrics, so bind it to loopback by default. Respect an
+		// explicitly configured --listen/LISTEN so /metrics can also be scraped
+		// directly (e.g. by an external Prometheus alongside remote write).
 		*ListenAddress = "127.0.0.1:10300"
 	}
 }
