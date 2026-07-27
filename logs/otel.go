@@ -82,7 +82,7 @@ func OtelLogEmitter(containerId string) logparser.OnMsgCallbackF {
 	if otelLogger == nil {
 		return nil
 	}
-	return func(ts time.Time, level logparser.Level, patternHash string, msg string) {
+	return func(ts time.Time, level logparser.Level, patternHash string, msg string, attributes map[string]string) {
 		severityText := level.String()
 		severityNumber := otelLogs.UNSPECIFIED
 		switch level {
@@ -98,6 +98,12 @@ func OtelLogEmitter(containerId string) logparser.OnMsgCallbackF {
 			severityNumber = otelLogs.DEBUG
 		}
 
+		attrs := make([]attribute.KeyValue, 0, len(attributes)+1)
+		attrs = append(attrs, attribute.Key("pattern.hash").String(patternHash))
+		for k, v := range attributes {
+			attrs = append(attrs, attribute.Key(k).String(v))
+		}
+
 		otelLogger.Emit(
 			otelLogs.NewLogRecord(otelLogs.LogRecordConfig{
 				ObservedTimestamp: ts,
@@ -108,9 +114,7 @@ func OtelLogEmitter(containerId string) logparser.OnMsgCallbackF {
 					semconv.ServiceName(common.ContainerIdToOtelServiceName(containerId)),
 					semconv.ContainerID(containerId),
 				),
-				Attributes: &[]attribute.KeyValue{
-					attribute.Key("pattern.hash").String(patternHash),
-				},
+				Attributes: &attrs,
 			}),
 		)
 	}

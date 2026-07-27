@@ -15,8 +15,9 @@ func envar(name string) string {
 var (
 	ListenAddress = kingpin.Flag("listen", "Listen address - ip:port or :port").Default(defaultListenAddress).Envar(envar("LISTEN")).String()
 
-	DisableLogParsing    = kingpin.Flag("disable-log-parsing", "Disable container log parsing").Default("false").Envar(envar("DISABLE_LOG_PARSING")).Bool()
-	DisableGPUMonitoring = kingpin.Flag("disable-gpu-monitoring", "Disable GPU monitoring (NVML)").Default("false").Envar(envar("DISABLE_GPU_MONITORING")).Bool()
+	DisableLogParsing     = kingpin.Flag("disable-log-parsing", "Disable container log parsing").Default("false").Envar(envar("DISABLE_LOG_PARSING")).Bool()
+	DisableJsonLogParsing = kingpin.Flag("disable-json-log-parsing", "Disable extracting the message, severity, and attributes from JSON-formatted logs").Default("false").Envar(envar("DISABLE_JSON_LOG_PARSING")).Bool()
+	DisableGPUMonitoring  = kingpin.Flag("disable-gpu-monitoring", "Disable GPU monitoring (NVML)").Default("false").Envar(envar("DISABLE_GPU_MONITORING")).Bool()
 
 	ContainerAllowlist = kingpin.Flag("container-allowlist", "List of allowed containers (regex patterns)").Envar(envar("CONTAINER_ALLOWLIST")).Strings()
 	ContainerDenylist  = kingpin.Flag("container-denylist", "List of denied containers (regex patterns)").Envar(envar("CONTAINER_DENYLIST")).Strings()

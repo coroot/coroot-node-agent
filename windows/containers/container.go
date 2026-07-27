@@ -265,7 +265,7 @@ func (c *Container) eventLogInput() chan logparser.LogEntry {
 		return c.eventLogCh
 	}
 	ch := make(chan logparser.LogEntry, 100)
-	parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(c.ID), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer)
+	parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(c.ID), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer, !*flags.DisableJsonLogParsing)
 	c.addLogParserLocked(logSourceEventLog, logs.NewPipeline(parser, nil))
 	c.eventLogCh = ch
 	return ch
@@ -279,7 +279,7 @@ func (c *Container) startLogTailer() {
 	defer c.lock.Unlock()
 	c.stopLogParserLocked(logSourceStdout)
 	ch := make(chan logparser.LogEntry, 100)
-	parser := logparser.NewParser(ch, logparser.DockerJsonDecoder{}, logs.OtelLogEmitter(c.ID), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer)
+	parser := logparser.NewParser(ch, logparser.DockerJsonDecoder{}, logs.OtelLogEmitter(c.ID), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer, !*flags.DisableJsonLogParsing)
 	reader, err := logs.NewTailReader(c.logPath, ch)
 	if err != nil {
 		parser.Stop()
