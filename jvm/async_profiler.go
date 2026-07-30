@@ -64,8 +64,14 @@ func IsAsyncProfilerAlreadyLoaded(pid uint32) bool {
 }
 
 func DeployAndStartAsyncProfiler(pid uint32) error {
-	if err := os.MkdirAll(proc.Path(pid, "root", apDeployDir), 0755); err != nil {
+	deployDir := proc.Path(pid, "root", apDeployDir)
+	if err := os.MkdirAll(deployDir, 0755); err != nil {
 		return fmt.Errorf("failed to create deploy dir: %w", err)
+	}
+	// The JFR file is created by the JVM process itself, which may run as a
+	// non-root user, so the dir must be world-writable (sticky, like /tmp).
+	if err := os.Chmod(deployDir, 0777|os.ModeSticky); err != nil {
+		return fmt.Errorf("failed to chmod deploy dir: %w", err)
 	}
 	libData, err := agentAssets.ReadFile("assets/" + apAssetName())
 	if err != nil {
@@ -96,23 +102,24 @@ func CollectAsyncProfiler(pid uint32) ([]byte, error) {
 	}
 	hostPath := apHostDumpPath(pid, nsPid)
 
-	if err := apCommand(pid, "stop"); err != nil {
-		return nil, fmt.Errorf("asprof stop failed for JVM %d: %w", pid, err)
-	}
+	stopErr := apCommand(pid, "stop")
 
-	data, err := os.ReadFile(hostPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to read async-profiler dump %s: %w", hostPath, err)
-	}
+	data, readErr := os.ReadFile(hostPath)
 	os.Remove(hostPath)
 
 	if err := apCommand(pid, apStartArgs(nsPid)); err != nil {
 		klog.Warningf("pid=%d: failed to restart async-profiler: %v", pid, err)
 	}
 
+	if stopErr != nil {
+		return nil, fmt.Errorf("asprof stop failed for JVM %d: %w", pid, stopErr)
+	}
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read async-profiler dump %s: %w", hostPath, readErr)
+	}
 	return data, nil
 }
 
