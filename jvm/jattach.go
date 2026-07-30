@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -82,10 +83,7 @@ func LoadAgent(pid uint32, agentPath, args string) error {
 	if err != nil {
 		return err
 	}
-	if status != '0' {
-		return fmt.Errorf("load agent failed: status=%c response=%s", status, resp)
-	}
-	return nil
+	return checkAgentLoadResponse(status, resp)
 }
 
 func LoadNativeAgent(pid uint32, agentPath, args string) error {
@@ -94,8 +92,21 @@ func LoadNativeAgent(pid uint32, agentPath, args string) error {
 	if err != nil {
 		return err
 	}
+	return checkAgentLoadResponse(status, resp)
+}
+
+func checkAgentLoadResponse(status byte, resp string) error {
 	if status != '0' {
-		return fmt.Errorf("load native agent failed: status=%c response=%s", status, resp)
+		return fmt.Errorf("agent load failed: status=%c response=%s", status, resp)
+	}
+	line, _, _ := strings.Cut(resp, "\n")
+	line = strings.TrimSpace(strings.TrimPrefix(line, "return code: "))
+	code, err := strconv.Atoi(line)
+	if err != nil {
+		return fmt.Errorf("agent load failed: unexpected response %q", resp)
+	}
+	if code != 0 {
+		return fmt.Errorf("agent load failed: Agent_OnAttach returned %d", code)
 	}
 	return nil
 }
