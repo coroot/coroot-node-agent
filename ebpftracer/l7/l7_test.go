@@ -3,6 +3,7 @@ package l7
 import (
 	"bytes"
 	"encoding/binary"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -282,4 +283,38 @@ func TestParseZookeeper(t *testing.T) {
 
 	assert.Equal(t, "getData", op)
 	assert.Equal(t, "/clickhouse/tables/shard-1/coroot_3kuq8b3z/otel_t...<TRUNCATED>", arg)
+}
+
+// A misparse of a truncated capture can read garbage bytes as a huge string
+// length; ch-go allocates it before noticing. Each payload here claims a 4GiB
+// string in a few bytes.
+func TestParseClickhouseGarbageLength(t *testing.T) {
+	huge := make([]byte, binary.MaxVarintLen64)
+	huge = huge[:binary.PutUvarint(huge, 1<<32)] // claims a 4GiB string
+
+	str := func(s string) []byte {
+		b := make([]byte, binary.MaxVarintLen64)
+		b = b[:binary.PutUvarint(b, uint64(len(s)))]
+		return append(b, s...)
+	}
+
+	payloads := map[string][]byte{
+		// packet type, then the query id claims 4GiB
+		"query id": append([]byte{0x1}, huge...),
+		// packet type, valid query id, ClientInfo{kind, then initial user claims 4GiB}
+		"client info str": append(append(append([]byte{0x1}, str("q-1")...), 0x1), huge...),
+	}
+
+	for name, payload := range payloads {
+		t.Run(name, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			assert.Equal(t, "", ParseClickhouse(payload))
+			runtime.ReadMemStats(&after)
+			allocated := after.TotalAlloc - before.TotalAlloc
+			assert.Lessf(t, allocated, uint64(1<<20),
+				"ParseClickhouse allocated %d bytes for a %d-byte garbage payload", allocated, len(payload))
+		})
+	}
 }
