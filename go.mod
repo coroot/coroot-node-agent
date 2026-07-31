@@ -4,7 +4,6 @@ go 1.24.7
 
 require (
 	github.com/0xrawsec/golang-etw v1.6.2
-	github.com/ClickHouse/ch-go v0.62.0
 	github.com/NVIDIA/go-nvml v0.12.4-1
 	github.com/agoda-com/opentelemetry-logs-go v0.4.1
 	github.com/cilium/cilium v1.17.2
@@ -94,8 +93,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
-	github.com/go-faster/city v1.0.1 // indirect
-	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -156,7 +153,6 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
-	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
@@ -165,7 +161,6 @@ require (
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/samber/lo v1.38.1 // indirect
 	github.com/sasha-s/go-deadlock v0.3.5 // indirect
-	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
