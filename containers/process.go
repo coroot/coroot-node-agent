@@ -51,8 +51,8 @@ type Process struct {
 	openSslUprobesChecked bool
 	rustlsUprobesChecked  bool
 	javaTlsUprobesChecked bool
-	pythonGilChecked      bool
-	nodejsChecked         bool
+	pythonGil             retryState
+	nodejs                retryState
 	nodejsPrevStats       *ebpftracer.NodejsStats
 	pythonPrevStats       *ebpftracer.PythonStats
 
@@ -102,67 +102,119 @@ func (p *Process) instrument(tracer *ebpftracer.Tracer) {
 		}
 	}
 	b := backoff.Backoff{Factor: 2, Min: time.Second, Max: time.Minute}
+	var dest string
+	var cmdline []byte
 	for {
 		select {
 		case <-p.ctx.Done():
 			return
 		default:
-			dest, err := os.Readlink(proc.Path(p.Pid, "exe"))
-			if err != nil {
-				return
-			}
-			cmdline := proc.GetCmdline(p.Pid)
-			if dest != "/" && len(cmdline) > 0 {
-				p.instrumentPython(cmdline, tracer)
-				p.instrumentNodejs(dest, tracer)
-				if dotNetAppName, err := dotNetApp(cmdline, p.Pid); err == nil {
-					if dotNetAppName != "" {
-						p.dotNetMonitor = NewDotNetMonitor(p.ctx, p.Pid, dotNetAppName)
-					}
-				}
-				return
-			}
-			time.Sleep(b.Duration())
 		}
+		var err error
+		dest, err = os.Readlink(proc.Path(p.Pid, "exe"))
+		if err != nil {
+			return
+		}
+		cmdline = proc.GetCmdline(p.Pid)
+		if dest != "/" && len(cmdline) > 0 {
+			break
+		}
+		time.Sleep(b.Duration())
+	}
+
+	if dotNetAppName, err := dotNetApp(cmdline, p.Pid); err == nil && dotNetAppName != "" {
+		p.dotNetMonitor = NewDotNetMonitor(p.ctx, p.Pid, dotNetAppName)
+	}
+
+	// A failed nodejs/python uprobe attach is usually a transient race (many
+	// processes attaching to the shared eBPF program at once, e.g. right
+	// after a node-agent restart rescans every already-running container),
+	// not a permanent incompatibility, so it's worth a few retries spaced
+	// out by the existing backoff before giving up for good.
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		default:
+		}
+		pythonDone := p.instrumentPython(cmdline, tracer)
+		nodejsDone := p.instrumentNodejs(dest, tracer)
+		if pythonDone && nodejsDone {
+			return
+		}
+		time.Sleep(b.Duration())
 	}
 }
 
-func (p *Process) instrumentPython(cmdline []byte, tracer *ebpftracer.Tracer) {
-	if p.pythonGilChecked {
-		return
+// retryState tracks a probe-attach that may need a few attempts before it
+// either succeeds or is given up on for good.
+type retryState struct {
+	done     bool
+	attempts int
+}
+
+const maxInstrumentAttachAttempts = 5
+
+// resolve records one outcome and reports whether no further attempts are
+// needed (attached, or attempts exhausted).
+func (r *retryState) resolve(attached bool) bool {
+	if attached {
+		r.done = true
+		return true
 	}
-	p.pythonGilChecked = true
+	r.attempts++
+	if r.attempts >= maxInstrumentAttachAttempts {
+		r.done = true
+	}
+	return r.done
+}
+
+// instrumentPython returns true once no further attempts are needed
+// (permanently not Python, successfully attached, or attempts exhausted).
+func (p *Process) instrumentPython(cmdline []byte, tracer *ebpftracer.Tracer) bool {
+	if p.pythonGil.done {
+		return true
+	}
 	parts := bytes.Split(cmdline, []byte{0})
 	cmd := parts[0]
 	if len(cmd) == 0 {
-		return
+		p.pythonGil.done = true
+		return true
 	}
 	cmdFields := bytes.Fields(cmd)
 	if len(cmdFields) == 0 {
-		return
+		p.pythonGil.done = true
+		return true
 	}
 	cmd = bytes.TrimSuffix(cmdFields[0], []byte{':'})
 	if !apptype.IsPython(cmd) {
-		return
+		p.pythonGil.done = true
+		return true
 	}
-	if key := tracer.AttachPythonThreadLockProbes(p.Pid); key != nil {
+	key := tracer.AttachPythonThreadLockProbes(p.Pid)
+	if key != nil {
 		p.pythonPrevStats = &ebpftracer.PythonStats{}
 		p.addUprobeKey(*key)
 	}
+	return p.pythonGil.resolve(key != nil)
 }
 
-func (p *Process) instrumentNodejs(exe string, tracer *ebpftracer.Tracer) {
-	if p.nodejsChecked {
-		return
+// instrumentNodejs returns true once no further attempts are needed
+// (permanently not Node.js, successfully attached, or attempts exhausted).
+func (p *Process) instrumentNodejs(exe string, tracer *ebpftracer.Tracer) bool {
+	if p.nodejs.done {
+		return true
 	}
-	p.nodejsChecked = true
 	if !apptype.IsNodejs(exe) {
-		return
+		p.nodejs.done = true
+		return true
 	}
-	if key := tracer.AttachNodejsProbes(p.Pid, exe); key != nil {
+	key := tracer.AttachNodejsProbes(p.Pid, exe)
+	if key != nil {
 		p.nodejsPrevStats = &ebpftracer.NodejsStats{}
 		p.addUprobeKey(*key)
 	}
+	return p.nodejs.resolve(key != nil)
 }
 
 func (p *Process) addGpuUsageSample(sample gpu.ProcessUsageSample) {
