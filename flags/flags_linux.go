@@ -27,9 +27,10 @@ var (
 	LogPerSecond = kingpin.Flag("log-per-second", "The number of logs per second").Default("10.0").Envar("LOG_PER_SECOND").Float64()
 	LogBurst     = kingpin.Flag("log-burst", "The maximum number of tokens that can be consumed in a single call to allow").Default("100").Envar("LOG_BURST").Int()
 
-	TracesEndpoint   = kingpin.Flag("traces-endpoint", "The URL of the endpoint to send traces to").Envar("TRACES_ENDPOINT").URL()
-	TracesSampling   = kingpin.Flag("traces-sampling", "Trace sampling rate (0.0 to 1.0)").Default("1.0").Envar("TRACES_SAMPLING").Float64()
-	ProfilesEndpoint = kingpin.Flag("profiles-endpoint", "The URL of the endpoint to send profiles to").Envar("PROFILES_ENDPOINT").URL()
+	TracesEndpoint        = kingpin.Flag("traces-endpoint", "The URL of the endpoint to send traces to").Envar("TRACES_ENDPOINT").URL()
+	TracesSampling        = kingpin.Flag("traces-sampling", "Trace sampling rate (0.0 to 1.0)").Default("1.0").Envar("TRACES_SAMPLING").Float64()
+	ProfilesEndpoint      = kingpin.Flag("profiles-endpoint", "The URL of the endpoint to send profiles to").Envar("PROFILES_ENDPOINT").URL()
+	ProfilesPruneFraction = kingpin.Flag("profiles-prune-fraction", "Drop insignificant profile code paths accounting for less than this fraction of the profile total (0 to disable)").Default("0.0025").Envar("PROFILES_PRUNE_FRACTION").Float64()
 )
 
 func platformEndpoints(u *url.URL) {

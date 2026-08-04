@@ -180,6 +180,7 @@ func upload(b *pprof.ProfileBuilder) error {
 
 	b.Profile.SampleType[0].Type = "ebpf:cpu:nanoseconds"
 	b.Profile.DurationNanos = CollectInterval.Nanoseconds()
+	b.Profile = pruneProfile(b.Profile, *flags.ProfilesPruneFraction)
 	body := bytes.NewBuffer(nil)
 	if _, err := b.Write(body); err != nil {
 		return err
@@ -264,15 +265,13 @@ func collectAsyncProfilerProfiles() {
 			if len(jp.Prof.Sample) == 0 {
 				continue
 			}
-			if err := uploadProfile(jp.Prof, j.serviceName, j.containerID); err != nil {
-				klog.Errorf("async-profiler upload pid=%d type=%s: %v", j.pid, jp.Type, err)
-			}
 			if profilingUpdateCh != nil {
 				var total int64
 				for _, s := range jp.Prof.Sample {
 					total += s.Value[0]
 				}
 				u := &containers.ProfilingUpdate{Pid: j.pid, Runtime: containers.RuntimeJvm}
+				send := true
 				switch jp.Type {
 				case jvm.ProfileTypeAllocSpace:
 					u.AllocBytes = total
@@ -283,9 +282,14 @@ func collectAsyncProfilerProfiles() {
 				case jvm.ProfileTypeLockDelay:
 					u.LockTimeNs = total
 				default:
-					continue
+					send = false
 				}
-				profilingUpdateCh <- u
+				if send {
+					profilingUpdateCh <- u
+				}
+			}
+			if err := uploadProfile(jp.Prof, j.serviceName, j.containerID); err != nil {
+				klog.Errorf("async-profiler upload pid=%d type=%s: %v", j.pid, jp.Type, err)
 			}
 		}
 	}
@@ -333,9 +337,6 @@ func collectGoHeapProfiles() {
 			if len(hp.Prof.Sample) == 0 {
 				continue
 			}
-			if err := uploadProfile(hp.Prof, g.serviceName, g.containerID); err != nil {
-				klog.Errorf("go heap upload pid=%d type=%s: %v", g.pid, hp.Type, err)
-			}
 			if profilingUpdateCh != nil {
 				var total int64
 				for _, s := range hp.Prof.Sample {
@@ -343,16 +344,22 @@ func collectGoHeapProfiles() {
 				}
 				if total > 0 {
 					u := &containers.ProfilingUpdate{Pid: g.pid, Runtime: containers.RuntimeGo}
+					send := true
 					switch hp.Type {
 					case profileTypeAllocSpace:
 						u.AllocBytes = total
 					case profileTypeAllocObjects:
 						u.AllocObjects = total
 					default:
-						continue
+						send = false
 					}
-					profilingUpdateCh <- u
+					if send {
+						profilingUpdateCh <- u
+					}
 				}
+			}
+			if err := uploadProfile(hp.Prof, g.serviceName, g.containerID); err != nil {
+				klog.Errorf("go heap upload pid=%d type=%s: %v", g.pid, hp.Type, err)
 			}
 		}
 	}
@@ -366,6 +373,8 @@ func uploadProfile(prof *pprofProfile.Profile, serviceName, containerID string) 
 	for _, l := range constLabels {
 		q.Set(l.Name, l.Value)
 	}
+
+	prof = pruneProfile(prof, *flags.ProfilesPruneFraction)
 
 	body := bytes.NewBuffer(nil)
 	if err := prof.Write(body); err != nil {
