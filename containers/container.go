@@ -110,6 +110,7 @@ type Container struct {
 
 	processes map[uint32]*Process
 
+	createdAt time.Time
 	startedAt time.Time
 	zombieAt  time.Time
 	restarts  int
@@ -171,6 +172,8 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 		appId:    appId,
 		cgroup:   cg,
 		metadata: md,
+
+		createdAt: time.Now(),
 
 		processes: map[uint32]*Process{},
 
@@ -250,14 +253,15 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	if minAge := *flags.MinContainerAge; minAge > 0 {
-		if c.startedAt.IsZero() {
-			return
+		since := c.startedAt
+		if since.IsZero() || c.createdAt.Before(since) {
+			since = c.createdAt
 		}
 		end := time.Now()
 		if !c.zombieAt.IsZero() && c.zombieAt.Before(end) {
 			end = c.zombieAt
 		}
-		if end.Sub(c.startedAt) < minAge {
+		if end.Sub(since) < minAge {
 			return
 		}
 	}
@@ -465,6 +469,16 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 			ch <- metrics.Gauge(metrics.NetLatency, rtt, ip.String())
 		}
 	}
+}
+
+func (c *Container) ensureProcess(pid uint32) *Process {
+	c.lock.Lock()
+	p := c.processes[pid]
+	c.lock.Unlock()
+	if p != nil {
+		return p
+	}
+	return c.onProcessStart(pid)
 }
 
 func (c *Container) onProcessStart(pid uint32) *Process {
