@@ -268,7 +268,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					}
 				}
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
-					p := c.onProcessStart(e.Pid)
+					p := c.ensureProcess(e.Pid)
 					if r.processInfoCh != nil && p != nil {
 						r.processInfoCh <- ProcessInfo{Pid: p.Pid, ContainerId: c.id, StartedAt: p.StartedAt, Flags: p.Flags}
 					}
@@ -356,6 +356,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 	}
 	if c := r.containersByCgroupId[cg.Id]; c != nil {
 		r.containersByPid[pid] = c
+		c.ensureProcess(pid)
 		return c
 	}
 	if cg.ContainerType == cgroup.ContainerTypeSandbox {
@@ -410,6 +411,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 		}
 		r.containersByPid[pid] = c
 		r.containersByCgroupId[cg.Id] = c
+		c.ensureProcess(pid)
 		return c
 	}
 	c, err := NewContainer(id, cg, md, pid, r)
@@ -425,6 +427,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 	r.containersByPid[pid] = c
 	r.containersByCgroupId[cg.Id] = c
 	r.containersById[id] = c
+	c.ensureProcess(pid)
 	return c
 }
 
