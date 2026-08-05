@@ -29,9 +29,10 @@ import (
 )
 
 var (
-	gcInterval     = 10 * time.Minute
-	pingTimeout    = 300 * time.Millisecond
-	gpuStatsWindow = 15 * time.Second
+	gcInterval             = 10 * time.Minute
+	tlsAttachRetryInterval = 5 * time.Second
+	pingTimeout            = 300 * time.Millisecond
+	gpuStatsWindow         = 15 * time.Second
 )
 
 type ContainerID string
@@ -1445,10 +1446,15 @@ func (c *Container) revalidateListens(now time.Time, actualListens map[netaddr.I
 	}
 }
 
-func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
+func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32, canBePostponed bool) bool {
 	p := c.processes[pid]
 	if p == nil {
-		return
+		return true
+	}
+	if canBePostponed {
+		if delay := *flags.InstrumentationDelay; delay > 0 && !p.StartedAt.IsZero() && time.Since(p.StartedAt) < delay {
+			return false
+		}
 	}
 	if !p.openSslUprobesChecked {
 		if key := tracer.AttachOpenSslUprobes(pid); key != nil {
@@ -1484,6 +1490,7 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32) {
 			}
 		}
 	}
+	return true
 }
 
 func resolveFd(pid uint32, fd uint64) (mntId string, logPath string) {
