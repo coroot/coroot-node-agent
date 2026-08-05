@@ -17,6 +17,9 @@
 #define CLICKHOUSE_MAX_USER_SIZE 63
 #define CLICKHOUSE_MAX_ADDRESS_SIZE 48
 
+// the max legitimate offset within the query header is 197 (2+36+1+1+63+1+36+1+48+8)
+#define CLICKHOUSE_MAX_OFFSET 200 // checking this fixes the program load on 5.4
+
 static __always_inline
 int is_clickhouse_uuid(char *buf) {
     __u8 u[CLICKHOUSE_QUERY_ID_SIZE];
@@ -58,6 +61,9 @@ int is_clickhouse_query(char *buf, __u64 buf_size) {
         return 0;
     }
     offset += 1 + len;
+    if (offset > CLICKHOUSE_MAX_OFFSET) {
+        return 0;
+    }
     bpf_read(buf+offset, len); // initial_query_id
     if (len == CLICKHOUSE_QUERY_ID_SIZE) {
         if (!is_clickhouse_uuid(buf+offset+1)) {
@@ -67,6 +73,9 @@ int is_clickhouse_query(char *buf, __u64 buf_size) {
         return 0;
     }
     offset += 1 + len;
+    if (offset > CLICKHOUSE_MAX_OFFSET) {
+        return 0;
+    }
     bpf_read(buf+offset, len); // initial_address
     if (len > CLICKHOUSE_MAX_ADDRESS_SIZE) {
         return 0;
@@ -79,7 +88,7 @@ int is_clickhouse_query(char *buf, __u64 buf_size) {
         }
     }
     offset += 1 + len + 8; // interface follows the 8-byte initial_query_start_time_microseconds
-    if (offset >= buf_size) {
+    if (offset > CLICKHOUSE_MAX_OFFSET || offset >= buf_size) {
         return 0;
     }
     __u8 iface = 0;
