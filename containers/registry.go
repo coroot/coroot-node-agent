@@ -56,6 +56,7 @@ type Registry struct {
 	containersByCgroupId   map[string]*Container
 	containersByPid        map[uint32]*Container
 	containersByPidIgnored map[uint32]*time.Time
+	pendingTlsAttach       map[uint32]*Container
 	ip2fqdn                map[netaddr.IP]*common.Domain
 	ip2fqdnLock            sync.RWMutex
 
@@ -116,6 +117,7 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, pr
 		containersByCgroupId:   map[string]*Container{},
 		containersByPid:        map[uint32]*Container{},
 		containersByPidIgnored: map[uint32]*time.Time{},
+		pendingTlsAttach:       map[uint32]*Container{},
 		ip2fqdn:                map[netaddr.IP]*common.Domain{},
 
 		processInfoCh: processInfoCh,
@@ -163,8 +165,17 @@ func (r *Registry) Close() {
 func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 	gcTicker := time.NewTicker(gcInterval)
 	defer gcTicker.Stop()
+	tlsAttachTicker := time.NewTicker(tlsAttachRetryInterval)
+	defer tlsAttachTicker.Stop()
 	for {
 		select {
+		case <-tlsAttachTicker.C:
+			for pid, c := range r.pendingTlsAttach {
+				if c.attachTlsUprobes(r.tracer, pid, true) {
+					delete(r.pendingTlsAttach, pid)
+				}
+			}
+
 		case now := <-gcTicker.C:
 			for pid, c := range r.containersByPid {
 				cg, err := proc.ReadCgroup(pid)
@@ -278,6 +289,7 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 					c.onProcessExit(e.Pid, e.Reason == ebpftracer.EventReasonOOMKill)
 				}
 				delete(r.containersByPid, e.Pid)
+				delete(r.pendingTlsAttach, e.Pid)
 
 			case ebpftracer.EventTypeFileOpen:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
@@ -287,7 +299,8 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			case ebpftracer.EventTypeListenOpen:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
 					c.onListenOpen(e.Pid, e.SrcAddr, false)
-					c.attachTlsUprobes(r.tracer, e.Pid)
+					c.attachTlsUprobes(r.tracer, e.Pid, false)
+					delete(r.pendingTlsAttach, e.Pid)
 				} else {
 					klog.Infoln("TCP listen open from unknown container", e)
 				}
@@ -299,7 +312,9 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 			case ebpftracer.EventTypeConnectionOpen:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
 					c.onConnectionOpen(e.Pid, e.Fd, e.SrcAddr, e.DstAddr, e.ActualDstAddr, e.Timestamp, false, e.Duration)
-					c.attachTlsUprobes(r.tracer, e.Pid)
+					if !c.attachTlsUprobes(r.tracer, e.Pid, true) {
+						r.pendingTlsAttach[e.Pid] = c
+					}
 				}
 			case ebpftracer.EventTypeConnectionError:
 				if c := r.getOrCreateContainer(e.Pid); c != nil {
