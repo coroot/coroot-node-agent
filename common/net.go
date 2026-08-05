@@ -36,24 +36,9 @@ func init() {
 	}
 	if r := flags.EphemeralPortRange; r != nil && *r != "" {
 		klog.Infoln("ephemeral-port-range:", *r)
-		parts := strings.Split(*r, "-")
-		if len(parts) != 2 {
-			klog.Exitf("invalid port range: %s", *r)
-		}
-		from, err := strconv.ParseUint(parts[0], 10, 16)
-		if err != nil {
-			klog.Exitf("invalid port range: %s", *r)
-		}
-		to, err := strconv.ParseUint(parts[1], 10, 16)
-		if err != nil {
-			klog.Exitf("invalid port range: %s", *r)
-		}
-		if from > to {
-			klog.Exitf("invalid port range: %s", *r)
-		}
-		PortFilter = &portFilter{
-			from: uint16(from),
-			to:   uint16(to),
+		var err error
+		if PortFilter, err = newPortFilter(*r); err != nil {
+			klog.Exitln(err)
 		}
 	}
 	var err error
@@ -121,9 +106,39 @@ func (f connectionFilter) ShouldBeSkipped(dst, actualDst netaddr.IP) bool {
 	return true
 }
 
-type portFilter struct {
+type portRange struct {
 	from uint16
 	to   uint16
+}
+
+type portFilter struct {
+	ranges []portRange
+}
+
+func newPortFilter(s string) (*portFilter, error) {
+	f := &portFilter{}
+	for _, r := range strings.Fields(strings.ReplaceAll(s, ",", " ")) {
+		from, to, ok := strings.Cut(r, "-")
+		if !ok {
+			return nil, fmt.Errorf("invalid port range: %s", r)
+		}
+		f1, err := strconv.ParseUint(from, 10, 16)
+		if err != nil {
+			return nil, fmt.Errorf("invalid port range: %s", r)
+		}
+		t1, err := strconv.ParseUint(to, 10, 16)
+		if err != nil {
+			return nil, fmt.Errorf("invalid port range: %s", r)
+		}
+		if f1 > t1 {
+			return nil, fmt.Errorf("invalid port range: %s", r)
+		}
+		f.ranges = append(f.ranges, portRange{from: uint16(f1), to: uint16(t1)})
+	}
+	if len(f.ranges) == 0 {
+		return nil, fmt.Errorf("invalid port range: %s", s)
+	}
+	return f, nil
 }
 
 var wellKnownPorts = map[uint16]struct{}{
@@ -137,7 +152,12 @@ func (f *portFilter) ShouldBeSkipped(port uint16) bool {
 	if _, ok := wellKnownPorts[port]; ok {
 		return false
 	}
-	return port >= f.from && port <= f.to
+	for _, r := range f.ranges {
+		if port >= r.from && port <= r.to {
+			return true
+		}
+	}
+	return false
 }
 
 type HostPort struct {
