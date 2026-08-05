@@ -27,11 +27,28 @@ const (
 
 var (
 	pingerID = os.Getpid() & 0xFFFF
+
+	errNoTimestamp = errors.New("no timestamp found")
 )
 
 type sentPacket struct {
 	seq         int
 	txTimestamp time.Time
+}
+
+// The kernel timestamps incoming packets only while at least one socket has timestamping enabled.
+// This socket is never closed, keeping timestamping enabled for the whole process.
+// It is never bound, so it receives nothing.
+func init() {
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		klog.Warningln("failed to keep packet timestamping enabled:", err)
+		return
+	}
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_TIMESTAMPING, unix.SOF_TIMESTAMPING_RX_SOFTWARE|unix.SOF_TIMESTAMPING_SOFTWARE); err != nil {
+		klog.Warningln("failed to keep packet timestamping enabled:", err)
+		_ = unix.Close(fd)
+	}
 }
 
 func Ping(ns netns.NsHandle, originNs netns.NsHandle, targets []netaddr.IP, timeout time.Duration) (map[netaddr.IP]float64, error) {
@@ -138,15 +155,16 @@ func getTimestampFromOutOfBandData(oob []byte, oobn int) (time.Time, error) {
 		return time.Time{}, err
 	}
 	for _, cm := range cms {
-		if cm.Header.Level == syscall.SOL_SOCKET || cm.Header.Type == syscall.SO_TIMESTAMPING {
-			var t unix.ScmTimestamping
-			if err := binary.Read(bytes.NewBuffer(cm.Data), binary.LittleEndian, &t); err != nil {
-				return time.Time{}, err
-			}
-			return time.Unix(t.Ts[0].Unix()), nil
+		if cm.Header.Level != syscall.SOL_SOCKET || cm.Header.Type != syscall.SO_TIMESTAMPING {
+			continue
 		}
+		var t unix.ScmTimestamping
+		if err := binary.Read(bytes.NewBuffer(cm.Data), binary.LittleEndian, &t); err != nil {
+			return time.Time{}, err
+		}
+		return time.Unix(t.Ts[0].Unix()), nil
 	}
-	return time.Time{}, fmt.Errorf("no timestamp found")
+	return time.Time{}, errNoTimestamp
 }
 
 func getTxTimestamp(socketFd int) (time.Time, error) {
