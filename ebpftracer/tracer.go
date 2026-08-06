@@ -306,6 +306,12 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	}
 	t.collection = c
 
+	for _, programSpec := range collectionSpec.Programs {
+		if strings.HasPrefix(programSpec.SectionName, "uprobe/") {
+			t.uprobes[programSpec.Name] = c.Programs[programSpec.Name]
+		}
+	}
+
 	perfMaps := []perfMap{
 		{name: "proc_events", typ: perfMapTypeProcEvents, perCPUBufferSizePages: 4},
 		{name: "tcp_listen_events", typ: perfMapTypeTCPEvents, perCPUBufferSizePages: 4},
@@ -353,8 +359,7 @@ func (t *Tracer) attachPrograms() error {
 			parts := strings.SplitN(programSpec.AttachTo, "/", 2)
 			l, err = link.Tracepoint(parts[0], parts[1], program, nil)
 		case ebpf.Kprobe:
-			if strings.HasPrefix(programSpec.SectionName, "uprobe/") {
-				t.uprobes[programSpec.Name] = program
+			if strings.HasPrefix(programSpec.SectionName, "uprobe/") { // attached to a process on demand
 				continue
 			}
 			l, err = link.Kprobe(programSpec.AttachTo, program, nil)
