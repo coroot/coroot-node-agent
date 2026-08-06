@@ -15,6 +15,10 @@ func TestTailReader(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.Remove(f.Name())
 
+	// the file doesn't exist yet
+	err = os.Remove(f.Name())
+	assert.NoError(t, err)
+
 	tailPollInterval = time.Millisecond * 100
 	ch := make(chan logparser.LogEntry, 10)
 	tr, err := NewTailReader(f.Name(), ch)
@@ -34,6 +38,11 @@ func TestTailReader(t *testing.T) {
 		entry := <-ch
 		assert.Equal(t, expected, entry.Content)
 	}
+
+	// the file is created
+	wait()
+	f, err = os.Create(f.Name())
+	assert.NoError(t, err)
 
 	write("foo 1\n")
 	get("foo 1")
