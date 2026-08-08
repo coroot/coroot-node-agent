@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/coroot/coroot-node-agent/common"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"k8s.io/klog/v2"
 )
 
@@ -35,16 +36,15 @@ func (d *dockerClient) ensure() *client.Client {
 	if d.client != nil {
 		return d.client
 	}
-	c, err := client.NewClientWithOpts(
+	c, err := client.New(
 		client.WithHost("npipe:////./pipe/docker_engine"),
-		client.WithAPIVersionNegotiation(),
 	)
 	if err != nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
 	defer cancel()
-	if _, err := c.Ping(ctx); err != nil {
+	if _, err := c.Ping(ctx, client.PingOptions{NegotiateAPIVersion: true}); err != nil {
 		c.Close()
 		return nil
 	}
@@ -70,7 +70,7 @@ func (d *dockerClient) list() []*Container {
 	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
 	defer cancel()
 
-	list, err := c.ContainerList(ctx, container.ListOptions{})
+	list, err := c.ContainerList(ctx, client.ContainerListOptions{})
 	if err != nil {
 		klog.V(2).Infof("docker: ContainerList failed: %v", err)
 		d.reset()
@@ -80,11 +80,12 @@ func (d *dockerClient) list() []*Container {
 	trees := processTrees()
 
 	var out []*Container
-	for _, ct := range list {
-		insp, err := c.ContainerInspect(ctx, ct.ID)
+	for _, ct := range list.Items {
+		res, err := c.ContainerInspect(ctx, ct.ID, client.ContainerInspectOptions{})
 		if err != nil {
 			continue
 		}
+		insp := res.Container
 		name := strings.TrimPrefix(insp.Name, "/")
 		if name == "" {
 			continue
@@ -123,19 +124,19 @@ func (d *dockerClient) list() []*Container {
 				if n == nil {
 					continue
 				}
-				for _, s := range []string{n.IPAddress, n.GlobalIPv6Address} {
-					if ip, err := netip.ParseAddr(s); err == nil && usableContainerIP(ip) {
+				for _, ip := range []netip.Addr{n.IPAddress, n.GlobalIPv6Address} {
+					if ip.IsValid() && usableContainerIP(ip) {
 						dc.ips = append(dc.ips, ip)
 					}
 				}
 			}
 			seen := map[netip.AddrPort]bool{}
 			for port, bindings := range insp.NetworkSettings.Ports {
-				if port.Proto() != "tcp" {
+				if port.Proto() != network.TCP {
 					continue
 				}
 				for _, b := range bindings {
-					ap, err := netip.ParseAddrPort(net.JoinHostPort(b.HostIP, b.HostPort))
+					ap, err := netip.ParseAddrPort(net.JoinHostPort(b.HostIP.String(), b.HostPort))
 					if err != nil || common.PortFilter.ShouldBeSkipped(ap.Port()) {
 						continue
 					}
@@ -159,7 +160,7 @@ func (d *dockerClient) stats(name string) (*Stats, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
 	defer cancel()
 
-	resp, err := c.ContainerStatsOneShot(ctx, name)
+	resp, err := c.ContainerStats(ctx, name, client.ContainerStatsOptions{})
 	if err != nil {
 		return nil, err
 	}
