@@ -14,6 +14,7 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/host"
+	"github.com/coroot/coroot-node-agent/logging"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/node/metadata"
@@ -56,8 +57,10 @@ func setupLogging() {
 
 		return
 	}
-	klog.LogToStderr(false)
-	klog.SetOutput(elog)
+
+	// Without this klog records each warning twice and each error three times in
+	// the event log. There is no --log-level on Windows, so keep every severity.
+	logging.Init("info", elog)
 }
 
 func runAgent(stop <-chan struct{}) {

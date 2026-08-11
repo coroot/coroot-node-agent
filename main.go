@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/host"
+	"github.com/coroot/coroot-node-agent/logging"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/node/metadata"
@@ -26,7 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sys/unix"
-	"golang.org/x/time/rate"
 	"k8s.io/klog/v2"
 )
 
@@ -85,8 +86,7 @@ func whitelistNodeExternalNetworks() {
 }
 
 func main() {
-	klog.LogToStderr(false)
-	klog.SetOutput(&RateLimitedLogOutput{limiter: rate.NewLimiter(rate.Limit(*flags.LogPerSecond), *flags.LogBurst)})
+	setupLogging()
 
 	klog.Infoln("agent version:", version)
 
@@ -223,13 +223,9 @@ func (l logger) Println(v ...interface{}) {
 	klog.Errorln(v...)
 }
 
-type RateLimitedLogOutput struct {
-	limiter *rate.Limiter
-}
-
-func (o *RateLimitedLogOutput) Write(data []byte) (int, error) {
-	if !o.limiter.Allow() {
-		return len(data), nil
+func setupLogging() {
+	out := logging.RateLimited(*flags.LogPerSecond, *flags.LogBurst)
+	if !logging.Init(*flags.LogLevel, out) {
+		klog.Exitf("invalid --log-level %q, must be one of: %s", *flags.LogLevel, strings.Join(logging.Levels, ", "))
 	}
-	return os.Stderr.Write(data)
 }
