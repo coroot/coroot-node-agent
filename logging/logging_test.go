@@ -1,4 +1,4 @@
-package main
+package logging
 
 import (
 	"os"
@@ -53,7 +53,7 @@ func TestConfigureLogOutputs(t *testing.T) {
 			initKlog()
 			c := &severityCounter{}
 
-			assert.Equal(t, tc.known, configureLogOutputs(tc.minLevel, c))
+			assert.Equal(t, tc.known, configureOutputs(tc.minLevel, c))
 
 			klog.Info("info message")
 			klog.Warning("warning message")
@@ -79,7 +79,7 @@ func TestStderrIsNotDuplicated(t *testing.T) {
 
 	if os.Getenv("COROOT_TEST_FATAL") == "1" {
 		initKlog()
-		configureLogOutputs("info", os.Stderr)
+		configureOutputs("info", os.Stderr)
 		klog.Error(errorMarker)
 		klog.Fatal(fatalMarker)
 		return

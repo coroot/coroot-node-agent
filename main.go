@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"flag"
-	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -20,6 +18,7 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/host"
+	"github.com/coroot/coroot-node-agent/logging"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/node/metadata"
@@ -29,7 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sys/unix"
-	"golang.org/x/time/rate"
 	"k8s.io/klog/v2"
 )
 
@@ -225,65 +223,9 @@ func (l logger) Println(v ...interface{}) {
 	klog.Errorln(v...)
 }
 
-// The klog severities the agent routes, ordered from the lowest to the highest.
-// FATAL is absent: initKlog leaves it to stderr instead of the rate-limited output.
-var logSeverities = []string{"INFO", "WARNING", "ERROR"}
-
 func setupLogging() {
-	initKlog()
-	out := &RateLimitedLogOutput{limiter: rate.NewLimiter(rate.Limit(*flags.LogPerSecond), *flags.LogBurst)}
-	if !configureLogOutputs(*flags.LogLevel, out) {
-		klog.Exitf("invalid --log-level %q, must be one of: %s", *flags.LogLevel, strings.Join(logSeverities, ", "))
+	out := logging.RateLimited(*flags.LogPerSecond, *flags.LogBurst)
+	if !logging.Init(*flags.LogLevel, out) {
+		klog.Exitf("invalid --log-level %q, must be one of: %s", *flags.LogLevel, strings.Join(logging.Levels, ", "))
 	}
-}
-
-// initKlog makes klog write each message exactly once. By default klog writes a
-// message to the output of its own severity and to the output of every lower
-// severity, and separately copies anything at or above -stderrthreshold (ERROR)
-// straight to stderr, which would emit every warning twice and every error four
-// times. Only fatals keep that stderr copy, un-throttled by design.
-func initKlog() {
-	fs := flag.NewFlagSet("klog", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	klog.InitFlags(fs)
-	if err := fs.Parse([]string{"-one_output=true", "-stderrthreshold=FATAL"}); err != nil {
-		klog.Exitln("failed to configure klog:", err)
-	}
-	klog.LogToStderr(false)
-	// Fatals are already on stderr; discarding them here keeps klog from falling
-	// back to writing them to a log file.
-	klog.SetOutputBySeverity("FATAL", io.Discard)
-}
-
-// configureLogOutputs sends every severity below minLevel to io.Discard, so that
-// klog drops those messages before they reach the rate limiter. It reports whether
-// minLevel names a known severity; an unknown one leaves every severity enabled,
-// so that the caller can report the error.
-func configureLogOutputs(minLevel string, out io.Writer) bool {
-	minIdx, known := 0, false
-	for i, severity := range logSeverities {
-		if strings.EqualFold(severity, minLevel) {
-			minIdx, known = i, true
-			break
-		}
-	}
-	for i, severity := range logSeverities {
-		if i < minIdx {
-			klog.SetOutputBySeverity(severity, io.Discard)
-		} else {
-			klog.SetOutputBySeverity(severity, out)
-		}
-	}
-	return known
-}
-
-type RateLimitedLogOutput struct {
-	limiter *rate.Limiter
-}
-
-func (o *RateLimitedLogOutput) Write(data []byte) (int, error) {
-	if !o.limiter.Allow() {
-		return len(data), nil
-	}
-	return os.Stderr.Write(data)
 }

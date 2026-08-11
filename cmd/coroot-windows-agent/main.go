@@ -4,8 +4,6 @@ package main
 
 import (
 	"context"
-	"flag"
-	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -16,6 +14,7 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/host"
+	"github.com/coroot/coroot-node-agent/logging"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/node/metadata"
@@ -59,19 +58,9 @@ func setupLogging() {
 		return
 	}
 
-	// Without -one_output klog writes a message to the output of its own severity
-	// and to the output of every lower severity, which would record each warning
-	// twice and each error three times in the event log. -stderrthreshold=FATAL
-	// drops the separate stderr copy of errors.
-	fs := flag.NewFlagSet("klog", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	klog.InitFlags(fs)
-	if err := fs.Parse([]string{"-one_output=true", "-stderrthreshold=FATAL"}); err != nil {
-		klog.Exitln("failed to configure klog:", err)
-	}
-
-	klog.LogToStderr(false)
-	klog.SetOutput(elog)
+	// Without this klog records each warning twice and each error three times in
+	// the event log. There is no --log-level on Windows, so keep every severity.
+	logging.Init("info", elog)
 }
 
 func runAgent(stop <-chan struct{}) {
