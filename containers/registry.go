@@ -419,14 +419,17 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 
 	if c := r.containersById[id]; c != nil {
 		klog.Warningln("id conflict:", id)
-		if cg.CreatedAt().After(c.cgroup.CreatedAt()) {
+		newer := cg.CreatedAt().After(c.cgroup.CreatedAt())
+		if newer {
 			c.cgroup = cg
 			c.metadata = md
-			c.runLogParser("")
 		}
 		r.containersByPid[pid] = c
 		r.containersByCgroupId[cg.Id] = c
 		c.ensureProcess(pid)
+		if newer {
+			c.runLogParser("")
+		}
 		return c
 	}
 	c, err := NewContainer(id, cg, md, pid, r)
@@ -443,6 +446,7 @@ func (r *Registry) getOrCreateContainer(pid uint32) *Container {
 	r.containersByCgroupId[cg.Id] = c
 	r.containersById[id] = c
 	c.ensureProcess(pid)
+	c.runLogParser("")
 	return c
 }
 

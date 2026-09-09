@@ -206,7 +206,6 @@ func NewContainer(id ContainerID, cg *cgroup.Cgroup, md *ContainerMetadata, pid 
 
 		done: make(chan struct{}),
 	}
-	c.runLogParser("")
 
 	go func() {
 		ticker := time.NewTicker(gcInterval)
@@ -1230,16 +1229,31 @@ func (c *Container) ping() map[netaddr.IP]float64 {
 	return rtt
 }
 
+func (c *Container) logMonitoringDisabled() bool {
+	for _, p := range c.processes {
+		if p.Flags.LogMonitoringDisabled {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Container) stopLogParsers() {
+	for k, p := range c.logParsers {
+		p.Stop()
+		delete(c.logParsers, k)
+	}
+}
+
 func (c *Container) runLogParser(logPath string) {
 	if *flags.DisableLogParsing {
 		return
 	}
 
-	for _, p := range c.processes {
-		if p.Flags.LogMonitoringDisabled {
-			klog.InfoS("skipping log monitoring due to COROOT_LOG_MONITORING=disabled", "cg", c.cgroup.Id)
-			return
-		}
+	if c.logMonitoringDisabled() {
+		klog.InfoS("skipping log monitoring due to COROOT_LOG_MONITORING=disabled", "cg", c.cgroup.Id)
+		c.stopLogParsers()
+		return
 	}
 
 	containerId := string(c.id)
