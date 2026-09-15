@@ -79,6 +79,16 @@ func TestDomain(t *testing.T) {
 	assert.Equal(t, "Domain(coroot-test-redis.tuh5c8.0001.use1.cache.amazonaws.com,true)", NewDomain("coroot-test-redis.tuh5c8.0001.use1.cache.amazonaws.com", []netaddr.IP{
 		netaddr.MustParseIP("52.1.2.3"),
 	}).String())
+	assert.Equal(t, "Domain(logging.googleapis.com,false)", NewDomain("logging.googleapis.com", []netaddr.IP{
+		netaddr.MustParseIP("172.217.192.95"),
+	}).String())
+
+	assert.Equal(t, "Domain(us-central1-docker.pkg.dev,false)", NewDomain("us-central1-docker.pkg.dev", []netaddr.IP{
+		netaddr.MustParseIP("108.177.123.82"),
+	}).String())
+	assert.Equal(t, "Domain(gcr.io,false)", NewDomain("gcr.io", []netaddr.IP{
+		netaddr.MustParseIP("142.251.0.82"),
+	}).String())
 	assert.Equal(t, "Domain(notamazonaws.com,true)", NewDomain("notamazonaws.com", []netaddr.IP{
 		netaddr.MustParseIP("1.1.1.1"),
 	}).String())

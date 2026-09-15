@@ -244,9 +244,12 @@ func (d *Domain) String() string {
 var groupByFQDNSuffixes = []string{
 	".amazonaws.com",
 	".amazonaws.com.cn",
+	".googleapis.com",
+	".pkg.dev",
+	".gcr.io",
 }
 
-var awsResourceHostnameMarkers = []string{
+var resourceHostnameMarkers = []string{
 	".rds.",
 	".cache.",
 }
@@ -254,7 +257,7 @@ var awsResourceHostnameMarkers = []string{
 func isGroupedByFQDN(fqdn string) bool {
 	grouped := false
 	for _, suffix := range groupByFQDNSuffixes {
-		if strings.HasSuffix(fqdn, suffix) {
+		if strings.HasSuffix(fqdn, suffix) || fqdn == suffix[1:] {
 			grouped = true
 			break
 		}
@@ -262,7 +265,7 @@ func isGroupedByFQDN(fqdn string) bool {
 	if !grouped {
 		return false
 	}
-	for _, marker := range awsResourceHostnameMarkers {
+	for _, marker := range resourceHostnameMarkers {
 		if strings.Contains(fqdn, marker) {
 			return false
 		}
