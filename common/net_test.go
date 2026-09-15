@@ -57,6 +57,31 @@ func TestDomain(t *testing.T) {
 		netaddr.MustParseIP("1.1.1.2"),
 	}).String())
 
+	assert.Equal(t, "Domain(ssm.us-east-1.amazonaws.com,false)", NewDomain("ssm.us-east-1.amazonaws.com", []netaddr.IP{
+		netaddr.MustParseIP("13.220.37.7"),
+	}).String())
+	assert.Equal(t, "Domain(bucket.s3.cn-north-1.amazonaws.com.cn,false)", NewDomain("bucket.s3.cn-north-1.amazonaws.com.cn", []netaddr.IP{
+		netaddr.MustParseIP("52.80.1.1"),
+	}).String())
+	assert.Equal(t, "Domain(rds.us-east-1.amazonaws.com,false)", NewDomain("rds.us-east-1.amazonaws.com", []netaddr.IP{
+		netaddr.MustParseIP("52.1.2.3"),
+	}).String())
+	assert.Equal(t, "Domain(elasticache.us-east-1.amazonaws.com,false)", NewDomain("elasticache.us-east-1.amazonaws.com", []netaddr.IP{
+		netaddr.MustParseIP("52.1.2.3"),
+	}).String())
+	assert.Equal(t, "Domain(ssm.us-east-1.amazonaws.com,true)", NewDomain("ssm.us-east-1.amazonaws.com", []netaddr.IP{
+		netaddr.MustParseIP("10.0.1.5"),
+	}).String())
+	assert.Equal(t, "Domain(ssm.us-east-1.amazonaws.com,true)", NewDomain("ssm.us-east-1.amazonaws.com", []netaddr.IP{}).String())
+	assert.Equal(t, "Domain(coroot-test-pg.cxxwlx52rcj1.us-east-1.rds.amazonaws.com,true)", NewDomain("coroot-test-pg.cxxwlx52rcj1.us-east-1.rds.amazonaws.com", []netaddr.IP{
+		netaddr.MustParseIP("52.1.2.3"),
+	}).String())
+	assert.Equal(t, "Domain(coroot-test-redis.tuh5c8.0001.use1.cache.amazonaws.com,true)", NewDomain("coroot-test-redis.tuh5c8.0001.use1.cache.amazonaws.com", []netaddr.IP{
+		netaddr.MustParseIP("52.1.2.3"),
+	}).String())
+	assert.Equal(t, "Domain(notamazonaws.com,true)", NewDomain("notamazonaws.com", []netaddr.IP{
+		netaddr.MustParseIP("1.1.1.1"),
+	}).String())
 }
 
 func TestNormalizeFQDN(t *testing.T) {

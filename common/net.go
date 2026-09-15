@@ -241,19 +241,47 @@ func (d *Domain) String() string {
 	return fmt.Sprintf("Domain(%s,%t)", d.FQDN, d.SpecifyIP)
 }
 
+var groupByFQDNSuffixes = []string{
+	".amazonaws.com",
+	".amazonaws.com.cn",
+}
+
+var awsResourceHostnameMarkers = []string{
+	".rds.",
+	".cache.",
+}
+
+func isGroupedByFQDN(fqdn string) bool {
+	grouped := false
+	for _, suffix := range groupByFQDNSuffixes {
+		if strings.HasSuffix(fqdn, suffix) {
+			grouped = true
+			break
+		}
+	}
+	if !grouped {
+		return false
+	}
+	for _, marker := range awsResourceHostnameMarkers {
+		if strings.Contains(fqdn, marker) {
+			return false
+		}
+	}
+	return true
+}
+
 func NewDomain(fqdn string, ips []netaddr.IP) *Domain {
 	d := &Domain{FQDN: fqdn, SpecifyIP: true}
-	if len(ips) > 1 {
-		containsPrivateIPs := false
-		for _, ip := range ips {
-			if !IsIpExternal(ip) {
-				containsPrivateIPs = true
-				break
-			}
+	if len(ips) == 0 {
+		return d
+	}
+	for _, ip := range ips {
+		if !IsIpExternal(ip) {
+			return d
 		}
-		if !containsPrivateIPs {
-			d.SpecifyIP = false
-		}
+	}
+	if len(ips) > 1 || isGroupedByFQDN(fqdn) {
+		d.SpecifyIP = false
 	}
 	return d
 }
