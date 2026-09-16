@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/features"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 	"github.com/coroot/coroot-node-agent/common"
@@ -237,6 +238,24 @@ type Connection struct {
 	_             [7]uint8
 }
 
+var haveProgramType = features.HaveProgramType
+
+// checkProgramTypes verifies that the kernel supports the BPF program types used by the collection
+// (uprobes are BPF_PROG_TYPE_KPROBE programs). Kernels built without CONFIG_BPF_EVENTS reject
+// them with a bare EINVAL, which is indistinguishable from other load failures without this probe.
+// Only a conclusive "not supported" result is reported; any other probe failure is left
+// for the actual collection load to surface. The returned error wraps ebpf.ErrNotSupported
+// rather than the probe error, whose text names the kernel version that introduced the
+// program type and would point away from the kernel configuration.
+func checkProgramTypes() error {
+	for _, pt := range []ebpf.ProgramType{ebpf.TracePoint, ebpf.Kprobe} {
+		if err := haveProgramType(pt); errors.Is(err, ebpf.ErrNotSupported) {
+			return fmt.Errorf("kernel does not support BPF %s programs (CONFIG_BPF_EVENTS is not set?): %w", pt, ebpf.ErrNotSupported)
+		}
+	}
+	return nil
+}
+
 type perfMap struct {
 	name                  string
 	perCPUBufferSizePages int
@@ -294,6 +313,9 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		return fmt.Errorf("failed to load collection spec: %w", err)
 	}
 	_ = unix.Setrlimit(unix.RLIMIT_MEMLOCK, &unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY})
+	if err = checkProgramTypes(); err != nil {
+		return err
+	}
 	c, err := ebpf.NewCollectionWithOptions(collectionSpec, ebpf.CollectionOptions{
 		//Programs: ebpf.ProgramOptions{LogLevel: 2, LogSize: 20 * 1024 * 1024},
 	})
