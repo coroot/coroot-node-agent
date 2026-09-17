@@ -17,8 +17,9 @@ import (
 
 	"github.com/coroot/coroot-node-agent/common"
 
-	"github.com/containerd/cgroups"
-	cgroupsV2 "github.com/containerd/cgroups/v2"
+	"github.com/containerd/cgroups/v3"
+	"github.com/containerd/cgroups/v3/cgroup1"
+	"github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -82,14 +83,14 @@ func TestProcessEvents(t *testing.T) {
 	require.NoError(t, p3.Start())
 	switch cgroups.Mode() {
 	case cgroups.Legacy, cgroups.Hybrid:
-		control, err := cgroups.New(cgroups.V1, cgroups.StaticPath("/program"), &specs.LinuxResources{
+		control, err := cgroup1.New(cgroup1.StaticPath("/program"), &specs.LinuxResources{
 			Memory: &specs.LinuxMemory{Limit: &limit},
 		})
 		require.NoError(t, err)
 		defer control.Delete()
-		require.NoError(t, control.Add(cgroups.Process{Pid: p3.Process.Pid}))
+		require.NoError(t, control.Add(cgroup1.Process{Pid: p3.Process.Pid}))
 	case cgroups.Unified:
-		control, err := cgroupsV2.NewManager("/sys/fs/cgroup", "/program", &cgroupsV2.Resources{Memory: &cgroupsV2.Memory{Max: &limit}})
+		control, err := cgroup2.NewManager("/sys/fs/cgroup", "/program", &cgroup2.Resources{Memory: &cgroup2.Memory{Max: &limit}})
 		require.NoError(t, err)
 		defer control.Delete()
 		require.NoError(t, control.AddProc(uint64(p3.Process.Pid)))
