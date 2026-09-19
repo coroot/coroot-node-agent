@@ -485,12 +485,12 @@ func (c *Container) ensureProcess(pid uint32) *Process {
 func (c *Container) onProcessStart(pid uint32) *Process {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	stats, err := TaskstatsPID(pid)
-	if err != nil {
+	startedAt := proc.GetStartTime(pid)
+	if startedAt.IsZero() {
 		return nil
 	}
 	c.zombieAt = time.Time{}
-	p := NewProcess(pid, stats, c.registry.tracer)
+	p := NewProcess(pid, startedAt, c.registry.tracer)
 
 	if p == nil {
 		return nil
@@ -498,9 +498,9 @@ func (c *Container) onProcessStart(pid uint32) *Process {
 	c.processes[pid] = p
 
 	if c.startedAt.IsZero() {
-		c.startedAt = stats.BeginTime
+		c.startedAt = startedAt
 	} else {
-		min := stats.BeginTime
+		min := startedAt
 		for _, p := range c.processes {
 			if p.StartedAt.Before(min) {
 				min = p.StartedAt
