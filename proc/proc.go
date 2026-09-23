@@ -8,12 +8,17 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coroot/coroot-node-agent/cgroup"
 )
 
-var root = "/proc"
+var (
+	root           = "/proc"
+	bootTimeLock   sync.Mutex
+	cachedBootTime int64
+)
 
 func Path(pid uint32, subpath ...string) string {
 	return path.Join(append([]string{root, strconv.Itoa(int(pid))}, subpath...)...)
@@ -92,6 +97,11 @@ func GetStartTime(pid uint32) time.Time {
 }
 
 func bootTime() (int64, error) {
+	bootTimeLock.Lock()
+	defer bootTimeLock.Unlock()
+	if cachedBootTime != 0 {
+		return cachedBootTime, nil
+	}
 	data, err := os.ReadFile(root + "/stat")
 	if err != nil {
 		return 0, err
@@ -104,7 +114,12 @@ func bootTime() (int64, error) {
 		if len(fields) != 2 {
 			return 0, fmt.Errorf("invalid btime line in /proc/stat: %q", line)
 		}
-		return strconv.ParseInt(fields[1], 10, 64)
+		btime, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		cachedBootTime = btime
+		return btime, nil
 	}
 	return 0, fmt.Errorf("btime not found in /proc/stat")
 }
