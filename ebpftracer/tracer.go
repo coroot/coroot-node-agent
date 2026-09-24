@@ -32,6 +32,30 @@ import (
 
 const MaxPayloadSize = 1024
 
+var minKernelVersion = common.NewVersion(4, 16, 0)
+
+func CheckKernel() error {
+	kv := common.GetKernelVersion()
+	old := !kv.GreaterOrEqual(minKernelVersion)
+	_ = unix.Setrlimit(unix.RLIMIT_MEMLOCK, &unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY}) // required by the probes on kernels < 5.11
+	for _, pt := range []ebpf.ProgramType{ebpf.TracePoint, ebpf.Kprobe} {
+		err := features.HaveProgramType(pt)
+		switch {
+		case err == nil:
+		case errors.Is(err, unix.EPERM), errors.Is(err, unix.EACCES):
+			return fmt.Errorf("not permitted to load BPF %s programs. The agent must run as root with CAP_SYS_ADMIN (privileged in a container). On RHEL 7 with SELinux enforcing, the container's SELinux type (e.g., spc_t) also needs the bpf permissions: %w", pt, err)
+		case old:
+			return fmt.Errorf("the minimum Linux kernel version required is %s or later (BPF %s programs are not supported: %w)", minKernelVersion, pt, err)
+		case errors.Is(err, ebpf.ErrNotSupported):
+			return fmt.Errorf("kernel does not support BPF %s programs (CONFIG_BPF_EVENTS is not set?): %w", pt, ebpf.ErrNotSupported)
+		}
+	}
+	if old {
+		klog.Warningf("kernel %s is older than %s but supports eBPF, some features may be unavailable", kv, minKernelVersion)
+	}
+	return nil
+}
+
 type EventType uint32
 type EventReason uint32
 
@@ -105,6 +129,7 @@ type Tracer struct {
 
 	globalUprobes     map[UprobeKey]*globalUprobe
 	globalUprobesLock sync.Mutex
+	uprobeFailures    map[UprobeKey]struct{}
 }
 
 func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Tracer {
@@ -119,6 +144,8 @@ func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Trac
 		readers:       map[string]*perf.Reader{},
 		uprobes:       map[string]*ebpf.Program{},
 		globalUprobes: map[UprobeKey]*globalUprobe{},
+
+		uprobeFailures: map[UprobeKey]struct{}{},
 	}
 }
 
@@ -157,6 +184,19 @@ func (t *Tracer) Close() {
 	t.globalUprobes = nil
 	t.globalUprobesLock.Unlock()
 	t.collection.Close()
+}
+
+func (t *Tracer) firstUprobeFailure(path string) bool {
+	var stat syscall.Stat_t
+	if err := syscall.Stat(path, &stat); err != nil {
+		return true
+	}
+	key := UprobeKey{Dev: stat.Dev, Ino: stat.Ino}
+	if _, ok := t.uprobeFailures[key]; ok {
+		return false
+	}
+	t.uprobeFailures[key] = struct{}{}
+	return true
 }
 
 func (t *Tracer) AcquireGlobalUprobe(path string, attach func() []link.Link) (UprobeKey, bool) {
@@ -295,11 +335,6 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		return fmt.Errorf("failed to load collection spec: %w", err)
 	}
 	_ = unix.Setrlimit(unix.RLIMIT_MEMLOCK, &unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY})
-	for _, pt := range []ebpf.ProgramType{ebpf.TracePoint, ebpf.Kprobe} {
-		if err := features.HaveProgramType(pt); errors.Is(err, ebpf.ErrNotSupported) {
-			return fmt.Errorf("kernel does not support BPF %s programs (CONFIG_BPF_EVENTS is not set?): %w", pt, ebpf.ErrNotSupported)
-		}
-	}
 	c, err := ebpf.NewCollectionWithOptions(collectionSpec, ebpf.CollectionOptions{
 		//Programs: ebpf.ProgramOptions{LogLevel: 2, LogSize: 20 * 1024 * 1024},
 	})
@@ -311,6 +346,10 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 		return fmt.Errorf("failed to load collection: %w", err)
 	}
 	t.collection = c
+	if c.Maps["l7_events"] == nil && !t.disableL7Tracing {
+		klog.Warningln("L7 tracing is not supported on this kernel")
+		t.disableL7Tracing = true
+	}
 
 	for _, programSpec := range collectionSpec.Programs {
 		if strings.HasPrefix(programSpec.SectionName, "uprobe/") {
@@ -368,7 +407,11 @@ func (t *Tracer) attachPrograms() error {
 			if strings.HasPrefix(programSpec.SectionName, "uprobe/") { // attached to a process on demand
 				continue
 			}
-			l, err = link.Kprobe(programSpec.AttachTo, program, nil)
+			if strings.HasPrefix(programSpec.SectionName, "kretprobe/") {
+				l, err = link.Kretprobe(programSpec.AttachTo, program, nil)
+			} else {
+				l, err = link.Kprobe(programSpec.AttachTo, program, nil)
+			}
 			if err != nil && programSpec.SectionName == "kprobe/nf_ct_deliver_cached_events" {
 				klog.Warningln("nf_conntrack may not be in use:", err)
 				continue

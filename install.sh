@@ -137,6 +137,9 @@ setup_binary() {
     info "Installing coroot-node-agent to ${BIN_DIR}/coroot-node-agent"
     $SUDO chown root:root ${TMP_BIN}
     $SUDO mv -f ${TMP_BIN} ${BIN_DIR}/coroot-node-agent
+    if [ -x "$(command -v restorecon)" ]; then
+        $SUDO restorecon ${BIN_DIR}/coroot-node-agent
+    fi
 }
 
 download() {
@@ -146,6 +149,15 @@ download() {
     get_release_version
     download_binary
     setup_binary
+}
+
+setup_selinux() {
+    [ -d /sys/fs/selinux/class/bpf ] || return 0
+    [ "$(cat /sys/fs/selinux/enforce 2>/dev/null)" = "1" ] || return 0
+    [ -x "$(command -v semodule)" ] || return 0
+    info "selinux: Allowing systemd services to use eBPF (policy module ${SYSTEM_NAME})"
+    echo '(allow unconfined_service_t self (bpf (map_create map_read map_write prog_load prog_run)))' > ${TMP_DIR}/${SYSTEM_NAME}.cil
+    $SUDO semodule -i ${TMP_DIR}/${SYSTEM_NAME}.cil || info "selinux: Failed to install the policy module. The agent may not be able to load eBPF programs"
 }
 
 create_uninstall() {
@@ -170,6 +182,7 @@ trap remove_uninstall EXIT
 
 rm -rf /var/lib/coroot-node-agent || true
 rm -f ${BIN_DIR}/coroot-node-agent
+semodule -r ${SYSTEM_NAME} > /dev/null 2>&1 || true
 EOF
     $SUDO chmod 755 ${UNINSTALL_SH}
     $SUDO chown root:root ${UNINSTALL_SH}
@@ -273,6 +286,7 @@ done
 {
     verify_system
     download
+    setup_selinux
     create_uninstall
     systemd_disable
     create_env_file

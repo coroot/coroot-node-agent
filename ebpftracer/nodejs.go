@@ -19,7 +19,10 @@ func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) *UprobeKey {
 					return
 				}
 			}
-			klog.ErrorfDepth(1, "pid=%d lib=%s: %s: %s", pid, libPath, msg, err)
+			if !t.firstUprobeFailure(libPath) {
+				return
+			}
+			klog.WarningfDepth(1, "pid=%d lib=%s: %s: %s. The optional Node.js metric (container_nodejs_event_loop_blocked_time_seconds_total) won't be collected for processes using this file. Other metrics are not affected.", pid, libPath, msg, err)
 			return
 		}
 		klog.InfofDepth(1, "pid=%d lib=%s: %s", pid, libPath, msg)
@@ -29,7 +32,7 @@ func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) *UprobeKey {
 		key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
 			links, err := t.attachNodejsUprobes(libPath)
 			if err != nil {
-				log(libPath, "failed to attach nodejs uprobes", err)
+				log(libPath, "failed to attach Node.js uprobes", err)
 				return nil
 			}
 			log(libPath, "nodejs uprobes attached", nil)

@@ -111,16 +111,9 @@ struct {
     __uint(max_entries, 32768);
 } active_l7_requests SEC(".maps");
 
-SEC("tracepoint/sock/inet_sock_set_state")
-int inet_sock_set_state(void *ctx)
+static inline __attribute__((__always_inline__))
+int handle_inet_sock_set_state(void *ctx, struct trace_event_raw_inet_sock_set_state__stub args)
 {
-    struct trace_event_raw_inet_sock_set_state__stub args = {};
-    if (bpf_probe_read(&args, sizeof(args), ctx) < 0) {
-        return 0;
-    }
-    if (args.protocol != IPPROTO_TCP) {
-        return 0;
-    }
     __u64 id = bpf_get_current_pid_tgid();
     __u32 pid = id >> 32;
 
@@ -209,6 +202,109 @@ int inet_sock_set_state(void *ctx)
     bpf_perf_event_output(ctx, map, BPF_F_CURRENT_CPU, &e, sizeof(e));
     return 0;
 }
+
+#if __KERNEL_FROM >= 416
+SEC("tracepoint/sock/inet_sock_set_state")
+int inet_sock_set_state(void *ctx)
+{
+    struct trace_event_raw_inet_sock_set_state__stub args = {};
+    if (bpf_probe_read(&args, sizeof(args), ctx) < 0) {
+        return 0;
+    }
+    if (args.protocol != IPPROTO_TCP) {
+        return 0;
+    }
+    return handle_inet_sock_set_state(ctx, args);
+}
+#else
+struct sock_common__stub {
+    __u8 daddr[4];
+    __u8 rcv_saddr[4];
+    __u32 hash;
+    __u16 dport;
+    __u16 num;
+    __u16 family;
+    __u8 state;
+    __u8 pad[37];
+    __u8 v6_daddr[16];
+    __u8 v6_rcv_saddr[16];
+};
+
+static inline __attribute__((__always_inline__))
+int read_sock(void *sk, struct trace_event_raw_inet_sock_set_state__stub *args)
+{
+    struct sock_common__stub skc = {};
+    if (bpf_probe_read(&skc, sizeof(skc), sk) < 0) {
+        return -1;
+    }
+    args->skaddr = sk;
+    args->oldstate = skc.state;
+    args->sport = skc.num;
+    args->dport = bpf_ntohs(skc.dport);
+    args->family = skc.family;
+    if (skc.family == AF_INET) {
+        args->saddr_v6[10] = 0xff;
+        args->saddr_v6[11] = 0xff;
+        __builtin_memcpy(&args->saddr_v6[12], skc.rcv_saddr, 4);
+        args->daddr_v6[10] = 0xff;
+        args->daddr_v6[11] = 0xff;
+        __builtin_memcpy(&args->daddr_v6[12], skc.daddr, 4);
+    } else {
+        __builtin_memcpy(&args->saddr_v6, skc.v6_rcv_saddr, 16);
+        __builtin_memcpy(&args->daddr_v6, skc.v6_daddr, 16);
+    }
+    return 0;
+}
+
+SEC("kprobe/tcp_set_state")
+int tcp_set_state(struct pt_regs *ctx)
+{
+    struct trace_event_raw_inet_sock_set_state__stub args = {};
+    if (read_sock((void *)PT_REGS_PARM1(ctx), &args) < 0) {
+        return 0;
+    }
+    args.newstate = (int)PT_REGS_PARM2(ctx);
+    return handle_inet_sock_set_state(ctx, args);
+}
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(void *));
+    __uint(max_entries, 10240);
+} listen_sock_by_pid_tgid SEC(".maps");
+
+SEC("kprobe/inet_csk_listen_start")
+int inet_csk_listen_start(struct pt_regs *ctx)
+{
+    __u64 id = bpf_get_current_pid_tgid();
+    void *sk = (void *)PT_REGS_PARM1(ctx);
+    bpf_map_update_elem(&listen_sock_by_pid_tgid, &id, &sk, BPF_ANY);
+    return 0;
+}
+
+SEC("kretprobe/inet_csk_listen_start")
+int inet_csk_listen_start_ret(struct pt_regs *ctx)
+{
+    __u64 id = bpf_get_current_pid_tgid();
+    void **skp = bpf_map_lookup_elem(&listen_sock_by_pid_tgid, &id);
+    if (!skp) {
+        return 0;
+    }
+    void *sk = *skp;
+    bpf_map_delete_elem(&listen_sock_by_pid_tgid, &id);
+    if (PT_REGS_RC(ctx) != 0) {
+        return 0;
+    }
+    struct trace_event_raw_inet_sock_set_state__stub args = {};
+    if (read_sock(sk, &args) < 0) {
+        return 0;
+    }
+    args.oldstate = BPF_TCP_CLOSE;
+    args.newstate = BPF_TCP_LISTEN;
+    return handle_inet_sock_set_state(ctx, args);
+}
+#endif
 
 struct trace_event_raw_args_with_fd__stub {
     __u64 unused;

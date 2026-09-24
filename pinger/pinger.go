@@ -23,12 +23,17 @@ import (
 const (
 	pingReplyPollTimeout = 10 * time.Millisecond
 	protocolICMP         = 1 // Internet Control Message
+
+	timestampingFlags = unix.SOF_TIMESTAMPING_SOFTWARE | unix.SOF_TIMESTAMPING_RX_SOFTWARE | unix.SOF_TIMESTAMPING_TX_SCHED |
+		unix.SOF_TIMESTAMPING_OPT_CMSG | unix.SOF_TIMESTAMPING_OPT_TSONLY
 )
 
 var (
 	pingerID = os.Getpid() & 0xFFFF
 
 	errNoTimestamp = errors.New("no timestamp found")
+
+	supported = true
 )
 
 type sentPacket struct {
@@ -45,14 +50,19 @@ func init() {
 		klog.Warningln("failed to keep packet timestamping enabled:", err)
 		return
 	}
-	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_TIMESTAMPING, unix.SOF_TIMESTAMPING_RX_SOFTWARE|unix.SOF_TIMESTAMPING_SOFTWARE); err != nil {
-		klog.Warningln("failed to keep packet timestamping enabled:", err)
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_TIMESTAMPING, timestampingFlags); err != nil {
 		_ = unix.Close(fd)
+		if errors.Is(err, unix.EINVAL) {
+			supported = false
+			klog.Warningln("The kernel doesn't support ICMP transmit timestamps, so the network latency metric (container_net_latency_seconds) won't be collected. Other metrics are not affected.")
+			return
+		}
+		klog.Warningln("failed to keep packet timestamping enabled:", err)
 	}
 }
 
 func Ping(ns netns.NsHandle, originNs netns.NsHandle, targets []netaddr.IP, timeout time.Duration) (map[netaddr.IP]float64, error) {
-	if len(targets) < 1 {
+	if len(targets) < 1 || !supported {
 		return nil, nil
 	}
 	var conn *net.IPConn
@@ -239,9 +249,7 @@ func openConn() (*net.IPConn, error) {
 	}
 	defer f.Close()
 	fd := int(f.Fd())
-	flags := unix.SOF_TIMESTAMPING_SOFTWARE | unix.SOF_TIMESTAMPING_RX_SOFTWARE | unix.SOF_TIMESTAMPING_TX_SCHED |
-		unix.SOF_TIMESTAMPING_OPT_CMSG | unix.SOF_TIMESTAMPING_OPT_TSONLY
-	if err := syscall.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_TIMESTAMPING, flags); err != nil {
+	if err := syscall.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_TIMESTAMPING, timestampingFlags); err != nil {
 		return nil, err
 	}
 	timeout := syscall.Timeval{Sec: 0, Usec: 1000}

@@ -73,6 +73,7 @@ int handle_ct(struct pt_regs *ctx, struct nf_conn conn)
     return 0;
 }
 
+#if __KERNEL_FROM >= 416
 SEC("kprobe/nf_ct_deliver_cached_events")
 int nf_ct_deliver_cached_events(struct pt_regs *ctx) {
     struct nf_conn conn;
@@ -81,3 +82,4 @@ int nf_ct_deliver_cached_events(struct pt_regs *ctx) {
     }
     return handle_ct(ctx, conn);
 }
+#endif
