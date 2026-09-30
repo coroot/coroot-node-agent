@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"flag"
+	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -86,8 +88,7 @@ func whitelistNodeExternalNetworks() {
 }
 
 func main() {
-	klog.LogToStderr(false)
-	klog.SetOutput(&RateLimitedLogOutput{limiter: rate.NewLimiter(rate.Limit(*flags.LogPerSecond), *flags.LogBurst)})
+	initLogging()
 
 	klog.Infoln("agent version:", version)
 
@@ -222,6 +223,17 @@ type logger struct{}
 
 func (l logger) Println(v ...interface{}) {
 	klog.Errorln(v...)
+}
+
+func initLogging() {
+	fs := flag.NewFlagSet("klog", flag.ContinueOnError)
+	klog.InitFlags(fs)
+	if err := fs.Parse([]string{"-one_output=true", "-stderrthreshold=FATAL"}); err != nil {
+		klog.Exitln("failed to configure logging:", err)
+	}
+	klog.LogToStderr(false)
+	klog.SetOutput(&RateLimitedLogOutput{limiter: rate.NewLimiter(rate.Limit(*flags.LogPerSecond), *flags.LogBurst)})
+	klog.SetOutputBySeverity("FATAL", io.Discard) // fatal messages are copied to stderr directly (-stderrthreshold)
 }
 
 type RateLimitedLogOutput struct {
