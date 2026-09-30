@@ -6,8 +6,8 @@ import (
 	"github.com/cilium/cilium/pkg/bpf"
 	"github.com/cilium/cilium/pkg/defaults"
 	"github.com/cilium/cilium/pkg/loadbalancer"
+	lbmap "github.com/cilium/cilium/pkg/loadbalancer/maps"
 	"github.com/cilium/cilium/pkg/maps/ctmap"
-	"github.com/cilium/cilium/pkg/maps/lbmap"
 	"github.com/cilium/cilium/pkg/tuple"
 	"github.com/cilium/cilium/pkg/u8proto"
 	"github.com/coroot/coroot-node-agent/proc"
@@ -28,9 +28,7 @@ type ciliumMapDefinition struct {
 }
 
 var ciliumMaps = map[string]ciliumMapDefinition{
-	lbmap.Backend4MapV2Name: {key: &lbmap.Backend4KeyV3{}, value: &lbmap.Backend4Value{}},
 	lbmap.Backend4MapV3Name: {key: &lbmap.Backend4KeyV3{}, value: &lbmap.Backend4ValueV3{}},
-	lbmap.Backend6MapV2Name: {key: &lbmap.Backend6KeyV3{}, value: &lbmap.Backend6Value{}},
 	lbmap.Backend6MapV3Name: {key: &lbmap.Backend6KeyV3{}, value: &lbmap.Backend6ValueV3{}},
 }
 
@@ -57,7 +55,7 @@ func init() {
 	} else {
 		klog.Infoln("found cilium ebpf-map:", ctmap.MapNameTCP6Global)
 	}
-	for _, n := range []string{lbmap.Backend4MapV2Name, lbmap.Backend4MapV3Name} {
+	for _, n := range []string{lbmap.Backend4MapV3Name} {
 		def := ciliumMaps[n]
 		backends4Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), def.key, def.value)
 		if err != nil {
@@ -67,7 +65,7 @@ func init() {
 			break
 		}
 	}
-	for _, n := range []string{lbmap.Backend6MapV2Name, lbmap.Backend6MapV3Name} {
+	for _, n := range []string{lbmap.Backend6MapV3Name} {
 		def := ciliumMaps[n]
 		backends6Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), def.key, def.value)
 		if err != nil {
@@ -112,21 +110,19 @@ func lookupCilium4(src, dst netaddr.IPPort) *netaddr.IPPort {
 	}
 	e := v.(*ctmap.CtEntry)
 
-	backendKey := lbmap.NewBackend4KeyV3(loadbalancer.BackendID(e.BackendID))
+	backendKey := lbmap.NewBackend4KeyV3(loadbalancer.BackendID(e.Union0[1]))
 	b, err := backends4Map.Lookup(backendKey)
 	if err != nil || b == nil {
 		return nil
 	}
 	var backend lbmap.BackendValue
 	switch bv := b.(type) {
-	case *lbmap.Backend4Value:
-		backend = bv.ToHost()
 	case *lbmap.Backend4ValueV3:
 		backend = bv.ToHost()
 	default:
 		return nil
 	}
-	backendIP, _ := netaddr.FromStdIP(backend.GetAddress())
+	backendIP, _ := netaddr.FromStdIP(backend.GetAddress().AsNetIP())
 	res := netaddr.IPPortFrom(backendIP, backend.GetPort())
 	return &res
 }
@@ -152,21 +148,19 @@ func lookupCilium6(src, dst netaddr.IPPort) *netaddr.IPPort {
 		return nil
 	}
 	e := v.(*ctmap.CtEntry)
-	backendKey := lbmap.NewBackend6KeyV3(loadbalancer.BackendID(e.BackendID))
+	backendKey := lbmap.NewBackend6KeyV3(loadbalancer.BackendID(e.Union0[1]))
 	b, err := backends6Map.Lookup(backendKey)
 	if err != nil || b == nil {
 		return nil
 	}
 	var backend lbmap.BackendValue
 	switch bv := b.(type) {
-	case *lbmap.Backend6Value:
-		backend = bv.ToHost()
 	case *lbmap.Backend6ValueV3:
 		backend = bv.ToHost()
 	default:
 		return nil
 	}
-	backendIP, _ := netaddr.FromStdIP(backend.GetAddress())
+	backendIP, _ := netaddr.FromStdIP(backend.GetAddress().AsNetIP())
 	res := netaddr.IPPortFrom(backendIP, backend.GetPort())
 	return &res
 }
