@@ -8,17 +8,28 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/coroot/coroot-node-agent/cgroup"
 )
 
 var (
-	root           = "/proc"
-	bootTimeLock   sync.Mutex
-	cachedBootTime int64
+	root     = "/proc"
+	bootTime int64
 )
+
+func init() {
+	data, err := os.ReadFile(root + "/stat")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "btime" {
+			bootTime, _ = strconv.ParseInt(fields[1], 10, 64)
+			return
+		}
+	}
+}
 
 func Path(pid uint32, subpath ...string) string {
 	return path.Join(append([]string{root, strconv.Itoa(int(pid))}, subpath...)...)
@@ -70,7 +81,6 @@ func ReadCgroup(pid uint32) (*cgroup.Cgroup, error) {
 	return cgroup.NewFromProcessCgroupFile(Path(pid, "cgroup"))
 }
 
-// GetStartTime returns the process start time derived from /proc/<pid>/stat
 func GetStartTime(pid uint32) time.Time {
 	data, err := os.ReadFile(Path(pid, "stat"))
 	if err != nil {
@@ -86,42 +96,10 @@ func GetStartTime(pid uint32) time.Time {
 		return time.Time{}
 	}
 	startTicks, err := strconv.ParseUint(fields[19], 10, 64)
-	if err != nil {
+	if err != nil || bootTime == 0 {
 		return time.Time{}
 	}
-	btime, err := bootTime()
-	if err != nil {
-		return time.Time{}
-	}
-	return time.Unix(btime+int64(float64(startTicks)/100), 0)
-}
-
-func bootTime() (int64, error) {
-	bootTimeLock.Lock()
-	defer bootTimeLock.Unlock()
-	if cachedBootTime != 0 {
-		return cachedBootTime, nil
-	}
-	data, err := os.ReadFile(root + "/stat")
-	if err != nil {
-		return 0, err
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.HasPrefix(line, "btime ") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			return 0, fmt.Errorf("invalid btime line in /proc/stat: %q", line)
-		}
-		btime, err := strconv.ParseInt(fields[1], 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		cachedBootTime = btime
-		return btime, nil
-	}
-	return 0, fmt.Errorf("btime not found in /proc/stat")
+	return time.Unix(bootTime+int64(float64(startTicks)/100), 0)
 }
 
 func ListPids() ([]uint32, error) {
