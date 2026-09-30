@@ -3,12 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"flag"
+	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 
@@ -19,7 +20,6 @@ import (
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/host"
-	"github.com/coroot/coroot-node-agent/logging"
 	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/node"
 	"github.com/coroot/coroot-node-agent/node/metadata"
@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sys/unix"
+	"golang.org/x/time/rate"
 	"k8s.io/klog/v2"
 )
 
@@ -87,7 +88,7 @@ func whitelistNodeExternalNetworks() {
 }
 
 func main() {
-	setupLogging()
+	initLogging()
 
 	klog.Infoln("agent version:", version)
 
@@ -224,9 +225,24 @@ func (l logger) Println(v ...interface{}) {
 	klog.Errorln(v...)
 }
 
-func setupLogging() {
-	out := logging.RateLimited(*flags.LogPerSecond, *flags.LogBurst)
-	if !logging.Init(*flags.LogLevel, out) {
-		klog.Exitf("invalid --log-level %q, must be one of: %s", *flags.LogLevel, strings.Join(logging.Levels, ", "))
+func initLogging() {
+	fs := flag.NewFlagSet("klog", flag.ContinueOnError)
+	klog.InitFlags(fs)
+	if err := fs.Parse([]string{"-one_output=true", "-stderrthreshold=FATAL"}); err != nil {
+		klog.Exitln("failed to configure logging:", err)
 	}
+	klog.LogToStderr(false)
+	klog.SetOutput(&RateLimitedLogOutput{limiter: rate.NewLimiter(rate.Limit(*flags.LogPerSecond), *flags.LogBurst)})
+	klog.SetOutputBySeverity("FATAL", io.Discard) // fatal messages are copied to stderr directly (-stderrthreshold)
+}
+
+type RateLimitedLogOutput struct {
+	limiter *rate.Limiter
+}
+
+func (o *RateLimitedLogOutput) Write(data []byte) (int, error) {
+	if !o.limiter.Allow() {
+		return len(data), nil
+	}
+	return os.Stderr.Write(data)
 }
