@@ -8,11 +8,28 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/coroot/coroot-node-agent/cgroup"
 )
 
-var root = "/proc"
+var (
+	root     = "/proc"
+	bootTime int64
+)
+
+func init() {
+	data, err := os.ReadFile(root + "/stat")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "btime" {
+			bootTime, _ = strconv.ParseInt(fields[1], 10, 64)
+			return
+		}
+	}
+}
 
 func Path(pid uint32, subpath ...string) string {
 	return path.Join(append([]string{root, strconv.Itoa(int(pid))}, subpath...)...)
@@ -62,6 +79,27 @@ func GetNsPid(pid uint32) (uint32, error) {
 
 func ReadCgroup(pid uint32) (*cgroup.Cgroup, error) {
 	return cgroup.NewFromProcessCgroupFile(Path(pid, "cgroup"))
+}
+
+func GetStartTime(pid uint32) time.Time {
+	data, err := os.ReadFile(Path(pid, "stat"))
+	if err != nil {
+		return time.Time{}
+	}
+	s := string(data)
+	idx := strings.LastIndex(s, ")")
+	if idx < 0 {
+		return time.Time{}
+	}
+	fields := strings.Fields(s[idx+1:])
+	if len(fields) < 20 {
+		return time.Time{}
+	}
+	startTicks, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil || bootTime == 0 {
+		return time.Time{}
+	}
+	return time.Unix(bootTime+int64(float64(startTicks)/100), 0)
 }
 
 func ListPids() ([]uint32, error) {
