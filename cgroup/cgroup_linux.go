@@ -12,8 +12,30 @@ import (
 )
 
 func Init() error {
+	if err := initBaseCgroupPath(); err != nil {
+		return err
+	}
+	if _, err := os.Stat(path.Join(cgRoot, "unified")); err == nil {
+		if data, err := os.ReadFile("/proc/self/mounts"); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.Contains(line, "cgroup/unified") {
+					cg2Root = path.Join(cgRoot, "unified")
+					break
+				}
+			}
+		}
+	}
+	klog.Infoln("cgroup v2 root is", cg2Root)
+	return nil
+}
+
+func initBaseCgroupPath() error {
 	selfNs, err := netns.GetFromPath("/proc/self/ns/cgroup")
 	if err != nil {
+		if os.IsNotExist(err) { // kernels without cgroup namespaces (e.g., RHEL 7): all cgroup paths are host paths
+			klog.Infoln("cgroup namespaces are not supported by the kernel")
+			return nil
+		}
 		return err
 	}
 	defer selfNs.Close()
@@ -38,16 +60,5 @@ func Init() error {
 			return err
 		}
 	}
-	if _, err := os.Stat(path.Join(cgRoot, "unified")); err == nil {
-		if data, err := os.ReadFile("/proc/self/mounts"); err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
-				if strings.Contains(line, "cgroup/unified") {
-					cg2Root = path.Join(cgRoot, "unified")
-					break
-				}
-			}
-		}
-	}
-	klog.Infoln("cgroup v2 root is", cg2Root)
 	return nil
 }

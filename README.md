@@ -5,8 +5,9 @@
 
 The agent gathers metrics related to a node and the containers running on it, and it exposes them in the Prometheus format.
 
-It uses eBPF to track container related events such as TCP connects, so the minimum supported Linux kernel version is 5.1.
+It uses eBPF to track container related events such as TCP connects, so the minimum supported Linux kernel version is 4.16.
 The kernel must also be built with `CONFIG_BPF_EVENTS=y` (kprobe and tracepoint BPF programs); some embedded and vendor kernels disable it.
+RHEL 7 and CentOS 7 (kernel 3.10 with the eBPF backport) are supported starting from 7.6 with reduced functionality, see [RHEL 7 and CentOS 7](#rhel-7-and-centos-7).
 
 <img src="https://coroot.com/static/img/blog/ebpf.svg" width="800" />
 
@@ -84,6 +85,28 @@ Related blog posts:
 ## Installation
 
 Follow the Coroot [documentation](https://docs.coroot.com/)
+
+### RHEL 7 and CentOS 7
+
+The agent runs on RHEL 7.6 and later (kernel 3.10.0-957 or later, which includes the eBPF backport) with a reduced set of eBPF programs.
+The following features are not available on these kernels:
+* Protocol-level (L7) metrics and TLS tracing
+* Network latency measurements (`container_net_latency_seconds`)
+* Python GIL and Node.js event loop metrics for processes running in containers
+
+Node and container resource metrics, TCP connections, listening sockets, retransmits, OOM kills and log parsing work as usual.
+
+The RHEL 7 SELinux policy doesn't allow systemd services and containers to use eBPF. The denial is not logged, the agent just fails to load its programs.
+The install script takes care of it for the systemd service. When running the agent as a Docker container, install the following policy module:
+
+```bash
+echo '(allow spc_t self (bpf (map_create map_read map_write prog_load prog_run)))' > coroot-node-agent-docker.cil
+semodule -i coroot-node-agent-docker.cil
+```
+
+Also, replace the `/sys/kernel/tracing` volume from the documented `docker run` command with `/sys/kernel/debug:/sys/kernel/debug`. Kernel 3.10 has no `/sys/kernel/tracing`, so the mount fails.
+
+Docker 1.13 from the CentOS repositories can't pull the agent image (it is published in the OCI format). Use Docker CE instead.
 
 ## Metrics
 

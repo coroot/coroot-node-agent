@@ -11,7 +11,9 @@ import (
 	"github.com/coroot/logparser"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"github.com/moby/moby/client/pkg/versions"
 	"inet.af/netaddr"
+	"k8s.io/klog/v2"
 )
 
 const dockerdTimeout = 30 * time.Second
@@ -21,16 +23,23 @@ var (
 )
 
 func DockerdInit() error {
-	c, err := client.New(
-		client.WithHost("unix://" + proc.HostPath("/run/docker.sock")),
-	)
+	host := client.WithHost("unix://" + proc.HostPath("/run/docker.sock"))
+	c, err := client.New(host)
 	if err != nil {
 		return err
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), dockerdTimeout)
 	defer cancelFn()
-	if _, err := c.Ping(ctx, client.PingOptions{NegotiateAPIVersion: true}); err != nil {
-		return err
+	ping, err := c.Ping(ctx, client.PingOptions{NegotiateAPIVersion: true})
+	if err != nil {
+		if ping.APIVersion == "" || !versions.LessThan(ping.APIVersion, client.MinAPIVersion) {
+			return err
+		}
+		_ = c.Close()
+		if c, err = client.New(host, client.WithAPIVersion(ping.APIVersion)); err != nil {
+			return err
+		}
+		klog.Warningf("dockerd API version %s is older than %s, using it as is", ping.APIVersion, client.MinAPIVersion)
 	}
 	dockerdClient = c
 	return nil

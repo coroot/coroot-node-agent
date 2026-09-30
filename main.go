@@ -14,6 +14,7 @@ import (
 	"github.com/coroot/coroot-node-agent/api"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
+	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
 	"github.com/coroot/coroot-node-agent/host"
@@ -101,8 +102,8 @@ func main() {
 		klog.Exitln(err)
 	}
 
-	if !common.GetKernelVersion().GreaterOrEqual(common.NewVersion(4, 16, 0)) {
-		klog.Exitln("the minimum Linux kernel version required is 4.16 or later")
+	if err = ebpftracer.CheckKernel(); err != nil {
+		klog.Exitln(err)
 	}
 
 	whitelistNodeExternalNetworks()

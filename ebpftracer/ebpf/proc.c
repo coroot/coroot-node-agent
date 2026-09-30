@@ -103,6 +103,7 @@ int sched_process_exit(struct trace_event_raw_sched_process_template__stub *args
     return 0;
 }
 
+#if __KERNEL_FROM >= 416
 struct trace_event_raw_mark_victim__stub {
     __u64 unused;
 #if defined(__CTX_EXTRA_PADDING)
@@ -118,3 +119,52 @@ int oom_mark_victim(struct trace_event_raw_mark_victim__stub *args)
     bpf_map_update_elem(&oom_info, &pid, &pid, BPF_ANY);
     return 0;
 }
+#else
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(__u8));
+    __uint(max_entries, 1024);
+} oom_killer_running SEC(".maps");
+
+SEC("kprobe/oom_kill_process")
+int oom_kill_process(struct pt_regs *ctx)
+{
+    __u64 id = bpf_get_current_pid_tgid();
+    __u8 one = 1;
+    bpf_map_update_elem(&oom_killer_running, &id, &one, BPF_ANY);
+    return 0;
+}
+
+SEC("kretprobe/oom_kill_process")
+int oom_kill_process_ret(struct pt_regs *ctx)
+{
+    __u64 id = bpf_get_current_pid_tgid();
+    bpf_map_delete_elem(&oom_killer_running, &id);
+    return 0;
+}
+
+struct trace_event_raw_signal_generate__stub {
+    __u64 unused;
+    int sig;
+    int errno;
+    int code;
+    char comm[TASK_COMM_LEN];
+    int pid;
+};
+
+SEC("tracepoint/signal/signal_generate")
+int signal_generate(struct trace_event_raw_signal_generate__stub *args)
+{
+    if (args->sig != 9) { // SIGKILL
+        return 0;
+    }
+    __u64 id = bpf_get_current_pid_tgid();
+    if (!bpf_map_lookup_elem(&oom_killer_running, &id)) {
+        return 0;
+    }
+    __u32 pid = args->pid;
+    bpf_map_update_elem(&oom_info, &pid, &pid, BPF_ANY);
+    return 0;
+}
+#endif

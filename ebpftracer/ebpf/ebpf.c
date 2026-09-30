@@ -46,10 +46,14 @@ struct trace_event_raw_sys_exit__stub {
 #include "tcp/conntrack.c"
 #include "tcp/state.c"
 #include "tcp/retransmit.c"
+#if __KERNEL_FROM >= 416
 #include "l7/l7.c"
 #include "l7/gotls.c"
 #include "l7/openssl.c"
 #include "l7/rustls.c"
 #include "l7/java_tls.c"
+#else
+#include "tcp/bytes.c"
+#endif
 
 char _license[] SEC("license") = "GPL";

@@ -25,7 +25,10 @@ func (t *Tracer) AttachPythonThreadLockProbes(pid uint32) *UprobeKey {
 					return
 				}
 			}
-			klog.ErrorfDepth(1, "pid=%d lib=%s: %s: %s", pid, libPath, msg, err)
+			if !t.firstUprobeFailure(libPath) {
+				return
+			}
+			klog.WarningfDepth(1, "pid=%d lib=%s: %s: %s. The optional Python metric (container_python_thread_lock_wait_time_seconds) won't be collected for processes using this file. Other metrics are not affected.", pid, libPath, msg, err)
 			return
 		}
 		klog.InfofDepth(1, "pid=%d lib=%s: %s", pid, libPath, msg)
@@ -35,7 +38,7 @@ func (t *Tracer) AttachPythonThreadLockProbes(pid uint32) *UprobeKey {
 		key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
 			links, err := t.attachPythonUprobes(libPath)
 			if err != nil {
-				log(libPath, "failed to attach python uprobes", err)
+				log(libPath, "failed to attach Python uprobes", err)
 				return nil
 			}
 			log(libPath, "python uprobes attached", nil)
