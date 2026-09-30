@@ -11,7 +11,7 @@ require (
 	github.com/containerd/cgroups v1.1.0
 	github.com/containerd/containerd v1.7.29
 	github.com/coreos/go-systemd/v22 v22.7.0
-	github.com/coroot/logparser v1.4.0
+	github.com/coroot/logparser v1.4.2
 	github.com/florianl/go-conntrack v0.3.0
 	github.com/go-kit/log v0.2.1
 	github.com/gobwas/glob v0.2.3

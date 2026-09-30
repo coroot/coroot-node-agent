@@ -92,8 +92,8 @@ github.com/coreos/go-systemd/v22 v22.7.0 h1:LAEzFkke61DFROc7zNLX/WA2i5J8gYqe0rSj
 github.com/coreos/go-systemd/v22 v22.7.0/go.mod h1:xNUYtjHu2EDXbsxz1i41wouACIwT7Ybq9o0BQhMwD0w=
 github.com/coroot/dotnetdiag v1.2.2 h1:PVP/By8o+xhPjfVolJYcjHLbFQInM7pkaD6/otPLc8Q=
 github.com/coroot/dotnetdiag v1.2.2/go.mod h1:veXCMlFzm1yNl7wwJb/ZLxO4WbzhDBoy1VG1XtkH2ls=
-github.com/coroot/logparser v1.4.0 h1:/b+XnAh7kuKR1mVSekPCSPpKloWx6wJveHa0HDcXueY=
-github.com/coroot/logparser v1.4.0/go.mod h1:5mgr/LIFAEuhxLgnFTtEXVWKthT1l2ZTsPHF6oOGc/E=
+github.com/coroot/logparser v1.4.2 h1:0UxS7R2jLGc0l4seLkA42IKDGivwLFBPC7yzqc9LQv8=
+github.com/coroot/logparser v1.4.2/go.mod h1:5mgr/LIFAEuhxLgnFTtEXVWKthT1l2ZTsPHF6oOGc/E=
 github.com/coroot/pyroscope/ebpf v0.0.0-20260804213318-758a0e72af3a h1:whKF1ZhIGcaAn9ZV5hbBSkrw7C5OBgWasZ0bYktOW+U=
 github.com/coroot/pyroscope/ebpf v0.0.0-20260804213318-758a0e72af3a/go.mod h1:IepHM9FJ0n3n3k+ZV23Y7vNAfvWI7LDuLqWPO4rB6sQ=
 github.com/cpuguy83/go-md2man/v2 v2.0.4/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=

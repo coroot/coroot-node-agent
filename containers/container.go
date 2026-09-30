@@ -543,7 +543,8 @@ func (c *Container) onFileOpen(pid uint32, fd uint64, mnt uint64, log bool) {
 			return
 		}
 	}
-	mntId, logPath := resolveFd(pid, fd)
+	info := proc.GetFdInfo(pid, fd)
+	mntId, logPath := resolveFd(info)
 	func() {
 		if mntId == "" {
 			return
@@ -567,7 +568,14 @@ func (c *Container) onFileOpen(pid uint32, fd uint64, mnt uint64, log bool) {
 			c.lock.Unlock()
 		}
 	}()
-	if logPath != "" {
+	var logPaths []string
+	switch {
+	case logPath != "":
+		logPaths = []string{logPath}
+	case log && (info == nil || !strings.HasPrefix(info.Dest, "/var/log/")):
+		logPaths = findLogFiles(pid)
+	}
+	for _, logPath := range logPaths {
 		c.lock.Lock()
 		c.runLogParser(logPath)
 		c.lock.Unlock()
@@ -1493,8 +1501,7 @@ func (c *Container) attachTlsUprobes(tracer *ebpftracer.Tracer, pid uint32, canB
 	return true
 }
 
-func resolveFd(pid uint32, fd uint64) (mntId string, logPath string) {
-	info := proc.GetFdInfo(pid, fd)
+func resolveFd(info *proc.FdInfo) (mntId string, logPath string) {
 	if info == nil {
 		return
 	}
@@ -1517,4 +1524,21 @@ func resolveFd(pid uint32, fd uint64) (mntId string, logPath string) {
 		logPath = info.Dest
 	}
 	return
+}
+
+func findLogFiles(pid uint32) []string {
+	fds, err := proc.ReadFds(pid)
+	if err != nil {
+		return nil
+	}
+	var res []string
+	for _, fd := range fds {
+		if !strings.HasPrefix(fd.Dest, "/var/log/") {
+			continue
+		}
+		if _, logPath := resolveFd(proc.GetFdInfo(pid, fd.Fd)); logPath != "" {
+			res = append(res, logPath)
+		}
+	}
+	return res
 }
