@@ -124,11 +124,14 @@ func normalizeTraceContextKey(k string) string {
 	return ""
 }
 
-func logRecordAttrs(patternHash string, attributes map[string]string) ([]attribute.KeyValue, *trace.TraceID, *trace.SpanID) {
+func logRecordAttrs(source, patternHash string, attributes map[string]string) ([]attribute.KeyValue, *trace.TraceID, *trace.SpanID) {
 	var traceId *trace.TraceID
 	var spanId *trace.SpanID
-	attrs := make([]attribute.KeyValue, 0, len(attributes)+1)
+	attrs := make([]attribute.KeyValue, 0, len(attributes)+2)
 	attrs = append(attrs, attribute.Key("pattern.hash").String(patternHash))
+	if source != "" {
+		attrs = append(attrs, attribute.Key(LogSourceAttribute).String(source))
+	}
 	for k, v := range attributes {
 		switch normalizeTraceContextKey(k) {
 		case traceIdKey:
@@ -151,7 +154,9 @@ func logRecordAttrs(patternHash string, attributes map[string]string) ([]attribu
 	return attrs, traceId, spanId
 }
 
-func OtelLogEmitter(containerId string) logparser.OnMsgCallbackF {
+const LogSourceAttribute = "log.source"
+
+func OtelLogEmitter(containerId, source string) logparser.OnMsgCallbackF {
 	if otelLogger == nil {
 		return nil
 	}
@@ -171,7 +176,7 @@ func OtelLogEmitter(containerId string) logparser.OnMsgCallbackF {
 			severityNumber = otelLogs.DEBUG
 		}
 
-		attrs, traceId, spanId := logRecordAttrs(patternHash, attributes)
+		attrs, traceId, spanId := logRecordAttrs(source, patternHash, attributes)
 
 		otelLogger.Emit(
 			otelLogs.NewLogRecord(otelLogs.LogRecordConfig{

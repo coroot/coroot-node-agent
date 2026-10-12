@@ -1238,6 +1238,11 @@ func (c *Container) ping() map[netaddr.IP]float64 {
 	return rtt
 }
 
+const (
+	logSourceJournald = "journald"
+	logSourceStdout   = "stdout/stderr"
+)
+
 func (c *Container) runLogParser(logPath string) {
 	if *flags.DisableLogParsing {
 		return
@@ -1257,7 +1262,7 @@ func (c *Container) runLogParser(logPath string) {
 			return
 		}
 		ch := make(chan logparser.LogEntry)
-		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer, !*flags.DisableJsonLogParsing, logs.PatternExtractionRateLimiter())
+		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId, logPath), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer, !*flags.DisableJsonLogParsing, logs.PatternExtractionRateLimiter())
 		reader, err := logs.NewTailReader(proc.HostPath(logPath), ch)
 		if err != nil {
 			klog.Warningln(err)
@@ -1276,23 +1281,23 @@ func (c *Container) runLogParser(logPath string) {
 			klog.Warningln(err)
 			return
 		}
-		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer, !*flags.DisableJsonLogParsing, logs.PatternExtractionRateLimiter())
+		parser := logparser.NewParser(ch, nil, logs.OtelLogEmitter(containerId, logSourceJournald), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer, !*flags.DisableJsonLogParsing, logs.PatternExtractionRateLimiter())
 		stop := func() {
 			JournaldUnsubscribe(c.metadata.systemd.Unit)
 		}
 		klog.InfoS("started journald logparser", "cg", c.cgroup.Id)
-		c.logParsers["journald"] = logs.NewPipeline(parser, stop)
+		c.logParsers[logSourceJournald] = logs.NewPipeline(parser, stop)
 
 	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeCrio:
 		if c.metadata.logPath == "" {
 			return
 		}
-		if parser := c.logParsers["stdout/stderr"]; parser != nil {
+		if parser := c.logParsers[logSourceStdout]; parser != nil {
 			parser.Stop()
-			delete(c.logParsers, "stdout/stderr")
+			delete(c.logParsers, logSourceStdout)
 		}
 		ch := make(chan logparser.LogEntry)
-		parser := logparser.NewParser(ch, c.metadata.logDecoder, logs.OtelLogEmitter(containerId), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer, !*flags.DisableJsonLogParsing, logs.PatternExtractionRateLimiter())
+		parser := logparser.NewParser(ch, c.metadata.logDecoder, logs.OtelLogEmitter(containerId, logSourceStdout), logs.MultilineCollectorTimeout, *flags.LogPatternsPerContainer, !*flags.DisableJsonLogParsing, logs.PatternExtractionRateLimiter())
 		reader, err := logs.NewTailReader(proc.HostPath(c.metadata.logPath), ch)
 		if err != nil {
 			klog.Warningln(err)
@@ -1300,7 +1305,7 @@ func (c *Container) runLogParser(logPath string) {
 			return
 		}
 		klog.InfoS("started container logparser", "cg", c.cgroup.Id)
-		c.logParsers["stdout/stderr"] = logs.NewPipeline(parser, reader.Stop)
+		c.logParsers[logSourceStdout] = logs.NewPipeline(parser, reader.Stop)
 	}
 }
 
