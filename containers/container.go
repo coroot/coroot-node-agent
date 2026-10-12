@@ -52,6 +52,7 @@ type ContainerMetadata struct {
 	networks    map[string]ContainerNetwork
 	env         map[string]string
 	systemd     SystemdProperties
+	ecsService  string
 }
 
 type Delays struct {

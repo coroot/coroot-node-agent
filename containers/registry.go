@@ -571,6 +571,9 @@ func calcId(cg *cgroup.Cgroup, md *ContainerMetadata) ContainerID {
 		}
 		return ContainerID(fmt.Sprintf("/k8s/%s/%s/%s", namespace, pod, name))
 	}
+	if md.labels[ecsLabelTaskArn] != "" {
+		return ecsContainerId(md)
+	}
 	if taskNameParts := strings.SplitN(md.labels["com.docker.swarm.task.name"], ".", 3); len(taskNameParts) == 3 {
 		namespace := md.labels["com.docker.stack.namespace"]
 		service := md.labels["com.docker.swarm.service.name"]
@@ -620,6 +623,9 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 	if dockerdClient != nil {
 		md, err := DockerdInspect(cg.ContainerId)
 		if err == nil {
+			if err = ecsEnrichMetadata(md); err != nil {
+				return nil, err
+			}
 			return md, nil
 		}
 		dockerdErr = err
