@@ -187,6 +187,14 @@ func containerByCgroup(cgroupPath string) (ContainerType, string, error) {
 			return ContainerTypeSandbox, "", nil
 		}
 		return ContainerTypeDocker, matches[1], nil
+	case prefix == "ecs" || prefix == "ecstasks.slice":
+		// ECS on EC2: /ecs/<task-id>/<container-id> (cgroup v1) or
+		// /ecstasks.slice/ecstasks-<task-id>.slice/docker-<container-id>.scope (cgroup v2)
+		matches := dockerIdRegexp.FindStringSubmatch(cgroupPath)
+		if matches == nil {
+			return ContainerTypeUnknown, "", fmt.Errorf("invalid ecs cgroup %s", cgroupPath)
+		}
+		return ContainerTypeDocker, matches[1], nil
 	case prefix == "system" || prefix == "podruntime":
 		matches := talosIdRegexp.FindStringSubmatch(cgroupPath)
 		if matches == nil {

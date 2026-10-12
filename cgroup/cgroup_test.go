@@ -82,6 +82,18 @@ func TestNewFromProcessCgroupFile(t *testing.T) {
 	assert.Equal(t, "/lxc/first", cg.ContainerId)
 	assert.Equal(t, ContainerTypeLxc, cg.ContainerType)
 
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/1100/cgroup")) // ECS on EC2, cgroup v1
+	require.Nil(t, err)
+	assert.Equal(t, "/ecs/6b70638e857c4df284d52028bcdd6232/cc7924a92b43f3e453b9edf00b7a7350c7b620ec323350e755d8d15565c8ec2b", cg.Id)
+	assert.Equal(t, "cc7924a92b43f3e453b9edf00b7a7350c7b620ec323350e755d8d15565c8ec2b", cg.ContainerId)
+	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
+
+	cg, err = NewFromProcessCgroupFile(path.Join("fixtures/proc/1200/cgroup")) // ECS on EC2, cgroup v2
+	require.Nil(t, err)
+	assert.Equal(t, "/ecstasks.slice/ecstasks-9d7549331be24a6284b12238167e58b7.slice/docker-b2754197021709db2022ff6970befad8d0ee42553611290a00a7fd9ae65d3cc8.scope", cg.Id)
+	assert.Equal(t, "b2754197021709db2022ff6970befad8d0ee42553611290a00a7fd9ae65d3cc8", cg.ContainerId)
+	assert.Equal(t, ContainerTypeDocker, cg.ContainerType)
+
 	baseCgroupPath = "/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podc83d0428_58af_41eb_8dba_b9e6eddffe7b.slice/docker-0e612005fd07e7f47e2cd07df99a2b4e909446814d71d0b5e4efc7159dd51252.scope"
 	defer func() {
 		baseCgroupPath = ""
