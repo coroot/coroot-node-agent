@@ -320,3 +320,59 @@ func TestParseZookeeper(t *testing.T) {
 	assert.Equal(t, "getData", op)
 	assert.Equal(t, "/clickhouse/tables/shard-1/coroot_3kuq8b3z/otel_t...<TRUNCATED>", arg)
 }
+
+func TestParseMysql(t *testing.T) {
+	packet := func(cmd byte, body ...[]byte) []byte {
+		msg := []byte{cmd}
+		for _, b := range body {
+			msg = append(msg, b...)
+		}
+		l := len(msg)
+		return append([]byte{byte(l), byte(l >> 8), byte(l >> 16), 0}, msg...)
+	}
+	lenencStr := func(s string) []byte { return append([]byte{byte(len(s))}, s...) }
+	q := []byte("select 1")
+
+	p := NewMysqlParser()
+
+	assert.Equal(t, "select 1", p.Parse(packet(MysqlComQuery, q), 0))
+	assert.Equal(t, " /* c */ select 1", p.Parse(packet(MysqlComQuery, []byte(" /* c */ select 1")), 0))
+
+	assert.Equal(t, "select 1", p.Parse(packet(MysqlComQuery, []byte{0, 1}, q), 0))
+
+	// two attributes: a string and a LONGLONG
+	attrs := []byte{2, 1}          // parameter_count, parameter_set_count
+	attrs = append(attrs, 0)       // null bitmap
+	attrs = append(attrs, 1)       // new_params_bind_flag
+	attrs = append(attrs, 0xfd, 0) // VAR_STRING
+	attrs = append(attrs, lenencStr("traceparent")...)
+	attrs = append(attrs, 0x08, 0x80) // LONGLONG, unsigned
+	attrs = append(attrs, lenencStr("retries")...)
+	attrs = append(attrs, lenencStr("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")...)
+	attrs = append(attrs, 3, 0, 0, 0, 0, 0, 0, 0)
+	assert.Equal(t, "select 1", p.Parse(packet(MysqlComQuery, attrs, q), 0))
+
+	// a NULL attribute has no value
+	attrs = []byte{1, 1, 0x01, 1, 0xfd, 0}
+	attrs = append(attrs, lenencStr("x")...)
+	assert.Equal(t, "select 1", p.Parse(packet(MysqlComQuery, attrs, q), 0))
+
+	// DATETIME attribute: length-prefixed value
+	attrs = []byte{1, 1, 0, 1, 0x0c, 0}
+	attrs = append(attrs, lenencStr("ts")...)
+	attrs = append(attrs, 4, 0xe9, 0x07, 10, 13)
+	assert.Equal(t, "select 1", p.Parse(packet(MysqlComQuery, attrs, q), 0))
+
+	// a block that doesn't parse (bind flag is not 1) is left untouched
+	raw := []byte{1, 1, 0, 0, 0xfd, 0, 1, 'x'}
+	assert.Equal(t, string(append(raw, q...)), p.Parse(packet(MysqlComQuery, raw, q), 0))
+
+	// a zero length header must not panic
+	assert.Equal(t, "", p.Parse(append([]byte{0, 0, 0, 0, MysqlComQuery}, q...), 0))
+
+	// truncated payload keeps the "..." marker
+	assert.Equal(t, "sel...", p.Parse(packet(MysqlComQuery, []byte{0, 1}, q)[:10], 0))
+
+	// COM_STMT_PREPARE has no attributes block
+	assert.Equal(t, "PREPARE 7 FROM select 1", p.Parse(packet(MysqlComStmtPrepare, q), 7))
+}

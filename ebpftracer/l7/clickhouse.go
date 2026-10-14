@@ -12,12 +12,12 @@ const (
 	chMaxQuerySize                   = 1024
 )
 
-type chReader struct {
+type byteReader struct {
 	data []byte
 	off  int
 }
 
-func (r *chReader) uvarint() (uint64, bool) {
+func (r *byteReader) uvarint() (uint64, bool) {
 	if r.off >= len(r.data) {
 		return 0, false
 	}
@@ -29,7 +29,7 @@ func (r *chReader) uvarint() (uint64, bool) {
 	return v, true
 }
 
-func (r *chReader) byte() (byte, bool) {
+func (r *byteReader) byte() (byte, bool) {
 	if r.off >= len(r.data) {
 		return 0, false
 	}
@@ -38,20 +38,25 @@ func (r *chReader) byte() (byte, bool) {
 	return b, true
 }
 
-func (r *chReader) skip(n int) bool {
-	if n < 0 || n > len(r.data)-r.off {
-		return false
-	}
-	r.off += n
-	return true
+func (r *byteReader) skip(n int) bool {
+	_, ok := r.bytes(n)
+	return ok
 }
 
-func (r *chReader) skipStr() bool {
+func (r *byteReader) bytes(n int) ([]byte, bool) {
+	if n < 0 || n > len(r.data)-r.off {
+		return nil, false
+	}
+	r.off += n
+	return r.data[r.off-n : r.off], true
+}
+
+func (r *byteReader) skipStr() bool {
 	l, ok := r.uvarint()
 	return ok && l <= uint64(len(r.data)-r.off) && r.skip(int(l))
 }
 
-func (r *chReader) skipStrings(n int) bool {
+func (r *byteReader) skipStrings(n int) bool {
 	for i := 0; i < n; i++ {
 		if !r.skipStr() {
 			return false
@@ -60,7 +65,7 @@ func (r *chReader) skipStrings(n int) bool {
 	return true
 }
 
-func (r *chReader) skipUvarints(n int) bool {
+func (r *byteReader) skipUvarints(n int) bool {
 	for i := 0; i < n; i++ {
 		if _, ok := r.uvarint(); !ok {
 			return false
@@ -70,7 +75,7 @@ func (r *chReader) skipUvarints(n int) bool {
 }
 
 func ParseClickhouse(payload []byte) string {
-	r := &chReader{data: payload}
+	r := &byteReader{data: payload}
 	if _, ok := r.byte(); !ok { // packet type (Query)
 		return ""
 	}
