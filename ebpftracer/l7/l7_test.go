@@ -27,6 +27,14 @@ func Test_parseMemcached(t *testing.T) {
 	cmd, items = ParseMemcached(append([]byte(`gets 1111 2222 3333`), '\r', '\n'))
 	assert.Equal(t, "gets", cmd)
 	assert.Equal(t, []string{"1111", "2222", "3333"}, items)
+
+	cmd, items = ParseMemcached(append([]byte(`delete 1111`), '\r', '\n'))
+	assert.Equal(t, "delete", cmd)
+	assert.Equal(t, []string{"1111"}, items)
+
+	cmd, items = ParseMemcached(append([]byte(`delete 1111 noreply`), '\r', '\n'))
+	assert.Equal(t, "delete", cmd)
+	assert.Equal(t, []string{"1111"}, items)
 }
 
 func TestParseRedis(t *testing.T) {

@@ -18,7 +18,11 @@ func ParseMemcached(payload []byte) (string, []string) {
 	command := string(cmd)
 	switch command {
 	case "set", "add", "cas", "append", "prepend", "replace", "delete", "incr", "decr", "touch":
-		if key, _, ok := bytes.Cut(rest, space); ok {
+		key, _, ok := bytes.Cut(rest, space)
+		if !ok {
+			key, _, ok = bytes.Cut(rest, crlf) // e.g., "delete <key>\r\n"
+		}
+		if ok {
 			return command, []string{string(key)}
 		}
 	case "gat", "gats":
