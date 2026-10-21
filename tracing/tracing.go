@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.18.0"
+	semconv130 "go.opentelemetry.io/otel/semconv/v1.30.0" // GenAI attributes only; the other attribute names must stay as in v1.18.0
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/klog/v2"
 )
@@ -140,18 +141,30 @@ func (t *Trace) createSpan(name string, duration time.Duration, error bool, attr
 	span.End(trace.WithTimestamp(end))
 }
 
-func (t *Trace) HttpRequest(method, path string, status l7.Status, duration time.Duration) {
+func (t *Trace) HttpRequest(method, path string, status l7.Status, duration time.Duration, extraAttrs ...attribute.KeyValue) {
 	if t == nil || method == "" {
 		return
 	}
-	t.createSpan(method, duration, status >= 400,
+	attrs := append([]attribute.KeyValue{
 		semconv.HTTPURL(fmt.Sprintf("http://%s%s", t.destination.String(), path)),
 		semconv.HTTPMethod(method),
 		semconv.HTTPStatusCode(int(status)),
-	)
+	}, extraAttrs...)
+	t.createSpan(method, duration, status >= 400, attrs...)
 }
 
-func (t *Trace) Http2Request(method, path, scheme string, status, grpcStatus l7.Status, duration time.Duration) {
+func LLMAttributes(req *l7.LLMRequest) []attribute.KeyValue {
+	if req == nil {
+		return nil
+	}
+	attrs := []attribute.KeyValue{semconv130.GenAIOperationNameKey.String(req.Operation)}
+	if req.Model != "" {
+		attrs = append(attrs, semconv130.GenAIRequestModel(req.Model))
+	}
+	return attrs
+}
+
+func (t *Trace) Http2Request(method, path, scheme string, status, grpcStatus l7.Status, duration time.Duration, extraAttrs ...attribute.KeyValue) {
 	if t == nil {
 		return
 	}
@@ -173,6 +186,7 @@ func (t *Trace) Http2Request(method, path, scheme string, status, grpcStatus l7.
 	if grpcStatus >= 0 {
 		attrs = append(attrs, semconv.RPCGRPCStatusCodeKey.Int(int(grpcStatus)))
 	}
+	attrs = append(attrs, extraAttrs...)
 	t.createSpan(method, duration, status > 400 || grpcStatus > 0, attrs...)
 }
 

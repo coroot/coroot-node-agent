@@ -6,6 +6,8 @@ import (
 )
 
 var (
+	llmLatencyBuckets = []float64{.1, .25, .5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300, 600}
+
 	L7Requests = map[l7.Protocol]prometheus.CounterOpts{
 		l7.ProtocolHTTP:         {Name: "container_http_requests_total", Help: "Total number of outbound HTTP requests"},
 		l7.ProtocolPostgres:     {Name: "container_postgres_queries_total", Help: "Total number of outbound Postgres queries"},
@@ -52,6 +54,7 @@ var (
 		l7.ProtocolClickhouse:   {Name: "container_clickhouse_inbound_queries_total", Help: "Total number of inbound ClickHouse queries"},
 		l7.ProtocolZookeeper:    {Name: "container_zookeeper_inbound_requests_total", Help: "Total number of inbound Zookeeper requests"},
 		l7.ProtocolFoundationDB: {Name: "container_foundationdb_inbound_requests_total", Help: "Total number of inbound FoundationDB requests"},
+		l7.ProtocolLLM:          {Name: "container_llm_inbound_requests_total", Help: "Total number of inbound LLM inference requests (excluded from the inbound HTTP metrics)"},
 	}
 	L7InboundLatency = map[l7.Protocol]prometheus.HistogramOpts{
 		l7.ProtocolHTTP:         {Name: "container_http_inbound_requests_duration_seconds_total", Help: "Histogram of the response time for each inbound HTTP request"},
@@ -67,6 +70,7 @@ var (
 		l7.ProtocolClickhouse:   {Name: "container_clickhouse_inbound_queries_duration_seconds_total", Help: "Histogram of the execution time for each inbound ClickHouse query"},
 		l7.ProtocolZookeeper:    {Name: "container_zookeeper_inbound_requests_duration_seconds_total", Help: "Histogram of the execution time for each inbound Zookeeper request"},
 		l7.ProtocolFoundationDB: {Name: "container_foundationdb_inbound_requests_duration_seconds_total", Help: "Histogram of the execution time for each inbound FoundationDB request"},
+		l7.ProtocolLLM:          {Name: "container_llm_inbound_requests_duration_seconds_total", Help: "Histogram of the response time (time to the first response byte) for each inbound LLM inference request", Buckets: llmLatencyBuckets},
 	}
 )
 

@@ -24,6 +24,7 @@ const (
 	ProtocolClickhouse   Protocol = 14
 	ProtocolZookeeper    Protocol = 15
 	ProtocolFoundationDB Protocol = 16
+	ProtocolLLM          Protocol = 17 // not a wire protocol: HTTP requests to LLM inference APIs
 )
 
 func (p Protocol) String() string {
@@ -60,6 +61,8 @@ func (p Protocol) String() string {
 		return "Zookeeper"
 	case ProtocolFoundationDB:
 		return "FoundationDB"
+	case ProtocolLLM:
+		return "LLM"
 	}
 	return "UNKNOWN:" + strconv.Itoa(int(p))
 }

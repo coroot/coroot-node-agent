@@ -10,8 +10,37 @@ import (
 )
 
 type L7Metrics struct {
-	Requests *prometheus.CounterVec
-	Latency  prometheus.Histogram
+	Requests    *prometheus.CounterVec
+	Latency     prometheus.Histogram
+	LLM         *L7Metrics
+	constLabels prometheus.Labels
+}
+
+func (m *L7Metrics) observeLLM(status string, duration time.Duration) {
+	if m == nil {
+		return
+	}
+	if m.LLM == nil {
+		labels := prometheus.Labels{"type": "llm"}
+		for k, v := range m.constLabels {
+			labels[k] = v
+		}
+		m.LLM = newL7Metrics(l7.ProtocolHTTP, L7Requests, L7Latency, labels)
+	}
+	m.LLM.observe(status, "", duration)
+}
+
+func (m *L7Metrics) collect(ch chan<- prometheus.Metric) {
+	if m == nil {
+		return
+	}
+	if m.Requests != nil {
+		m.Requests.Collect(ch)
+	}
+	if m.Latency != nil {
+		m.Latency.Collect(ch)
+	}
+	m.LLM.collect(ch)
 }
 
 func (m *L7Metrics) observe(status, method string, duration time.Duration) {
@@ -44,7 +73,7 @@ func newL7Metrics(protocol l7.Protocol, requests map[l7.Protocol]prometheus.Coun
 	if !ok {
 		return nil
 	}
-	m := &L7Metrics{}
+	m := &L7Metrics{constLabels: constLabels}
 	labels := []string{"status"}
 	switch protocol {
 	case l7.ProtocolRabbitmq, l7.ProtocolNats:
@@ -52,7 +81,7 @@ func newL7Metrics(protocol l7.Protocol, requests map[l7.Protocol]prometheus.Coun
 	default:
 		if hOpts, ok := latency[protocol]; ok {
 			m.Latency = prometheus.NewHistogram(
-				prometheus.HistogramOpts{Name: hOpts.Name, Help: hOpts.Help, ConstLabels: constLabels},
+				prometheus.HistogramOpts{Name: hOpts.Name, Help: hOpts.Help, ConstLabels: constLabels, Buckets: hOpts.Buckets},
 			)
 		}
 	}
@@ -85,12 +114,7 @@ func (s L7Stats) get(protocol l7.Protocol, key common.DestinationKey) *L7Metrics
 func (s L7Stats) collect(ch chan<- prometheus.Metric) {
 	for _, protoStats := range s {
 		for _, m := range protoStats {
-			if m.Requests != nil {
-				m.Requests.Collect(ch)
-			}
-			if m.Latency != nil {
-				m.Latency.Collect(ch)
-			}
+			m.collect(ch)
 		}
 	}
 }
@@ -123,11 +147,6 @@ func (s L7InboundStats) get(protocol l7.Protocol) *L7Metrics {
 
 func (s L7InboundStats) collect(ch chan<- prometheus.Metric) {
 	for _, m := range s {
-		if m.Requests != nil {
-			m.Requests.Collect(ch)
-		}
-		if m.Latency != nil {
-			m.Latency.Collect(ch)
-		}
+		m.collect(ch)
 	}
 }

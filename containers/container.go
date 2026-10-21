@@ -856,8 +856,13 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 	case l7.ProtocolHTTP:
 		method, path := l7.ParseHttp(r.Payload)
 		if !common.HttpFilter.ShouldBeSkipped(path) {
-			stats.observe(r.Status.Http(), "", r.Duration)
-			trace.HttpRequest(method, path, r.Status, r.Duration)
+			if llm := l7.ParseLLMRequest(method, path, r.Payload); llm != nil {
+				stats.observeLLM(r.Status.Http(), r.Duration)
+				trace.HttpRequest(method, path, r.Status, r.Duration, tracing.LLMAttributes(llm)...)
+			} else {
+				stats.observe(r.Status.Http(), "", r.Duration)
+				trace.HttpRequest(method, path, r.Status, r.Duration)
+			}
 		}
 	case l7.ProtocolHTTP2:
 		if conn.http2Parser == nil {
@@ -870,8 +875,13 @@ func (c *Container) onL7Request(pid uint32, fd uint64, timestamp uint64, r *l7.R
 				if req.GrpcStatus >= 0 {
 					status = req.GrpcStatus.GRPC()
 				}
-				stats.observe(status, "", req.Duration)
-				trace.Http2Request(req.Method, req.Path, req.Scheme, req.Status, req.GrpcStatus, req.Duration)
+				if llm := l7.ParseLLMRequest(req.Method, req.Path, nil); llm != nil {
+					stats.observeLLM(status, req.Duration)
+					trace.Http2Request(req.Method, req.Path, req.Scheme, req.Status, req.GrpcStatus, req.Duration, tracing.LLMAttributes(llm)...)
+				} else {
+					stats.observe(status, "", req.Duration)
+					trace.Http2Request(req.Method, req.Path, req.Scheme, req.Status, req.GrpcStatus, req.Duration)
+				}
 			}
 		}
 	case l7.ProtocolPostgres:
@@ -955,7 +965,11 @@ func (c *Container) observeInboundL7(pid uint32, fd uint64, timestamp uint64, r 
 			if req.GrpcStatus >= 0 {
 				status = req.GrpcStatus.GRPC()
 			}
-			stats.observe(status, "", req.Duration)
+			if l7.ParseLLMRequest(req.Method, req.Path, nil) != nil {
+				c.l7InboundStats.get(l7.ProtocolLLM).observe(status, "", req.Duration)
+			} else {
+				stats.observe(status, "", req.Duration)
+			}
 		}
 		return
 	}
@@ -965,7 +979,12 @@ func (c *Container) observeInboundL7(pid uint32, fd uint64, timestamp uint64, r 
 	stats := c.l7InboundStats.get(protocol)
 	switch protocol {
 	case l7.ProtocolHTTP:
-		stats.observe(r.Status.Http(), "", r.Duration)
+		method, path := l7.ParseHttp(r.Payload)
+		if l7.ParseLLMRequest(method, path, r.Payload) != nil { // LLM inference requests are slow by nature, so they are kept out of the HTTP metrics
+			c.l7InboundStats.get(l7.ProtocolLLM).observe(r.Status.Http(), "", r.Duration)
+		} else {
+			stats.observe(r.Status.Http(), "", r.Duration)
+		}
 	case l7.ProtocolZookeeper:
 		stats.observe(r.Status.Zookeeper(), "", r.Duration)
 	default:
