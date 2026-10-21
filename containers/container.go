@@ -980,10 +980,12 @@ func (c *Container) observeInboundL7(pid uint32, fd uint64, timestamp uint64, r 
 	switch protocol {
 	case l7.ProtocolHTTP:
 		method, path := l7.ParseHttp(r.Payload)
-		if l7.ParseLLMRequest(method, path, r.Payload) != nil { // LLM inference requests are slow by nature, so they are kept out of the HTTP metrics
-			c.l7InboundStats.get(l7.ProtocolLLM).observe(r.Status.Http(), "", r.Duration)
-		} else {
-			stats.observe(r.Status.Http(), "", r.Duration)
+		if !common.HttpFilter.ShouldBeSkipped(path) {
+			if l7.ParseLLMRequest(method, path, r.Payload) != nil { // LLM inference requests are slow by nature, so they are kept out of the HTTP metrics
+				c.l7InboundStats.get(l7.ProtocolLLM).observe(r.Status.Http(), "", r.Duration)
+			} else {
+				stats.observe(r.Status.Http(), "", r.Duration)
+			}
 		}
 	case l7.ProtocolZookeeper:
 		stats.observe(r.Status.Zookeeper(), "", r.Duration)
