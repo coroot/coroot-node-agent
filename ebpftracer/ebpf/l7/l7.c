@@ -302,6 +302,16 @@ int handle_request(void *ctx, struct connection_id cid, struct connection *conn,
     if (pending && pending->protocol == PROTOCOL_UNKNOWN && pending->partial == 1) {
         bpf_map_delete_elem(&active_l7_requests, &k);
     }
+    if (pending && pending->protocol == PROTOCOL_HTTP && pending->payload_size < 64 && !is_http_request(payload)) { // only the beginning of the request line has been read: append the rest
+        __u64 offset = pending->payload_size;
+        asm volatile ("%0 &= %1" : "+r"(offset) : "i"(63));
+        size = MIN(size, MAX_PAYLOAD_SIZE/2-1);
+        asm volatile ("%0 &= %1" : "+r"(size) : "i"(MAX_PAYLOAD_SIZE/2-1));
+        if (bpf_probe_read(pending->payload + offset, size, payload) == 0) {
+            pending->payload_size = offset + size;
+        }
+        return 0;
+    }
 
     struct l7_request *req = bpf_map_lookup_elem(&l7_request_heap, &zero);
     if (!req) {
