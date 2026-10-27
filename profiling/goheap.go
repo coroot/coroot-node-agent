@@ -8,8 +8,8 @@ import (
 
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/proc"
+	"github.com/coroot/coroot-node-agent/profiling/symtab"
 	"github.com/google/pprof/profile"
-	"github.com/grafana/pyroscope/ebpf/symtab"
 	"k8s.io/klog/v2"
 )
 

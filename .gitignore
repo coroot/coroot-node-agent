@@ -4,3 +4,4 @@
 *.exe
 *.msi
 *.wixobj
+/profiling/testdata/

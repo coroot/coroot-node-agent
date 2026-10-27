@@ -1,0 +1,177 @@
+package python
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+
+	"github.com/cilium/ebpf"
+	"github.com/coroot/coroot-node-agent/profiling/symtab"
+	"k8s.io/klog/v2"
+)
+
+type Perf struct {
+	pidDataHashMap *ebpf.Map
+	symbolsHashMp  *ebpf.Map
+
+	events      []*PerfPyEvent
+	eventsLock  sync.Mutex
+	sc          *symtab.SymbolCache
+	pidCache    map[uint32]*Proc
+	prevSymbols map[uint32]*PerfPySymbol
+}
+
+type Proc struct { // consider merging with symtab.ProcTable
+	PerfPyPidData *PerfPyPidData
+	SymbolOptions *symtab.SymbolOptions
+}
+
+func NewPerf(pidDataHasMap *ebpf.Map, symbolsHashMap *ebpf.Map) (*Perf, error) {
+	pidCache := make(map[uint32]*Proc)
+	res := &Perf{
+		pidDataHashMap: pidDataHasMap,
+		symbolsHashMp:  symbolsHashMap,
+		pidCache:       pidCache,
+	}
+	return res, nil
+}
+
+func (s *Perf) FindProc(pid uint32) *Proc {
+	return s.pidCache[pid]
+}
+
+func (s *Perf) NewProc(pid uint32, data *PerfPyPidData, options *symtab.SymbolOptions) (*Proc, error) {
+	prev := s.pidCache[pid]
+	if prev != nil {
+		return prev, nil
+	}
+
+	err := s.pidDataHashMap.Update(pid, data, ebpf.UpdateAny)
+	if err != nil { // should never happen
+		return nil, fmt.Errorf("updating pid data hash map: %w", err)
+	}
+	n := &Proc{
+		PerfPyPidData: data,
+		SymbolOptions: options,
+	}
+	s.pidCache[pid] = n
+	return n, nil
+}
+
+func (s *Perf) CollectEvents(buf []*PerfPyEvent) []*PerfPyEvent {
+	buf = buf[:0]
+	s.eventsLock.Lock()
+	defer s.eventsLock.Unlock()
+	if len(s.events) == 0 {
+		return buf
+	}
+	if len(s.events) > cap(buf) {
+		buf = make([]*PerfPyEvent, len(s.events))
+	} else {
+		buf = buf[:len(s.events)]
+	}
+	copy(buf, s.events)
+	for i := range s.events {
+		s.events[i] = nil
+	}
+	s.events = s.events[:0]
+
+	return buf
+}
+
+func (s *Perf) GetLazySymbols() *LazySymbols {
+	return &LazySymbols{
+		symbols: s.prevSymbols,
+		fresh:   false,
+		perf:    s,
+	}
+}
+
+func (s *Perf) GetSymbols() (map[uint32]*PerfPySymbol, error) {
+	var (
+		m       = s.symbolsHashMp
+		mapSize = m.MaxEntries()
+	)
+	keys := make([]PerfPySymbol, mapSize)
+	values := make([]uint32, mapSize)
+	res := make(map[uint32]*PerfPySymbol)
+	opts := &ebpf.BatchOptions{}
+	var cursor = new(ebpf.MapBatchCursor)
+	n, err := m.BatchLookup(cursor, keys, values, opts)
+	if n > 0 {
+		res := make(map[uint32]*PerfPySymbol, n)
+		for i := 0; i < n; i++ {
+			k := values[i]
+			res[k] = &keys[i]
+		}
+		s.prevSymbols = res
+		return res, nil
+	}
+	if errors.Is(err, ebpf.ErrKeyNotExist) {
+		return nil, nil
+	}
+	// batch not supported
+
+	// try iterating if batch failed
+	it := m.Iterate()
+
+	v := uint32(0)
+	for {
+		k := new(PerfPySymbol)
+		ok := it.Next(k, &v)
+		if !ok {
+			err := it.Err()
+			if err != nil {
+				err = fmt.Errorf("map %s iteration : %w", m.String(), err)
+				return nil, err
+			}
+			break
+		}
+		res[v] = k
+	}
+	s.prevSymbols = res
+	return res, nil
+}
+
+func (s *Perf) RemoveDeadPID(pid uint32) {
+	delete(s.pidCache, pid)
+	err := s.pidDataHashMap.Delete(pid)
+	if err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+		klog.Errorf("pyperf: deleting pid data of pid=%d: %v", pid, err)
+	}
+}
+
+// LazySymbols tries to reuse a map from previous profile collection.
+// If found a new symbols, then full dump ( GetSymbols ) is performed.
+type LazySymbols struct {
+	perf    *Perf
+	symbols map[uint32]*PerfPySymbol
+	fresh   bool
+}
+
+func (s *LazySymbols) GetSymbol(symID uint32) (*PerfPySymbol, error) {
+	symbol, ok := s.symbols[symID]
+	if ok {
+		return symbol, nil
+	}
+	return s.getSymbol(symID)
+
+}
+
+func (s *LazySymbols) getSymbol(id uint32) (*PerfPySymbol, error) {
+	if s.fresh {
+		return nil, fmt.Errorf("symbol %d not found", id)
+	}
+	// make it fresh
+	symbols, err := s.perf.GetSymbols()
+	if err != nil {
+		return nil, fmt.Errorf("symbols refresh failed: %w", err)
+	}
+	s.symbols = symbols
+	s.fresh = true
+	symbol, ok := symbols[id]
+	if ok {
+		return symbol, nil
+	}
+	return nil, fmt.Errorf("symbol %d not found", id)
+}

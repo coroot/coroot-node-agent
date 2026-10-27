@@ -6,24 +6,24 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/coroot/coroot-node-agent/api"
+	"github.com/coroot/coroot-node-agent/apptype"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/jvm"
 	"github.com/coroot/coroot-node-agent/proc"
-	"github.com/go-kit/log"
+	"github.com/coroot/coroot-node-agent/profiling/demangle"
+	"github.com/coroot/coroot-node-agent/profiling/ebpfspy"
+	"github.com/coroot/coroot-node-agent/profiling/pprof"
+	"github.com/coroot/coroot-node-agent/profiling/symtab"
 	pprofProfile "github.com/google/pprof/profile"
-	ebpfspy "github.com/grafana/pyroscope/ebpf"
-	"github.com/grafana/pyroscope/ebpf/cpp/demangle"
-	"github.com/grafana/pyroscope/ebpf/metrics"
-	"github.com/grafana/pyroscope/ebpf/pprof"
-	"github.com/grafana/pyroscope/ebpf/sd"
-	"github.com/grafana/pyroscope/ebpf/symtab"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"k8s.io/klog/v2"
 )
@@ -64,7 +64,6 @@ func Init(hostId, hostName string) (chan<- containers.ProcessInfo, chan *contain
 		{Name: "host.id", Value: hostId},
 	}
 
-	reg := prometheus.NewRegistry()
 	so := ebpfspy.SessionOptions{
 		CollectUser:               true,
 		CollectKernel:             false,
@@ -90,14 +89,10 @@ func Init(hostId, hostName string) (chan<- containers.ProcessInfo, chan *contain
 			PythonFullFilePath: true,
 			DemangleOptions:    demangle.DemangleFull,
 		},
-		Metrics: &metrics.Metrics{
-			Symtab: metrics.NewSymtabMetrics(reg),
-			Python: metrics.NewPythonMetrics(reg),
-		},
 		SampleRate: SampleRate,
 	}
 	var err error
-	session, err = ebpfspy.NewSession(log.NewNopLogger(), targetFinder, so)
+	session, err = ebpfspy.NewSession(targetFinder, so)
 	if err != nil {
 		klog.Errorln(err)
 		session = nil
@@ -121,7 +116,7 @@ func Start() {
 		return
 	}
 	targetFinder.now = time.Now().UnixNano()
-	session.UpdateTargets(sd.TargetsOptions{})
+	session.UpdateTargets()
 }
 
 func Stop() {
@@ -134,7 +129,7 @@ func collect() {
 	ticker := time.NewTicker(CollectInterval)
 	defer ticker.Stop()
 	for t := range ticker.C {
-		session.UpdateTargets(sd.TargetsOptions{})
+		session.UpdateTargets()
 		bs := pprof.NewProfileBuilders(pprof.BuildersOptions{SampleRate: SampleRate, PerPIDProfile: false})
 		if err := pprof.Collect(bs, session); err != nil {
 			klog.Errorln(err)
@@ -163,17 +158,8 @@ func collect() {
 func upload(b *pprof.ProfileBuilder) error {
 	u := *endpointUrl
 	q := u.Query()
-	for _, l := range b.Labels {
-		switch l.Name {
-		case "service_name":
-			l.Name = "service.name"
-		case "__container_id__":
-			l.Name = "container.id"
-		default:
-			continue
-		}
-		q.Set(l.Name, l.Value)
-	}
+	q.Set("service.name", b.ServiceName)
+	q.Set("container.id", b.ContainerID)
 	for _, l := range constLabels {
 		q.Set(l.Name, l.Value)
 	}
@@ -411,6 +397,7 @@ type TargetFinder struct {
 	processes map[uint32]*processInfo
 	lock      sync.Mutex
 	now       int64
+	rounds    int
 }
 
 func (tf *TargetFinder) start(processInfoCh <-chan containers.ProcessInfo) {
@@ -420,10 +407,8 @@ func (tf *TargetFinder) start(processInfoCh <-chan containers.ProcessInfo) {
 			cid := string(pi.ContainerId)
 			svc := common.ContainerIdToOtelServiceName(cid)
 			tf.processes[pi.Pid] = &processInfo{
-				startedAt: pi.StartedAt.UnixNano(),
-				target: sd.NewTargetForTesting(cid, 0, sd.DiscoveryTarget{
-					"service_name": svc,
-				}),
+				startedAt:   pi.StartedAt.UnixNano(),
+				target:      &ebpfspy.Target{ServiceName: svc, ContainerID: cid},
 				flags:       pi.Flags,
 				serviceName: svc,
 				containerId: cid,
@@ -433,7 +418,7 @@ func (tf *TargetFinder) start(processInfoCh <-chan containers.ProcessInfo) {
 	}()
 }
 
-func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
+func (tf *TargetFinder) FindTarget(pid uint32) *ebpfspy.Target {
 	tf.lock.Lock()
 	defer tf.lock.Unlock()
 	pi := tf.processes[pid]
@@ -447,6 +432,7 @@ func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
 	if !pi.initialized {
 		pi.initialized = true
 		cmdline := proc.GetCmdline(pid)
+		pi.target.Python = isPython(pid, cmdline)
 		if proc.IsJvm(cmdline) {
 			pi.isJvm = jvm.IsHotSpotJVM(pid)
 			if !pi.flags.EbpfProfilingDisabled {
@@ -474,6 +460,24 @@ func (tf *TargetFinder) FindTarget(pid uint32) *sd.Target {
 	return pi.target
 }
 
+func (tf *TargetFinder) Reset(pid uint32) {
+	tf.lock.Lock()
+	pi := tf.processes[pid]
+	if pi != nil {
+		tf.processes[pid] = &processInfo{
+			startedAt:   pi.startedAt,
+			target:      &ebpfspy.Target{ServiceName: pi.serviceName, ContainerID: pi.containerId},
+			flags:       pi.flags,
+			serviceName: pi.serviceName,
+			containerId: pi.containerId,
+		}
+	}
+	tf.lock.Unlock()
+	if pi != nil && pi.asyncProfilerStarted {
+		jvm.StopAsyncProfiler(pid)
+	}
+}
+
 func (tf *TargetFinder) RemoveDeadPID(pid uint32) {
 	tf.lock.Lock()
 	pi := tf.processes[pid]
@@ -484,17 +488,28 @@ func (tf *TargetFinder) RemoveDeadPID(pid uint32) {
 	}
 }
 
-func (tf *TargetFinder) DebugInfo() []map[string]string {
-	return nil
-}
-
-func (tf *TargetFinder) Update(_ sd.TargetsOptions) {
+func (tf *TargetFinder) Update() {
 	tf.now = time.Now().UnixNano()
+	tf.rounds++
+	if tf.rounds%10 != 0 {
+		return
+	}
+	tf.lock.Lock()
+	var gone []uint32
+	for pid := range tf.processes {
+		if _, err := os.Stat(proc.Path(pid, "status")); err != nil {
+			gone = append(gone, pid)
+		}
+	}
+	tf.lock.Unlock()
+	for _, pid := range gone {
+		tf.RemoveDeadPID(pid)
+	}
 }
 
 type processInfo struct {
 	startedAt   int64
-	target      *sd.Target
+	target      *ebpfspy.Target
 	serviceName string
 	containerId string
 
@@ -510,4 +525,18 @@ type processInfo struct {
 	isGo         bool
 	mbucketsAddr uint64
 	goHeapPrev   goHeapPrevState
+}
+
+func isPython(pid uint32, cmdline []byte) bool {
+	if exe, err := os.Readlink(proc.Path(pid, "exe")); err == nil {
+		base := path.Base(exe)
+		if strings.HasPrefix(base, "python") || base == "uwsgi" {
+			return true
+		}
+	}
+	argv0 := cmdline
+	if i := bytes.IndexByte(cmdline, 0); i >= 0 {
+		argv0 = cmdline[:i]
+	}
+	return apptype.IsPython(bytes.TrimSuffix(bytes.TrimSpace(argv0), []byte{':'}))
 }
