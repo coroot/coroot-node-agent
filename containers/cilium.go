@@ -1,172 +1,222 @@
 package containers
 
 import (
+	"encoding/binary"
+	"errors"
 	"path/filepath"
 
-	"github.com/cilium/cilium/pkg/bpf"
-	"github.com/cilium/cilium/pkg/defaults"
-	"github.com/cilium/cilium/pkg/loadbalancer"
-	"github.com/cilium/cilium/pkg/maps/ctmap"
-	"github.com/cilium/cilium/pkg/maps/lbmap"
-	"github.com/cilium/cilium/pkg/tuple"
-	"github.com/cilium/cilium/pkg/u8proto"
+	"github.com/cilium/ebpf"
 	"github.com/coroot/coroot-node-agent/proc"
 	"inet.af/netaddr"
 	"k8s.io/klog/v2"
 )
 
-var (
-	ciliumCt4    *bpf.Map
-	ciliumCt6    *bpf.Map
-	backends4Map *bpf.Map
-	backends6Map *bpf.Map
+const (
+	ciliumMapsDir      = "/sys/fs/bpf/tc/globals"
+	ciliumCt4MapName   = "cilium_ct4_global"
+	ciliumCt6MapName   = "cilium_ct6_global"
+	ciliumTupleService = 4
+	ciliumProtoTCP     = 6
 )
 
-type ciliumMapDefinition struct {
-	key   bpf.MapKey
-	value bpf.MapValue
+var (
+	ciliumBackends4MapNames = []string{"cilium_lb4_backends_v3", "cilium_lb4_backends_v2"}
+	ciliumBackends6MapNames = []string{"cilium_lb6_backends_v3", "cilium_lb6_backends_v2"}
+)
+
+type ciliumTupleKey4 struct {
+	DestAddr   [4]byte
+	SourceAddr [4]byte
+	DestPort   [2]byte
+	SourcePort [2]byte
+	NextHeader uint8
+	Flags      uint8
 }
 
-var ciliumMaps = map[string]ciliumMapDefinition{
-	lbmap.Backend4MapV2Name: {key: &lbmap.Backend4KeyV3{}, value: &lbmap.Backend4Value{}},
-	lbmap.Backend4MapV3Name: {key: &lbmap.Backend4KeyV3{}, value: &lbmap.Backend4ValueV3{}},
-	lbmap.Backend6MapV2Name: {key: &lbmap.Backend6KeyV3{}, value: &lbmap.Backend6Value{}},
-	lbmap.Backend6MapV3Name: {key: &lbmap.Backend6KeyV3{}, value: &lbmap.Backend6ValueV3{}},
+type ciliumTupleKey6 struct {
+	DestAddr   [16]byte
+	SourceAddr [16]byte
+	DestPort   [2]byte
+	SourcePort [2]byte
+	NextHeader uint8
+	Flags      uint8
 }
 
-func init() {
-	var err error
+type ciliumCtEntry struct {
+	Reserved0        uint64
+	BackendID        uint64
+	Packets          uint64
+	Bytes            uint64
+	Lifetime         uint32
+	Flags            uint16
+	RevNAT           uint16
+	IfIndex          uint16
+	TxFlagsSeen      uint8
+	RxFlagsSeen      uint8
+	SourceSecurityID uint32
+	LastTxReport     uint32
+	LastRxReport     uint32
+}
 
-	ciliumCt4, err = bpf.OpenMap(
-		proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, ctmap.MapNameTCP4Global)),
-		&ctmap.CtKey4Global{},
-		&ctmap.CtEntry{},
-	)
-	if err != nil {
-		klog.Infoln(err)
-	} else {
-		klog.Infoln("found cilium ebpf-map:", ctmap.MapNameTCP4Global)
-	}
-	ciliumCt6, err = bpf.OpenMap(proc.HostPath(
-		filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, ctmap.MapNameTCP6Global)),
-		&ctmap.CtKey6Global{},
-		&ctmap.CtEntry{},
-	)
-	if err != nil {
-		klog.Infoln(err)
-	} else {
-		klog.Infoln("found cilium ebpf-map:", ctmap.MapNameTCP6Global)
-	}
-	for _, n := range []string{lbmap.Backend4MapV2Name, lbmap.Backend4MapV3Name} {
-		def := ciliumMaps[n]
-		backends4Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), def.key, def.value)
+type ciliumBackend4Value struct {
+	Address [4]byte
+	Port    [2]byte
+	Proto   uint8
+	Flags   uint8
+}
+
+type ciliumBackend4ValueV3 struct {
+	Address   [4]byte
+	Port      [2]byte
+	Proto     uint8
+	Flags     uint8
+	ClusterID uint16
+	Zone      uint8
+	Pad       uint8
+}
+
+type ciliumBackend6Value struct {
+	Address [16]byte
+	Port    [2]byte
+	Proto   uint8
+	Flags   uint8
+}
+
+type ciliumBackend6ValueV3 struct {
+	Address   [16]byte
+	Port      [2]byte
+	Proto     uint8
+	Flags     uint8
+	ClusterID uint16
+	Zone      uint8
+	Pad       uint8
+}
+
+type ciliumMap struct {
+	name string
+	m    *ebpf.Map
+}
+
+func openCiliumMap(names ...string) *ciliumMap {
+	for _, name := range names {
+		m, err := ebpf.LoadPinnedMap(proc.HostPath(filepath.Join(ciliumMapsDir, name)), &ebpf.LoadPinOptions{ReadOnly: true})
 		if err != nil {
-			klog.Infoln(err)
-		} else {
-			klog.Infoln("found cilium ebpf-map:", n)
-			break
+			klog.Infof("cilium ebpf-map %s: %v", name, err)
+			continue
 		}
-	}
-	for _, n := range []string{lbmap.Backend6MapV2Name, lbmap.Backend6MapV3Name} {
-		def := ciliumMaps[n]
-		backends6Map, err = bpf.OpenMap(proc.HostPath(filepath.Join(defaults.BPFFSRoot, defaults.TCGlobalsPath, n)), def.key, def.value)
-		if err != nil {
-			klog.Infoln(err)
-		} else {
-			klog.Infoln("found cilium ebpf-map:", n)
-			break
-		}
-	}
-
-}
-
-func lookupCiliumConntrackTable(src, dst netaddr.IPPort) *netaddr.IPPort {
-	if src.IP().Is4() {
-		return lookupCilium4(src, dst)
-	}
-	if src.IP().Is6() {
-		return lookupCilium6(src, dst)
+		klog.Infoln("found cilium ebpf-map:", name)
+		return &ciliumMap{name: name, m: m}
 	}
 	return nil
 }
 
-func lookupCilium4(src, dst netaddr.IPPort) *netaddr.IPPort {
-	if ciliumCt4 == nil || backends4Map == nil {
-		return nil
+func (m *ciliumMap) lookup(key, value any) bool {
+	err := m.m.Lookup(key, value)
+	if err == nil {
+		return true
 	}
-	key := &ctmap.CtKey4Global{
-		TupleKey4Global: tuple.TupleKey4Global{
-			TupleKey4: tuple.TupleKey4{
-				SourcePort: dst.Port(),
-				SourceAddr: src.IP().As4(),
-				DestPort:   src.Port(),
-				DestAddr:   dst.IP().As4(),
-				NextHeader: u8proto.TCP,
-				Flags:      ctmap.TUPLE_F_SERVICE,
-			},
-		},
+	if !errors.Is(err, ebpf.ErrKeyNotExist) {
+		klog.Warningf("cilium map %s lookup failed: %v", m.name, err)
 	}
-	v, err := ciliumCt4.Lookup(key.ToNetwork())
-	if err != nil || v == nil {
-		return nil
-	}
-	e := v.(*ctmap.CtEntry)
+	return false
+}
 
-	backendKey := lbmap.NewBackend4KeyV3(loadbalancer.BackendID(e.BackendID))
-	b, err := backends4Map.Lookup(backendKey)
-	if err != nil || b == nil {
+func (m *ciliumMap) valueSize() int {
+	return int(m.m.ValueSize())
+}
+
+var (
+	ciliumCt4       *ciliumMap
+	ciliumCt6       *ciliumMap
+	ciliumBackends4 *ciliumMap
+	ciliumBackends6 *ciliumMap
+)
+
+func init() {
+	ciliumCt4 = openCiliumMap(ciliumCt4MapName)
+	ciliumCt6 = openCiliumMap(ciliumCt6MapName)
+	ciliumBackends4 = openCiliumMap(ciliumBackends4MapNames...)
+	ciliumBackends6 = openCiliumMap(ciliumBackends6MapNames...)
+}
+
+func lookupCiliumConntrackTable(src, dst netaddr.IPPort) *netaddr.IPPort {
+	// IPv4-mapped IPv6 addresses are tracked by Cilium as IPv4
+	srcIP, dstIP := src.IP().Unmap(), dst.IP().Unmap()
+	switch {
+	case srcIP.Is4() && dstIP.Is4():
+		return lookupCilium4(srcIP, src.Port(), dstIP, dst.Port())
+	case srcIP.Is6() && dstIP.Is6():
+		return lookupCilium6(srcIP, src.Port(), dstIP, dst.Port())
+	}
+	return nil
+}
+
+func lookupCilium4(srcIP netaddr.IP, srcPort uint16, dstIP netaddr.IP, dstPort uint16) *netaddr.IPPort {
+	if ciliumCt4 == nil || ciliumBackends4 == nil {
 		return nil
 	}
-	var backend lbmap.BackendValue
-	switch bv := b.(type) {
-	case *lbmap.Backend4Value:
-		backend = bv.ToHost()
-	case *lbmap.Backend4ValueV3:
-		backend = bv.ToHost()
+	key := ciliumTupleKey4{SourceAddr: srcIP.As4(), DestAddr: dstIP.As4(), NextHeader: ciliumProtoTCP, Flags: ciliumTupleService}
+	binary.BigEndian.PutUint16(key.SourcePort[:], dstPort)
+	binary.BigEndian.PutUint16(key.DestPort[:], srcPort)
+	var entry ciliumCtEntry
+	if !ciliumCt4.lookup(&key, &entry) {
+		return nil
+	}
+	backendID := uint32(entry.BackendID)
+	var addr [4]byte
+	var port [2]byte
+	switch ciliumBackends4.valueSize() {
+	case binary.Size(ciliumBackend4Value{}):
+		var b ciliumBackend4Value
+		if !ciliumBackends4.lookup(&backendID, &b) {
+			return nil
+		}
+		addr, port = b.Address, b.Port
+	case binary.Size(ciliumBackend4ValueV3{}):
+		var b ciliumBackend4ValueV3
+		if !ciliumBackends4.lookup(&backendID, &b) {
+			return nil
+		}
+		addr, port = b.Address, b.Port
 	default:
+		klog.Warningf("cilium map %s: unsupported value size %d", ciliumBackends4.name, ciliumBackends4.valueSize())
 		return nil
 	}
-	backendIP, _ := netaddr.FromStdIP(backend.GetAddress())
-	res := netaddr.IPPortFrom(backendIP, backend.GetPort())
+	res := netaddr.IPPortFrom(netaddr.IPFrom4(addr), binary.BigEndian.Uint16(port[:]))
 	return &res
 }
 
-func lookupCilium6(src, dst netaddr.IPPort) *netaddr.IPPort {
-	if ciliumCt6 == nil || backends6Map == nil {
+func lookupCilium6(srcIP netaddr.IP, srcPort uint16, dstIP netaddr.IP, dstPort uint16) *netaddr.IPPort {
+	if ciliumCt6 == nil || ciliumBackends6 == nil {
 		return nil
 	}
-	key := &ctmap.CtKey6Global{
-		TupleKey6Global: tuple.TupleKey6Global{
-			TupleKey6: tuple.TupleKey6{
-				SourcePort: dst.Port(),
-				SourceAddr: src.IP().As16(),
-				DestPort:   src.Port(),
-				DestAddr:   dst.IP().As16(),
-				NextHeader: u8proto.TCP,
-				Flags:      ctmap.TUPLE_F_SERVICE,
-			},
-		},
-	}
-	v, err := ciliumCt6.Lookup(key.ToNetwork())
-	if err != nil || v == nil {
+	key := ciliumTupleKey6{SourceAddr: srcIP.As16(), DestAddr: dstIP.As16(), NextHeader: ciliumProtoTCP, Flags: ciliumTupleService}
+	binary.BigEndian.PutUint16(key.SourcePort[:], dstPort)
+	binary.BigEndian.PutUint16(key.DestPort[:], srcPort)
+	var entry ciliumCtEntry
+	if !ciliumCt6.lookup(&key, &entry) {
 		return nil
 	}
-	e := v.(*ctmap.CtEntry)
-	backendKey := lbmap.NewBackend6KeyV3(loadbalancer.BackendID(e.BackendID))
-	b, err := backends6Map.Lookup(backendKey)
-	if err != nil || b == nil {
-		return nil
-	}
-	var backend lbmap.BackendValue
-	switch bv := b.(type) {
-	case *lbmap.Backend6Value:
-		backend = bv.ToHost()
-	case *lbmap.Backend6ValueV3:
-		backend = bv.ToHost()
+	backendID := uint32(entry.BackendID)
+	var addr [16]byte
+	var port [2]byte
+	switch ciliumBackends6.valueSize() {
+	case binary.Size(ciliumBackend6Value{}):
+		var b ciliumBackend6Value
+		if !ciliumBackends6.lookup(&backendID, &b) {
+			return nil
+		}
+		addr, port = b.Address, b.Port
+	case binary.Size(ciliumBackend6ValueV3{}):
+		var b ciliumBackend6ValueV3
+		if !ciliumBackends6.lookup(&backendID, &b) {
+			return nil
+		}
+		addr, port = b.Address, b.Port
 	default:
+		klog.Warningf("cilium map %s: unsupported value size %d", ciliumBackends6.name, ciliumBackends6.valueSize())
 		return nil
 	}
-	backendIP, _ := netaddr.FromStdIP(backend.GetAddress())
-	res := netaddr.IPPortFrom(backendIP, backend.GetPort())
+	res := netaddr.IPPortFrom(netaddr.IPFrom16(addr), binary.BigEndian.Uint16(port[:]))
 	return &res
 }
