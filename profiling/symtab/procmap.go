@@ -112,12 +112,12 @@ func parseDevice(s []byte) (uint64, error) {
 	majorBytes := s[:i]
 	minorBytes := s[i+1:]
 
-	major, err := strconv.ParseUint(tokenToStringUnsafe(majorBytes), 16, 0)
+	major, err := strconv.ParseUint(tokenToStringUnsafe(majorBytes), 16, 32)
 	if err != nil {
 		return 0, err
 	}
 
-	minor, err := strconv.ParseUint(tokenToStringUnsafe(minorBytes), 16, 0)
+	minor, err := strconv.ParseUint(tokenToStringUnsafe(minorBytes), 16, 32)
 	if err != nil {
 		return 0, err
 	}
