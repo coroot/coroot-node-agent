@@ -12,9 +12,6 @@
 
 struct pid_config {
     uint8_t type;
-    uint8_t collect_user;
-    uint8_t collect_kernel;
-    uint8_t padding_;
 };
 
 #define OP_REQUEST_UNKNOWN_PROCESS_INFO 1

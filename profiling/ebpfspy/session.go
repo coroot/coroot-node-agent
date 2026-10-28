@@ -28,8 +28,6 @@ import (
 )
 
 type SessionOptions struct {
-	CollectUser               bool
-	CollectKernel             bool
 	UnknownSymbolModuleOffset bool // use libfoo.so+0xef instead of libfoo.so for unknown symbols
 	UnknownSymbolAddress      bool // use 0xcafebabe instead of [unknown]
 	PythonEnabled             bool
@@ -258,9 +256,6 @@ func (s *session) collectRegularProfile(cb pprof.CollectProfilesCallback) error 
 				knownStacks[uint32(ck.UserStack)] = true
 			}
 		}
-		if ck.KernStack >= 0 {
-			knownStacks[uint32(ck.KernStack)] = true
-		}
 		target := s.targetFinder.FindTarget(ck.Pid)
 		if target == nil {
 			continue
@@ -272,44 +267,33 @@ func (s *session) collectRegularProfile(cb pprof.CollectProfilesCallback) error 
 		pk := symtab.PidKey(ck.Pid)
 
 		var uStack []byte
-		var kStack []byte
-		if s.options.CollectUser {
-			if isPythonStack {
-				uStack = s.GetPythonStack(ck.UserStack) //todo lookup batch
-			} else {
-				uStack = s.GetStack(ck.UserStack)
-			}
-		}
-		if s.options.CollectKernel {
-			kStack = s.GetStack(ck.KernStack)
+		if isPythonStack {
+			uStack = s.GetPythonStack(ck.UserStack) //todo lookup batch
+		} else {
+			uStack = s.GetStack(ck.UserStack)
 		}
 
 		stats := StackResolveStats{}
 		sb.reset()
 		sb.append(s.comm(ck.Pid))
-		if s.options.CollectUser {
-			if isPythonStack {
-				pyProc := s.pyperf.FindProc(ck.Pid)
-				if pyProc != nil {
-					s.WalkPythonStack(sb, uStack, pyProc, pySymbols, &stats)
-				}
-			} else {
-				proc := s.symCache.GetProcTableCached(pk)
-				if proc == nil {
-					proc = s.symCache.NewProcTable(pk, &s.options.SymbolOptions)
-				}
-				if proc.Error() != nil {
-					s.pids.dead[uint32(proc.Pid())] = struct{}{}
-					// in theory if we saw this process alive before, we could try resolving tack anyway
-					// it may succeed if we have same binary loaded in another process, not doing it for now
-					continue
-				} else {
-					s.WalkStack(sb, uStack, proc, &stats)
-				}
+		if isPythonStack {
+			pyProc := s.pyperf.FindProc(ck.Pid)
+			if pyProc != nil {
+				s.WalkPythonStack(sb, uStack, pyProc, pySymbols, &stats)
 			}
-		}
-		if s.options.CollectKernel {
-			s.WalkStack(sb, kStack, s.symCache.GetKallsyms(), &stats)
+		} else {
+			proc := s.symCache.GetProcTableCached(pk)
+			if proc == nil {
+				proc = s.symCache.NewProcTable(pk, &s.options.SymbolOptions)
+			}
+			if proc.Error() != nil {
+				s.pids.dead[uint32(proc.Pid())] = struct{}{}
+				// in theory if we saw this process alive before, we could try resolving tack anyway
+				// it may succeed if we have same binary loaded in another process, not doing it for now
+				continue
+			} else {
+				s.WalkStack(sb, uStack, proc, &stats)
+			}
 		}
 		if len(sb.stack) == 1 {
 			continue // only comm
@@ -390,24 +374,15 @@ func (s *session) stopLocked() {
 	s.started = false
 }
 
-func (s *session) setPidConfig(pid uint32, pi procInfoLite, collectUser bool, collectKernel bool) {
+func (s *session) setPidConfig(pid uint32, pi procInfoLite) {
 	s.pids.all[pid] = pi
 	config := &pyrobpf.ProfilePidConfig{
-		Type:          uint8(pi.typ),
-		CollectUser:   uint8FromBool(collectUser),
-		CollectKernel: uint8FromBool(collectKernel),
+		Type: uint8(pi.typ),
 	}
 
 	if err := s.bpf.Pids.Update(&pid, config, ebpf.UpdateAny); err != nil {
 		klog.Errorf("updating pids map for pid=%d: %v", pid, err)
 	}
-}
-
-func uint8FromBool(b bool) uint8 {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 func attachPerfEvents(sampleRate int, prog *ebpf.Program) ([]*perfEvent, error) {
@@ -589,7 +564,7 @@ func (s *session) startProfilingLocked(pid uint32, target *Target) {
 			s.pyperf.RemoveDeadPID(pid)
 		}
 	}
-	s.setPidConfig(pid, typ, s.options.CollectUser, s.options.CollectKernel)
+	s.setPidConfig(pid, typ)
 }
 
 type procInfoLite struct {

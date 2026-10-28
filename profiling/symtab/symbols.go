@@ -2,20 +2,16 @@ package symtab
 
 import (
 	"fmt"
-
-	"k8s.io/klog/v2"
 )
 
 type PidKey uint32
 
 // SymbolCache is responsible for resolving PC address to Symbol
 // maintaining a pid -> ProcTable cache
-// resolving kernel symbols
 type SymbolCache struct {
 	pidCache *GCache[PidKey, *ProcTable]
 
 	elfCache *ElfCache
-	kallsyms *SymbolTab
 }
 type CacheOptions struct {
 	PidCacheOptions      GCacheOptions
@@ -35,7 +31,6 @@ func NewSymbolCache(options CacheOptions) (*SymbolCache, error) {
 	}
 	return &SymbolCache{
 		pidCache: cache,
-		kallsyms: nil,
 		elfCache: elfCache,
 	}, nil
 }
@@ -69,27 +64,6 @@ func (sc *SymbolCache) NewProcTable(pid PidKey, symbolOptions *SymbolOptions) *P
 
 	sc.pidCache.Cache(pid, fresh)
 	return fresh
-}
-
-func (sc *SymbolCache) GetKallsyms() SymbolTable {
-	if sc.kallsyms != nil {
-		return sc.kallsyms
-	}
-	return sc.initKallsyms()
-}
-
-func (sc *SymbolCache) initKallsyms() SymbolTable {
-	var err error
-	sc.kallsyms, err = NewKallsyms()
-	if err != nil {
-		klog.Errorf("kallsyms init failed: %v", err)
-		sc.kallsyms = NewSymbolTab(nil)
-	}
-	if len(sc.kallsyms.symbols) == 0 {
-		klog.Errorln("kallsyms is empty: check kptr_restrict and perf_event_paranoid or CAP_SYSLOG")
-	}
-
-	return sc.kallsyms
 }
 
 func (sc *SymbolCache) UpdateOptions(options CacheOptions) {

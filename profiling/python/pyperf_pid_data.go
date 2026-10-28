@@ -10,7 +10,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func GetPyPerfPidData(pid uint32, collectKernel bool) (*PerfPyPidData, error) {
+func GetPyPerfPidData(pid uint32) (*PerfPyPidData, error) {
 	mapsFD, err := os.Open(fmt.Sprintf("/proc/%d/maps", pid))
 	if err != nil {
 		return nil, fmt.Errorf("reading proc maps %d: %w", pid, err)
@@ -149,11 +149,6 @@ func GetPyPerfPidData(pid uint32, collectKernel bool) (*PerfPyPidData, error) {
 		PyCellObjectObRef:             offsets.PyCellObject__ob_ref,
 		Base:                          baseAddr,
 		PyCellType:                    PyCellType,
-	}
-	if collectKernel {
-		data.CollectKernel = 1
-	} else {
-		data.CollectKernel = 0
 	}
 	return data, nil
 }

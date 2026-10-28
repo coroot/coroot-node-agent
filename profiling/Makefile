@@ -1,5 +1,5 @@
 GO ?= go
-GO_IMAGE ?= golang:1.25-bookworm
+GO_IMAGE ?= golang:1.26-bookworm
 TESTDATA_REPO ?= https://github.com/coroot/pyroscope-ebpf-testdata.git
 
 # Rebuilds pyrobpf/*_bpfel_*.{go,o} and python/perf_bpfel_*.{go,o} from bpf/.
