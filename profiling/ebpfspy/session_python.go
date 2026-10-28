@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/btf"
 	"github.com/coroot/coroot-node-agent/profiling/pyrobpf"
 	"github.com/coroot/coroot-node-agent/profiling/python"
 	"github.com/samber/lo"
@@ -100,8 +99,6 @@ func (s *session) getPyPerf() *python.Perf {
 }
 
 func (s *session) loadPyPerf() (*python.Perf, error) {
-	defer btf.FlushKernelSpec() // release the parsed kernel BTF, it is only needed while loading
-
 	opts := &ebpf.CollectionOptions{
 		MapReplacements: map[string]*ebpf.Map{
 			"stacks": s.bpf.Stacks,

@@ -8,7 +8,7 @@ require (
 	github.com/agoda-com/opentelemetry-logs-go v0.4.1
 	github.com/avvmoto/buf-readerat v0.0.0-20171115124131-a17c8cb89270
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/cilium/ebpf v0.20.0
+	github.com/cilium/ebpf v0.22.0
 	github.com/containerd/containerd/v2 v2.4.2
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/coroot/logparser v1.4.2
