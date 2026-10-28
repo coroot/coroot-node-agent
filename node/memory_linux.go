@@ -23,7 +23,7 @@ func memoryInfo(procRoot string) (MemoryStat, error) {
 		}
 		mul := float64(1)
 		if len(parts) == 3 && parts[2] == "kB" {
-			mul = 1000
+			mul = 1024
 		}
 		v, err := strconv.ParseFloat(parts[1], 64)
 		if err != nil {
