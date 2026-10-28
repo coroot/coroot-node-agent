@@ -15,7 +15,6 @@ import (
 	"syscall"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/rlimit"
@@ -146,8 +145,6 @@ func (s *session) Start() error {
 		s.stopLocked()
 		return fmt.Errorf("load bpf objects: %w", err)
 	}
-
-	btf.FlushKernelSpec() // release the parsed kernel BTF, it is only needed while loading
 
 	eventsReader, err := perf.NewReader(s.bpf.ProfileMaps.Events, 4*os.Getpagesize())
 	if err != nil {
