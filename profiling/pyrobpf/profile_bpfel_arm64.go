@@ -14,12 +14,7 @@ import (
 
 type ProfileGlobalConfigT struct{ NsPidIno uint64 }
 
-type ProfilePidConfig struct {
-	Type          uint8
-	CollectUser   uint8
-	CollectKernel uint8
-	Padding       uint8
-}
+type ProfilePidConfig struct{ Type uint8 }
 
 type ProfilePidEvent struct {
 	Op  uint32
@@ -29,7 +24,6 @@ type ProfilePidEvent struct {
 type ProfileSampleKey struct {
 	Pid       uint32
 	Flags     uint32
-	KernStack int64
 	UserStack int64
 }
 

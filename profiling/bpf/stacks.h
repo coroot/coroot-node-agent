@@ -4,7 +4,6 @@
 #define PERF_MAX_STACK_DEPTH      127
 #define PROFILE_MAPS_SIZE         16384
 
-#define KERN_STACKID_FLAGS (0 | BPF_F_FAST_STACK_CMP)
 #define USER_STACKID_FLAGS (0 | BPF_F_FAST_STACK_CMP | BPF_F_USER_STACK)
 
 #define SAMPLE_KEY_FLAG_PYTHON_STACK 1
@@ -13,7 +12,6 @@
 struct sample_key {
     __u32 pid;
     __u32 flags;
-    __s64 kern_stack;
     __s64 user_stack;
 };
 

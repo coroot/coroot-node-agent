@@ -41,9 +41,6 @@ int do_perf_event(struct bpf_perf_event_data *ctx) {
     if (config == NULL) {
         struct pid_config unknown = {
                 .type = PROFILING_TYPE_UNKNOWN,
-                .collect_kernel = 0,
-                .collect_user = 0,
-                .padding_ = 0
         };
         if (bpf_map_update_elem(&pids, &tgid, &unknown, BPF_NOEXIST)) {
             bpf_dbg_printk("failed to update pids map. probably concurrent update\n");
@@ -68,15 +65,7 @@ int do_perf_event(struct bpf_perf_event_data *ctx) {
 
     if (config->type == PROFILING_TYPE_FRAMEPOINTERS) {
         key.pid = tgid;
-        key.kern_stack = -1;
-        key.user_stack = -1;
-
-        if (config->collect_kernel) {
-            key.kern_stack = bpf_get_stackid(ctx, &stacks, KERN_STACKID_FLAGS);
-        }
-        if (config->collect_user) {
-            key.user_stack = bpf_get_stackid(ctx, &stacks, USER_STACKID_FLAGS);
-        }
+        key.user_stack = bpf_get_stackid(ctx, &stacks, USER_STACKID_FLAGS);
 
         val = bpf_map_lookup_elem(&counts, &key);
         if (val)

@@ -141,7 +141,6 @@ func (f *containerTargetFinder) Update() {}
 
 func startPythonProfiler(t *testing.T, containerID string) Session {
 	options := SessionOptions{
-		CollectUser:   true,
 		SampleRate:    97,
 		PythonEnabled: true,
 		CacheOptions: symtab.CacheOptions{

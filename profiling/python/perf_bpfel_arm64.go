@@ -67,11 +67,9 @@ type PerfPyPidData struct {
 		Minor uint32
 		Patch uint32
 	}
-	Libc          PerfLibc
-	_             [2]byte
-	TssKey        int32
-	CollectKernel uint8
-	_             [7]byte
+	Libc   PerfLibc
+	_      [2]byte
+	TssKey int32
 }
 
 type PerfPySampleStateT struct {
@@ -104,7 +102,6 @@ type PerfPySymbol struct {
 type PerfSampleKey struct {
 	Pid       uint32
 	Flags     uint32
-	KernStack int64
 	UserStack int64
 }
 

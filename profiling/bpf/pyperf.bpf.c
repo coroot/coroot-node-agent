@@ -79,7 +79,6 @@ typedef struct {
     py_version version;
     struct libc libc;
     int32_t tssKey;
-    uint8_t collect_kernel;
 } py_pid_data;
 
 typedef struct {
@@ -271,12 +270,6 @@ static __always_inline int pyperf_collect_impl(struct bpf_perf_event_data* ctx, 
 
     py_event *event = &state->event;
     event->k.pid = pid;
-    if (pid_data->collect_kernel) {
-        event->k.kern_stack = bpf_get_stackid(ctx, &stacks, KERN_STACKID_FLAGS);
-    } else {
-        event->k.kern_stack = -1;
-    }
-
 
     // Read PyThreadState of this Thread from TLS
     void *thread_state = NULL;

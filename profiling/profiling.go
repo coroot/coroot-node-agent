@@ -65,8 +65,6 @@ func Init(hostId, hostName string) (chan<- containers.ProcessInfo, chan *contain
 	}
 
 	so := ebpfspy.SessionOptions{
-		CollectUser:               true,
-		CollectKernel:             false,
 		UnknownSymbolModuleOffset: true,
 		UnknownSymbolAddress:      false,
 		PythonEnabled:             true,

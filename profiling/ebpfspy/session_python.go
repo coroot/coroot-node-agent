@@ -41,11 +41,11 @@ func (s *session) startPythonProfiling(pid uint32, target *Target, pi procInfoLi
 	if pyPerf == nil {
 		klog.Errorf("pid=%d: pyperf is not loaded", pid)
 		pi.typ = pyrobpf.ProfilingTypeError
-		s.setPidConfig(pid, pi, false, false)
+		s.setPidConfig(pid, pi)
 		return false
 	}
 
-	pyData, err := python.GetPyPerfPidData(pid, s.options.CollectKernel)
+	pyData, err := python.GetPyPerfPidData(pid)
 	svc := target.ServiceName
 	if err != nil {
 		alive := processAlive(pid)
@@ -53,7 +53,7 @@ func (s *session) startPythonProfiling(pid uint32, target *Target, pi procInfoLi
 			klog.Warningf("pid=%d (%s): failed to get python process data: %v", pid, svc, err)
 		}
 		pi.typ = pyrobpf.ProfilingTypeError
-		s.setPidConfig(pid, pi, false, false)
+		s.setPidConfig(pid, pi)
 		return alive
 	}
 	err = nil
@@ -63,12 +63,12 @@ func (s *session) startPythonProfiling(pid uint32, target *Target, pi procInfoLi
 		if err != nil {
 			klog.Errorf("pid=%d: pyperf process init failed: %v", pid, err)
 			pi.typ = pyrobpf.ProfilingTypeError
-			s.setPidConfig(pid, pi, false, false)
+			s.setPidConfig(pid, pi)
 			return false
 		}
 	}
 	klog.Infof("pid=%d (%s): python profiling enabled: python %d.%d.%d, musl=%t", pid, svc, pyData.Version.Major, pyData.Version.Minor, pyData.Version.Patch, pyData.Libc.Musl)
-	s.setPidConfig(pid, pi, s.options.CollectUser, s.options.CollectKernel)
+	s.setPidConfig(pid, pi)
 	return false
 }
 

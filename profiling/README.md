@@ -27,7 +27,7 @@ interpreters.
 | `bpf/` | BPF C sources, the vendored libbpf and vmlinux headers |
 | `pyrobpf/` | bpf2go output for `bpf/profile.bpf.c` (native frame-pointer unwinder) |
 | `python/` | bpf2go output for `bpf/pyperf.bpf.c` and the CPython, glibc and musl struct offsets per version |
-| `symtab/` | ELF, Go pclntab, kallsyms and perf map symbol tables with caches |
+| `symtab/` | ELF, Go pclntab and perf map symbol tables with caches |
 | `pprof/` | builds pprof profiles from the collected samples |
 | `demangle/`, `cpuonline/` | helpers used by the session |
 | `dwarfdump/`, `cmd/*_dwarfdump` | generators for the Python, glibc and musl offset tables |
