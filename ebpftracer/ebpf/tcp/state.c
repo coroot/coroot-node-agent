@@ -355,6 +355,19 @@ int sys_exit_connect(struct trace_event_raw_sys_exit__stub* ctx) {
     return 0;
 }
 
+static inline __attribute__((__always_inline__))
+void delete_pending_l7_requests(struct connection_id cid) {
+    struct l7_request_key k = {
+        .fd = cid.fd,
+        .pid = cid.pid,
+        .is_tls = 0,
+        .stream_id = -1,
+    };
+    bpf_map_delete_elem(&active_l7_requests, &k);
+    k.is_tls = 1;
+    bpf_map_delete_elem(&active_l7_requests, &k);
+}
+
 SEC("tracepoint/syscalls/sys_enter_close")
 int sys_enter_close(void *ctx) {
     struct trace_event_raw_args_with_fd__stub args = {};
@@ -378,6 +391,7 @@ int sys_enter_close(void *ctx) {
         bpf_perf_event_output(ctx, &tcp_connect_events, BPF_F_CURRENT_CPU, &e, sizeof(e));
         bpf_map_delete_elem(&active_connections, &cid);
     }
+    delete_pending_l7_requests(cid);
     return 0;
 }
 
@@ -394,6 +408,7 @@ int handle_accept_exit(long int ret) {
     conn.timestamp = bpf_ktime_get_ns();
     conn.is_inbound = 1;
     bpf_map_update_elem(&active_connections, &cid, &conn, BPF_ANY);
+    delete_pending_l7_requests(cid);
     return 0;
 }
 
