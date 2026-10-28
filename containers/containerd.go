@@ -7,19 +7,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/oci"
-	"github.com/containerd/containerd/pkg/cri/constants"
+	"github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/coroot/logparser"
 	"k8s.io/klog/v2"
 )
 
-const containerdTimeout = 30 * time.Second
+const (
+	containerdTimeout      = 30 * time.Second
+	k8sContainerdNamespace = "k8s.io"
+)
 
 var (
-	containerdClient *containerd.Client
+	containerdClient *client.Client
 )
 
 func ContainerdInit() error {
@@ -31,13 +33,25 @@ func ContainerdInit() error {
 	}
 	var err error
 	for _, socket := range sockets {
-		containerdClient, err = containerd.New(proc.HostPath(socket),
-			containerd.WithDefaultNamespace(constants.K8sContainerdNamespace),
-			containerd.WithTimeout(time.Second))
-		if err == nil {
-			klog.Infoln("using", socket)
-			break
+		var c *client.Client
+		c, err = client.New(proc.HostPath(socket),
+			client.WithDefaultNamespace(k8sContainerdNamespace),
+			client.WithTimeout(time.Second))
+		if err != nil {
+			continue
 		}
+		// the client connects lazily, so make sure this socket is actually served before using it
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		serving, serveErr := c.IsServing(ctx)
+		cancel()
+		if serveErr != nil || !serving {
+			_ = c.Close()
+			err = fmt.Errorf("%s: not serving: %v", socket, serveErr)
+			continue
+		}
+		containerdClient = c
+		klog.Infoln("using", socket)
+		break
 	}
 	if containerdClient == nil {
 		return fmt.Errorf(

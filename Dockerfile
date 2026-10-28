@@ -9,7 +9,7 @@ RUN sed -i -e '/deb.debian.org/d' -e 's|^# deb |deb |' /etc/apt/sources.list && 
     apt-get -o Acquire::Check-Valid-Until=false update && \
     apt-get install -y curl git build-essential pkg-config libsystemd-dev
 
-ARG GO_VERSION=1.24.9
+ARG GO_VERSION=1.26.10
 RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz -o go.tar.gz && \
     tar -C /usr/local -xzf go.tar.gz && rm go.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
