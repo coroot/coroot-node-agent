@@ -61,9 +61,10 @@ func Init(cfg Config, machineId, hostname, version string) {
 		otlplogshttp.WithEndpoint(cfg.Endpoint.Host),
 		otlplogshttp.WithURLPath(path),
 		otlplogshttp.WithHeaders(cfg.AuthHeaders),
-		otlplogshttp.WithTLSClientConfig(cfg.TLSConfig),
 	}
-	if cfg.Endpoint.Scheme != "https" {
+	if cfg.Endpoint.Scheme == "https" {
+		opts = append(opts, otlplogshttp.WithTLSClientConfig(cfg.TLSConfig))
+	} else {
 		opts = append(opts, otlplogshttp.WithInsecure())
 	}
 	client := otlplogshttp.NewClient(opts...)
