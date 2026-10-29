@@ -105,6 +105,13 @@ type PerfSampleKey struct {
 	UserStack int64
 }
 
+type PerfSampleValue struct {
+	Cpu          uint64
+	IoTimeNs     uint64
+	IoReadBytes  uint64
+	IoWriteBytes uint64
+}
+
 // LoadPerf returns the embedded CollectionSpec for Perf.
 func LoadPerf() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_PerfBytes)

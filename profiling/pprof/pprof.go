@@ -27,7 +27,7 @@ var (
 
 type SampleType uint32
 
-var SampleTypeCpu = SampleType(0)
+var SampleTypeCpu = SampleType(0) // Value: cpu samples, Value2: io_time nanoseconds, Value3: io_read bytes, Value4: io_write bytes
 var SampleTypeMem = SampleType(1)
 
 type SampleAggregation bool
@@ -52,6 +52,8 @@ type ProfileSample struct {
 	Stack       []string
 	Value       uint64
 	Value2      uint64
+	Value3      uint64
+	Value4      uint64
 }
 
 type BuildersOptions struct {
@@ -104,7 +106,12 @@ func (b *ProfileBuilders) BuilderForSample(sample *ProfileSample) *ProfileBuilde
 	var periodType *profile.ValueType
 	var period int64
 	if sample.SampleType == SampleTypeCpu {
-		sampleType = []*profile.ValueType{{Type: "cpu", Unit: "nanoseconds"}}
+		sampleType = []*profile.ValueType{
+			{Type: "cpu", Unit: "nanoseconds"},
+			{Type: "io_time", Unit: "nanoseconds"},
+			{Type: "io_read", Unit: "bytes"},
+			{Type: "io_write", Unit: "bytes"},
+		}
 		periodType = &profile.ValueType{Type: "cpu", Unit: "nanoseconds"}
 		period = time.Second.Nanoseconds() / b.opt.SampleRate
 	} else {
@@ -247,11 +254,7 @@ func uint64Bytes(s []uint64) []byte {
 }
 func (p *ProfileBuilder) newSample(inputSample *ProfileSample) *profile.Sample {
 	sample := new(profile.Sample)
-	if inputSample.SampleType == SampleTypeCpu {
-		sample.Value = []int64{0}
-	} else {
-		sample.Value = []int64{0, 0}
-	}
+	sample.Value = make([]int64, len(p.Profile.SampleType))
 	sample.Location = make([]*profile.Location, len(inputSample.Stack))
 	return sample
 }
@@ -259,6 +262,9 @@ func (p *ProfileBuilder) newSample(inputSample *ProfileSample) *profile.Sample {
 func (p *ProfileBuilder) addValue(inputSample *ProfileSample, sample *profile.Sample) {
 	if inputSample.SampleType == SampleTypeCpu {
 		sample.Value[0] += int64(inputSample.Value) * p.Profile.Period
+		sample.Value[1] += int64(inputSample.Value2)
+		sample.Value[2] += int64(inputSample.Value3)
+		sample.Value[3] += int64(inputSample.Value4)
 	} else {
 		sample.Value[0] += int64(inputSample.Value)
 		sample.Value[1] += int64(inputSample.Value2)

@@ -13,14 +13,14 @@ import (
 	"github.com/coroot/coroot-node-agent/profiling/pyrobpf"
 )
 
-func (s *session) getCountsMapValues() (keys []pyrobpf.ProfileSampleKey, values []uint32, batch bool, err error) {
+func (s *session) getCountsMapValues() (keys []pyrobpf.ProfileSampleKey, values []pyrobpf.ProfileSampleValue, batch bool, err error) {
 	// try batch first
 	var (
 		m       = s.bpf.ProfileMaps.Counts
 		mapSize = m.MaxEntries()
 	)
 	keys = make([]pyrobpf.ProfileSampleKey, mapSize)
-	values = make([]uint32, mapSize)
+	values = make([]pyrobpf.ProfileSampleValue, mapSize)
 
 	opts := &ebpf.BatchOptions{}
 	cursor := new(ebpf.MapBatchCursor)
@@ -36,7 +36,7 @@ func (s *session) getCountsMapValues() (keys []pyrobpf.ProfileSampleKey, values 
 	resultValues := values[:0]
 	it := m.Iterate()
 	k := pyrobpf.ProfileSampleKey{}
-	v := uint32(0)
+	v := pyrobpf.ProfileSampleValue{}
 	for {
 		ok := it.Next(&k, &v)
 		if !ok {

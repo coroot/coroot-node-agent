@@ -15,6 +15,13 @@ struct sample_key {
     __s64 user_stack;
 };
 
+struct sample_value {
+    __u64 cpu;
+    __u64 io_time_ns;
+    __u64 io_read_bytes;
+    __u64 io_write_bytes;
+};
+
 struct {
     __uint(type, BPF_MAP_TYPE_STACK_TRACE);
     __uint(key_size, sizeof(u32));
@@ -26,7 +33,7 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __type(key, struct sample_key);
-    __type(value, u32);
+    __type(value, struct sample_value);
     __uint(max_entries, PROFILE_MAPS_SIZE);
 } counts SEC(".maps");
 
