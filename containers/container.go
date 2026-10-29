@@ -56,8 +56,7 @@ type ContainerMetadata struct {
 }
 
 type Delays struct {
-	cpu  time.Duration
-	disk time.Duration
+	cpu time.Duration
 }
 
 type ConnectionKey struct {
@@ -284,7 +283,6 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 
 	if taskstatsClient != nil {
 		ch <- metrics.Counter(metrics.CPUDelay, float64(c.delays.cpu)/float64(time.Second))
-		ch <- metrics.Counter(metrics.DiskDelay, float64(c.delays.disk)/float64(time.Second))
 	}
 
 	if s := c.cgroup.MemoryStat(); s != nil {
@@ -1020,9 +1018,7 @@ func (c *Container) updateDelaysLocked() []uint32 {
 		}
 		d := c.delaysByPid[pid]
 		c.delays.cpu += stats.CPUDelay - d.cpu
-		c.delays.disk += stats.BlockIODelay - d.disk
 		d.cpu = stats.CPUDelay
-		d.disk = stats.BlockIODelay
 		c.delaysByPid[pid] = d
 	}
 	return deadPids

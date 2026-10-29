@@ -10,7 +10,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"slices"
 	"sync"
 	"syscall"
 
@@ -23,7 +25,6 @@ import (
 	"github.com/coroot/coroot-node-agent/profiling/pyrobpf"
 	"github.com/coroot/coroot-node-agent/profiling/python"
 	"github.com/coroot/coroot-node-agent/profiling/symtab"
-	"github.com/samber/lo"
 	"k8s.io/klog/v2"
 )
 
@@ -31,6 +32,7 @@ type SessionOptions struct {
 	UnknownSymbolModuleOffset bool // use libfoo.so+0xef instead of libfoo.so for unknown symbols
 	UnknownSymbolAddress      bool // use 0xcafebabe instead of [unknown]
 	PythonEnabled             bool
+	IOProfiling               bool
 	CacheOptions              symtab.CacheOptions
 	SymbolOptions             symtab.SymbolOptions
 	SampleRate                int
@@ -59,7 +61,8 @@ type session struct {
 
 	symCache *symtab.SymbolCache
 
-	bpf pyrobpf.ProfileObjects
+	bpf   profileObjects
+	ioBpf ioObjects
 
 	eventsReader    *perf.Reader
 	pidInfoRequests chan uint32
@@ -138,10 +141,27 @@ func (s *session) Start() error {
 			return fmt.Errorf("pyrobpf set global_config: %w", err)
 		}
 	}
+	ioSpec := spec.Copy()
 	err = spec.LoadAndAssign(&s.bpf, opts)
 	if err != nil {
 		s.stopLocked()
 		return fmt.Errorf("load bpf objects: %w", err)
+	}
+	if s.options.IOProfiling {
+		// loaded separately, so that a verifier difference on some kernel disables I/O profiling only
+		ioOpts := &ebpf.CollectionOptions{
+			MapReplacements: map[string]*ebpf.Map{
+				"counts":      s.bpf.Counts,
+				"stacks":      s.bpf.Stacks,
+				"pids":        s.bpf.Pids,
+				"io_reqs":     s.bpf.IoReqs,
+				"io_sampling": s.bpf.IoSampling,
+			},
+		}
+		if err = ioSpec.LoadAndAssign(&s.ioBpf, ioOpts); err != nil {
+			klog.Warningf("I/O profiling disabled: load bpf objects: %v", err)
+			s.ioBpf = ioObjects{}
+		}
 	}
 
 	eventsReader, err := perf.NewReader(s.bpf.ProfileMaps.Events, 4*os.Getpagesize())
@@ -298,7 +318,7 @@ func (s *session) collectRegularProfile(cb pprof.CollectProfilesCallback) error 
 		if len(sb.stack) == 1 {
 			continue // only comm
 		}
-		lo.Reverse(sb.stack)
+		slices.Reverse(sb.stack)
 		cb(pprof.ProfileSample{
 			ServiceName: target.ServiceName,
 			ContainerID: target.ContainerID,
@@ -306,7 +326,10 @@ func (s *session) collectRegularProfile(cb pprof.CollectProfilesCallback) error 
 			Aggregation: pprof.SampleAggregated,
 			SampleType:  pprof.SampleTypeCpu,
 			Stack:       sb.stack,
-			Value:       uint64(value),
+			Value:       value.Cpu,
+			Value2:      value.IoTimeNs,
+			Value3:      value.IoReadBytes,
+			Value4:      value.IoWriteBytes,
 		})
 	}
 
@@ -350,6 +373,7 @@ func (s *session) stopLocked() {
 	}
 	s.kprobes = nil
 	_ = s.bpf.Close()
+	_ = s.ioBpf.Close()
 	_ = s.pyperfBpf.Close()
 	s.pyperf = nil
 	if s.eventsReader != nil {
@@ -469,7 +493,7 @@ func (s *session) WalkStack(sb *stackBuilder, stack []byte, resolver symtab.Symb
 		sb.append(name)
 	}
 	end := len(sb.stack)
-	lo.Reverse(sb.stack[begin:end])
+	slices.Reverse(sb.stack[begin:end])
 
 }
 
@@ -637,6 +661,39 @@ func (s *session) processPIDExecRequests(requests chan uint32) {
 	}
 }
 
+type profileObjects struct {
+	pyrobpf.ProfileMaps
+	DisassociateCtty *ebpf.Program `ebpf:"disassociate_ctty"`
+	DoPerfEvent      *ebpf.Program `ebpf:"do_perf_event"`
+	Exec             *ebpf.Program `ebpf:"exec"`
+}
+
+func (o *profileObjects) Close() error {
+	return closeAll(o.DisassociateCtty, o.DoPerfEvent, o.Exec, &o.ProfileMaps)
+}
+
+type ioObjects struct {
+	SubmitBioEnter *ebpf.Program `ebpf:"submit_bio_enter"`
+	BioEndioEnter  *ebpf.Program `ebpf:"bio_endio_enter"`
+}
+
+func (o *ioObjects) Close() error {
+	return closeAll(o.SubmitBioEnter, o.BioEndioEnter)
+}
+
+func closeAll(closers ...io.Closer) error {
+	var err error
+	for _, c := range closers {
+		if p, ok := c.(*ebpf.Program); ok && p == nil {
+			continue
+		}
+		if e := c.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	return err
+}
+
 func (s *session) linkKProbes() error {
 	type hook struct {
 		kprobe   string
@@ -649,6 +706,12 @@ func (s *session) linkKProbes() error {
 		{kprobe: "disassociate_ctty", prog: s.bpf.DisassociateCtty, required: true},
 		{kprobe: "sys_execve", prog: s.bpf.Exec, required: false},
 		{kprobe: "sys_execveat", prog: s.bpf.Exec, required: false},
+	}
+	if s.ioBpf.SubmitBioEnter != nil {
+		hooks = append(hooks,
+			hook{kprobe: "submit_bio", prog: s.ioBpf.SubmitBioEnter},
+			hook{kprobe: "bio_endio", prog: s.ioBpf.BioEndioEnter},
+		)
 	}
 	for _, it := range hooks {
 		kp, err := link.Kprobe(it.kprobe, it.prog, nil)

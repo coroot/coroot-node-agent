@@ -183,7 +183,7 @@ static __always_inline int get_thread_state(
 
 static __always_inline int submit_sample(
     py_sample_state_t* state) {
-    uint32_t one = 1;
+    struct sample_value one = {.cpu = 1};
     if (state->event.stack_len < PYTHON_STACK_MAX_LEN) {
         state->event.stack[state->event.stack_len] = 0;
     }
@@ -192,9 +192,9 @@ static __always_inline int submit_sample(
     if (bpf_map_update_elem(&python_stacks, &h, &state->event.stack, BPF_ANY)) {
         return -1;
     }
-    uint32_t* val = bpf_map_lookup_elem(&counts, &state->event.k);
+    struct sample_value *val = bpf_map_lookup_elem(&counts, &state->event.k);
     if (val) {
-        (*val)++;
+        val->cpu++;
     }
     else {
         bpf_map_update_elem(&counts, &state->event.k, &one, BPF_NOEXIST);

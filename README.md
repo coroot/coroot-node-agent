@@ -50,7 +50,6 @@ identify situations where a container is experiencing a lack of CPU time or wait
 
 The agent gathers per-process counters through [Netlink](https://man7.org/linux/man-pages/man7/netlink.7.html) and aggregates them into per-container metrics:
 * [container_resources_cpu_delay_seconds_total](https://docs.coroot.com/metrics/node-agent#container_resources_cpu_delay_seconds_total)
-* [container_resources_disk_delay_seconds_total](https://docs.coroot.com/metrics/node-agent#container_resources_disk_delay_seconds_total)
 
 
 <img src="https://coroot.com/static/img/blog/delay_accounting_aggregation.svg" width="800" />

@@ -21,7 +21,6 @@ var (
 	PsiMemory = metric("container_resources_memory_pressure_waiting_seconds_total", "Total time in seconds that the container were delayed due to memory pressure", "kind")
 	PsiIO     = metric("container_resources_io_pressure_waiting_seconds_total", "Total time in seconds that the container were delayed due to I/O pressure", "kind")
 
-	DiskDelay      = metric("container_resources_disk_delay_seconds_total", "Total time duration processes of the container have been waiting fot I/Os to complete")
 	DiskSize       = metric("container_resources_disk_size_bytes", "Total capacity of the volume", "mount_point", "device", "volume")
 	DiskUsed       = metric("container_resources_disk_used_bytes", "Used capacity of the volume", "mount_point", "device", "volume")
 	DiskReserved   = metric("container_resources_disk_reserved_bytes", "Reserved capacity of the volume", "mount_point", "device", "volume")

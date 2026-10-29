@@ -68,6 +68,7 @@ func Init(hostId, hostName string) (chan<- containers.ProcessInfo, chan *contain
 		UnknownSymbolModuleOffset: true,
 		UnknownSymbolAddress:      false,
 		PythonEnabled:             true,
+		IOProfiling:               *flags.EbpfIOProfiling,
 		CacheOptions: symtab.CacheOptions{
 			PidCacheOptions: symtab.GCacheOptions{
 				Size:       256,
@@ -162,7 +163,9 @@ func upload(b *pprof.ProfileBuilder) error {
 		q.Set(l.Name, l.Value)
 	}
 
-	b.Profile.SampleType[0].Type = "ebpf:cpu:nanoseconds"
+	for _, st := range b.Profile.SampleType {
+		st.Type = "ebpf:" + st.Type + ":" + st.Unit // ebpf:cpu:nanoseconds, ebpf:io_time:nanoseconds
+	}
 	b.Profile.DurationNanos = CollectInterval.Nanoseconds()
 	b.Profile = pruneProfile(b.Profile, *flags.ProfilesPruneFraction)
 	body := bytes.NewBuffer(nil)

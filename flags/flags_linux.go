@@ -19,6 +19,7 @@ var (
 	EnableJavaTls           = kingpin.Flag("enable-java-tls", "Enable Java TLS instrumentation via dynamic agent loading").Default("false").Envar("ENABLE_JAVA_TLS").Bool()
 	EnableJavaAsyncProfiler = kingpin.Flag("enable-java-async-profiler", "Enable Java profiling via async-profiler (CPU, memory allocations, lock contention)").Default("false").Envar("ENABLE_JAVA_ASYNC_PROFILER").Bool()
 	JavaAsyncProfilerDelay  = kingpin.Flag("java-async-profiler-delay", "Delay in seconds before starting async-profiler after JVM process is detected").Default("30s").Envar("JAVA_ASYNC_PROFILER_DELAY").Duration()
+	EbpfIOProfiling         = kingpin.Flag("ebpf-io-profiling", "Enable eBPF I/O profiling: block I/O time by code path").Default("true").Envar("EBPF_IO_PROFILING").Bool()
 	GoHeapProfilerMode      = kingpin.Flag("go-heap-profiler", "Go heap profiling mode: disabled, enabled (collect from apps with profiling on), force (enable profiling in all Go apps)").Default("enabled").Envar("GO_HEAP_PROFILER").String()
 	InstrumentationDelay    = kingpin.Flag("instrumentation-delay", "Delay before attaching TLS uprobes and enabling Python GIL and Node.js event loop instrumentation, after a process is started").Default("30s").Envar("INSTRUMENTATION_DELAY").Duration()
 

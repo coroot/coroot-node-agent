@@ -14,6 +14,19 @@ import (
 
 type ProfileGlobalConfigT struct{ NsPidIno uint64 }
 
+type ProfileIoSampler struct {
+	Next       uint64
+	Count      uint64
+	ReadBytes  uint64
+	WriteBytes uint64
+}
+
+type ProfileIoState struct {
+	Key    ProfileSampleKey
+	Start  uint64
+	Weight uint64
+}
+
 type ProfilePidConfig struct{ Type uint8 }
 
 type ProfilePidEvent struct {
@@ -25,6 +38,13 @@ type ProfileSampleKey struct {
 	Pid       uint32
 	Flags     uint32
 	UserStack int64
+}
+
+type ProfileSampleValue struct {
+	Cpu          uint64
+	IoTimeNs     uint64
+	IoReadBytes  uint64
+	IoWriteBytes uint64
 }
 
 // LoadProfile returns the embedded CollectionSpec for Profile.
@@ -68,20 +88,24 @@ type ProfileSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type ProfileProgramSpecs struct {
+	BioEndioEnter    *ebpf.ProgramSpec `ebpf:"bio_endio_enter"`
 	DisassociateCtty *ebpf.ProgramSpec `ebpf:"disassociate_ctty"`
 	DoPerfEvent      *ebpf.ProgramSpec `ebpf:"do_perf_event"`
 	Exec             *ebpf.ProgramSpec `ebpf:"exec"`
+	SubmitBioEnter   *ebpf.ProgramSpec `ebpf:"submit_bio_enter"`
 }
 
 // ProfileMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type ProfileMapSpecs struct {
-	Counts *ebpf.MapSpec `ebpf:"counts"`
-	Events *ebpf.MapSpec `ebpf:"events"`
-	Pids   *ebpf.MapSpec `ebpf:"pids"`
-	Progs  *ebpf.MapSpec `ebpf:"progs"`
-	Stacks *ebpf.MapSpec `ebpf:"stacks"`
+	Counts     *ebpf.MapSpec `ebpf:"counts"`
+	Events     *ebpf.MapSpec `ebpf:"events"`
+	IoReqs     *ebpf.MapSpec `ebpf:"io_reqs"`
+	IoSampling *ebpf.MapSpec `ebpf:"io_sampling"`
+	Pids       *ebpf.MapSpec `ebpf:"pids"`
+	Progs      *ebpf.MapSpec `ebpf:"progs"`
+	Stacks     *ebpf.MapSpec `ebpf:"stacks"`
 }
 
 // ProfileObjects contains all objects after they have been loaded into the kernel.
@@ -103,17 +127,21 @@ func (o *ProfileObjects) Close() error {
 //
 // It can be passed to LoadProfileObjects or ebpf.CollectionSpec.LoadAndAssign.
 type ProfileMaps struct {
-	Counts *ebpf.Map `ebpf:"counts"`
-	Events *ebpf.Map `ebpf:"events"`
-	Pids   *ebpf.Map `ebpf:"pids"`
-	Progs  *ebpf.Map `ebpf:"progs"`
-	Stacks *ebpf.Map `ebpf:"stacks"`
+	Counts     *ebpf.Map `ebpf:"counts"`
+	Events     *ebpf.Map `ebpf:"events"`
+	IoReqs     *ebpf.Map `ebpf:"io_reqs"`
+	IoSampling *ebpf.Map `ebpf:"io_sampling"`
+	Pids       *ebpf.Map `ebpf:"pids"`
+	Progs      *ebpf.Map `ebpf:"progs"`
+	Stacks     *ebpf.Map `ebpf:"stacks"`
 }
 
 func (m *ProfileMaps) Close() error {
 	return _ProfileClose(
 		m.Counts,
 		m.Events,
+		m.IoReqs,
+		m.IoSampling,
 		m.Pids,
 		m.Progs,
 		m.Stacks,
@@ -124,16 +152,20 @@ func (m *ProfileMaps) Close() error {
 //
 // It can be passed to LoadProfileObjects or ebpf.CollectionSpec.LoadAndAssign.
 type ProfilePrograms struct {
+	BioEndioEnter    *ebpf.Program `ebpf:"bio_endio_enter"`
 	DisassociateCtty *ebpf.Program `ebpf:"disassociate_ctty"`
 	DoPerfEvent      *ebpf.Program `ebpf:"do_perf_event"`
 	Exec             *ebpf.Program `ebpf:"exec"`
+	SubmitBioEnter   *ebpf.Program `ebpf:"submit_bio_enter"`
 }
 
 func (p *ProfilePrograms) Close() error {
 	return _ProfileClose(
+		p.BioEndioEnter,
 		p.DisassociateCtty,
 		p.DoPerfEvent,
 		p.Exec,
+		p.SubmitBioEnter,
 	)
 }
 

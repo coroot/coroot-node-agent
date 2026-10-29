@@ -6,13 +6,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/coroot/coroot-node-agent/profiling/pyrobpf"
 	"github.com/coroot/coroot-node-agent/profiling/python"
-	"github.com/samber/lo"
 	"k8s.io/klog/v2"
 )
 
@@ -190,7 +190,7 @@ func (s *session) WalkPythonStack(sb *stackBuilder, stack []byte, proc *python.P
 		}
 	}
 	end := len(sb.stack)
-	lo.Reverse(sb.stack[begin:end])
+	slices.Reverse(sb.stack[begin:end])
 }
 
 func skipPythonFrame(classname string, filename string, name string) bool {
