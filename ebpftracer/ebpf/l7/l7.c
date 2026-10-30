@@ -505,6 +505,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         }
     }
     __u64 total_size = ret;
+    __u64 iov_size = 0;
     int zero = 0;
     char* payload = args->buf;
     if (args->iovlen) {
@@ -512,8 +513,7 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
         if (!payload) {
             return 0;
         }
-        total_size = 0;
-        ret = read_iovec(args->buf, args->iovlen, ret, payload, &total_size);
+        ret = read_iovec(args->buf, args->iovlen, ret, payload, &iov_size);
         if (!ret) {
             return 0;
         }
