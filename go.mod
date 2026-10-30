@@ -5,12 +5,13 @@ go 1.26.6
 require (
 	github.com/0xrawsec/golang-etw v1.6.2
 	github.com/NVIDIA/go-nvml v0.12.4-1
-	github.com/agoda-com/opentelemetry-logs-go v0.4.1
 	github.com/avvmoto/buf-readerat v0.0.0-20171115124131-a17c8cb89270
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cilium/ebpf v0.22.0
 	github.com/containerd/containerd/v2 v2.4.2
 	github.com/coreos/go-systemd/v22 v22.7.0
+	github.com/coroot/coroot-cluster-agent v1.11.8
+	github.com/coroot/logger v1.0.0
 	github.com/coroot/logparser v1.4.2
 	github.com/florianl/go-conntrack v0.3.0
 	github.com/gobwas/glob v0.2.3
@@ -40,14 +41,15 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vishvananda/netns v0.0.5
 	github.com/xin053/hsperfdata v0.2.3
-	go.mongodb.org/mongo-driver v1.14.0
+	go.mongodb.org/mongo-driver v1.17.7
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.46.0
+	go.opentelemetry.io/otel/log v0.20.0
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
 	golang.org/x/arch v0.4.0
-	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f
+	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b
 	golang.org/x/net v0.58.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/time v0.16.0
@@ -58,13 +60,37 @@ require (
 )
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/blang/semver v3.5.1+incompatible // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/go-kit/log v0.2.1 // indirect
+	github.com/go-logfmt/logfmt v0.6.0 // indirect
+	github.com/go-sql-driver/mysql v1.8.1 // indirect
+	github.com/gomodule/redigo v1.9.2 // indirect
+	github.com/grobie/gomemcache v0.0.0-20230213081705-239240bbc445 // indirect
+	github.com/lib/pq v1.12.3 // indirect
+	github.com/mna/redisc v1.4.0 // indirect
+	github.com/montanaflynn/stats v0.7.1 // indirect
+	github.com/oliver006/redis_exporter v1.61.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/prometheus/memcached_exporter v0.14.3 // indirect
+	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
+	github.com/xdg-go/scram v1.1.2 // indirect
+	github.com/xdg-go/stringprep v1.0.4 // indirect
+	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.20.0 // indirect
+	go.opentelemetry.io/otel/sdk/log v0.20.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
+	k8s.io/klog v1.0.0 // indirect
+)
+
+require (
 	github.com/0xrawsec/golang-utils v1.3.1 // indirect
 	github.com/Microsoft/go-winio v0.6.3-0.20251027160822-ad3df93bed29 // indirect
 	github.com/Microsoft/hcsshim v0.15.0-rc.4 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/containerd/cgroups/v3 v3.1.3 // indirect
 	github.com/containerd/containerd/api v1.12.0 // indirect

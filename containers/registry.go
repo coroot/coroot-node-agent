@@ -11,12 +11,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coroot/coroot-cluster-agent/metrics/dbtracker"
+	"github.com/coroot/coroot-cluster-agent/schema/emitter"
+
 	"github.com/cilium/ebpf"
 	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
 	"github.com/coroot/coroot-node-agent/flags"
 	"github.com/coroot/coroot-node-agent/gpu"
+	"github.com/coroot/coroot-node-agent/logs"
 	"github.com/coroot/coroot-node-agent/metrics"
 	"github.com/coroot/coroot-node-agent/proc"
 	"github.com/prometheus/client_golang/prometheus"
@@ -70,6 +74,9 @@ type Registry struct {
 	pythonStatsUpdateCh  chan *PythonStatsUpdate
 
 	gpuProcessUsageSampleChan chan gpu.ProcessUsageSample
+
+	databases []*dbTarget
+	dbChanges dbtracker.ChangeEmitter // nil disables the schema and settings change tracking
 }
 
 func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, profilingUpdateCh chan *ProfilingUpdate, gpuProcessUsageSampleChan chan gpu.ProcessUsageSample) (*Registry, error) {
@@ -110,8 +117,24 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, pr
 		klog.Warningln(err)
 	}
 
+	databases, err := loadDatabaseTargets(*flags.ConfigFile)
+	if err != nil {
+		return nil, err
+	}
+	var dbChanges dbtracker.ChangeEmitter
+	if len(databases) > 0 {
+		klog.Infof("loaded %d database targets from %s", len(databases), *flags.ConfigFile)
+		if e, err := emitter.NewChangeEmitter(logs.Exporter()); err != nil {
+			klog.Warningln("database schema and settings changes won't be tracked:", err)
+		} else {
+			dbChanges = e
+		}
+	}
+
 	r := &Registry{
 		reg:                    reg,
+		databases:              databases,
+		dbChanges:              dbChanges,
 		events:                 make(chan ebpftracer.Event, 10000),
 		containersById:         map[ContainerID]*Container{},
 		containersByCgroupId:   map[string]*Container{},
@@ -167,8 +190,12 @@ func (r *Registry) handleEvents(ch <-chan ebpftracer.Event) {
 	defer gcTicker.Stop()
 	tlsAttachTicker := time.NewTicker(tlsAttachRetryInterval)
 	defer tlsAttachTicker.Stop()
+	dbTicker := time.NewTicker(dbReconcileInterval)
+	defer dbTicker.Stop()
 	for {
 		select {
+		case <-dbTicker.C:
+			r.reconcileDatabases()
 		case <-tlsAttachTicker.C:
 			for pid, c := range r.pendingTlsAttach {
 				if c.attachTlsUprobes(r.tracer, pid, true) {

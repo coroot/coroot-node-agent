@@ -23,6 +23,8 @@ var (
 	GoHeapProfilerMode      = kingpin.Flag("go-heap-profiler", "Go heap profiling mode: disabled, enabled (collect from apps with profiling on), force (enable profiling in all Go apps)").Default("enabled").Envar("GO_HEAP_PROFILER").String()
 	InstrumentationDelay    = kingpin.Flag("instrumentation-delay", "Delay before attaching TLS uprobes and enabling Python GIL and Node.js event loop instrumentation, after a process is started").Default("30s").Envar("INSTRUMENTATION_DELAY").Duration()
 
+	ConfigFile = kingpin.Flag("config-file", "Path to a YAML file with the agent configuration (databases to monitor). The file is optional").Default("/etc/coroot-node-agent/config.yaml").Envar("CONFIG_FILE").String()
+
 	SkipSystemdSystemServices = kingpin.Flag("skip-systemd-system-services", "Skip well-known systemd system containers (apt, motd, udev, etc.)").Default("true").Envar("SKIP_SYSTEMD_SYSTEM_SERVICES").Bool()
 
 	LogPerSecond = kingpin.Flag("log-per-second", "The number of logs per second").Default("10.0").Envar("LOG_PER_SECOND").Float64()
