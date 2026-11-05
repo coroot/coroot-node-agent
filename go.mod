@@ -4,6 +4,7 @@ go 1.26.6
 
 require (
 	github.com/0xrawsec/golang-etw v1.6.2
+	github.com/KimMachineGun/automemlimit v1.0.1
 	github.com/NVIDIA/go-nvml v0.12.4-1
 	github.com/avvmoto/buf-readerat v0.0.0-20171115124131-a17c8cb89270
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -133,6 +134,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
+	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
