@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"io"
+	"math"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -13,7 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/coroot/coroot-node-agent/api"
+	"github.com/coroot/coroot-node-agent/cgroup"
 	"github.com/coroot/coroot-node-agent/common"
 	"github.com/coroot/coroot-node-agent/containers"
 	"github.com/coroot/coroot-node-agent/ebpftracer"
@@ -85,6 +88,32 @@ func whitelistNodeExternalNetworks() {
 			common.ConnectionFilter.WhitelistPrefix(p)
 		}
 	}
+}
+
+func setMemoryLimit() {
+	limit, err := memlimit.Set(memlimit.WithProvider(func() (uint64, error) {
+		limit, err := memlimit.FromCgroup()
+		if err != nil {
+			return 0, err
+		}
+		cg, err := cgroup.NewFromProcessCgroupFile("/proc/self/cgroup")
+		if err != nil {
+			return 0, err
+		}
+		if st := cg.MemoryStat(); st != nil && st.Kernel < limit {
+			limit -= st.Kernel
+		}
+		return limit, nil
+	}))
+	if err != nil {
+		klog.Warningln("failed to set memory limit:", err)
+		return
+	}
+	if limit == math.MaxInt64 {
+		klog.Infoln("memory limit: not set")
+		return
+	}
+	klog.Infof("memory limit: %d MiB", limit>>20)
 }
 
 func main() {
@@ -159,6 +188,8 @@ func main() {
 		klog.Exitln(err)
 	}
 	profiling.Start()
+
+	setMemoryLimit()
 
 	if err := prom.StartAgent(registry, prom.Config{
 		Endpoint:       *flags.MetricsEndpoint,

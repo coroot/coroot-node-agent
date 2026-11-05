@@ -9,9 +9,10 @@ import (
 const maxMemory = 1 << 62
 
 type MemoryStat struct {
-	RSS   uint64
-	Cache uint64
-	Limit uint64
+	RSS    uint64
+	Cache  uint64
+	Kernel uint64
+	Limit  uint64
 }
 
 func (cg *Cgroup) MemoryStat() *MemoryStat {
@@ -64,8 +65,9 @@ func (cg *Cgroup) memoryStatV2() (*MemoryStat, error) {
 	}
 	limit, _ := common.ReadUintFromFile(path.Join(cg2Root, cg.subsystems[""], "memory.max"))
 	return &MemoryStat{
-		RSS:   vars["anon"] + vars["file_mapped"],
-		Cache: vars["file"],
-		Limit: limit,
+		RSS:    vars["anon"] + vars["file_mapped"],
+		Cache:  vars["file"],
+		Kernel: vars["kernel"],
+		Limit:  limit,
 	}, nil
 }
