@@ -109,7 +109,7 @@ func (p *Http2Parser) Parse(method Method, payload []byte, kernelTime uint64) []
 					}
 				case ":path":
 					if req.Path == "" && isHttpPath(hf.Value) {
-						req.Path = hf.Value
+						req.Path = payloadString([]byte(hf.Value), false)
 					}
 				case ":scheme":
 					if req.Scheme == "" && isHttpScheme(hf.Value) {

@@ -102,10 +102,7 @@ func zkReadString(r io.Reader) string {
 	if err != nil {
 		return ""
 	}
-	if n < int(l) {
-		return string(append(res[:n], []byte("...<TRUNCATED>")...))
-	}
-	return string(res[:n])
+	return payloadString(res[:n], n < int(l))
 }
 
 func ParseZookeeper(payload []byte) (string, string) {

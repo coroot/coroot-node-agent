@@ -23,7 +23,7 @@ func ParseRedis(payload []byte) (cmd string, args string) {
 		}
 		v, rest, ok = bytes.Cut(rest, crlf)
 		if ok {
-			return string(v)
+			return payloadString(v, false)
 		}
 		return ""
 	}

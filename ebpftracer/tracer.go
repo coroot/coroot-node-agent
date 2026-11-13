@@ -547,8 +547,8 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 			}
 			switch {
 			case v.PayloadSize == 0:
-			case v.PayloadSize > MaxPayloadSize:
-				req.Payload = payload[:MaxPayloadSize]
+			case v.PayloadSize >= MaxPayloadSize:
+				req.Payload = payload[:MaxPayloadSize-1]
 			default:
 				req.Payload = payload[:v.PayloadSize]
 			}
