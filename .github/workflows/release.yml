@@ -9,7 +9,11 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  kernels:
+    uses: ./.github/workflows/kernels.yml
+
   linux:
+    needs: kernels
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
