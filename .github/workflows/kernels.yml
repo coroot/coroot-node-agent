@@ -1,5 +1,9 @@
 name: Kernels
 
+permissions:
+  contents: read
+  actions: read
+
 on:
   pull_request:
   push:
