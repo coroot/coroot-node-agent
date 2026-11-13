@@ -1,0 +1,153 @@
+#!/bin/sh
+# Runs inside the test VM. The root filesystem is the agent's container image.
+#
+# The script has two stages. As PID 1 it prepares the system and hands over to systemd, which
+# starts the agent, an HTTP server and an HTTP client as services. Then systemd runs the script
+# again as the kerneltest service: it checks that the agent comes up and that it reports the
+# TCP connections and HTTP requests between the two services, prints the verdict to the console
+# and powers the VM off.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+if [ $$ = 1 ]; then
+    mount -t proc proc /proc
+    mount -t sysfs sys /sys
+    mount -t devtmpfs dev /dev 2>/dev/null
+    exec >/dev/console 2>&1
+    mount -t debugfs debugfs /sys/kernel/debug
+    mount -t tracefs tracefs /sys/kernel/tracing 2>/dev/null
+
+    # Distribution kernels ship conntrack as modules. On a real host they are loaded by the firewall
+    # or the container runtime, and the agent needs conntrack netlink to start.
+    if [ -d "/lib/modules/$(uname -r)" ]; then
+        for m in nf_conntrack_netlink nf_conntrack_ipv4 nf_conntrack_ipv6; do
+            /kerneltest/busybox modprobe $m 2>/dev/null
+        done
+    fi
+
+    # A fresh VM has no entropy, and on old kernels (el7) systemd and the agent would block in getrandom() for minutes.
+    python3 -c '
+import fcntl, struct
+with open("/dev/urandom", "rb") as f:  # os.urandom() would block for the same reason
+    data = f.read(512)
+with open("/dev/random", "wb") as f:
+    fcntl.ioctl(f, 0x40085203, struct.pack("ii", len(data) * 8, len(data)) + data)  # RNDADDENTROPY
+'
+    ip link set lo up
+    echo "KERNELTEST kernel $(uname -r)"
+
+    # The agent only reports processes that belong to a container or to a systemd service.
+    # There is no container runtime in this VM, so everything runs as a systemd service.
+    unit() {
+        cat > /etc/systemd/system/$1
+    }
+    unit kerneltest.target <<UNIT
+[Unit]
+DefaultDependencies=no
+Wants=kerneltest-server.service kerneltest-client.service coroot-node-agent.service kerneltest.service
+UNIT
+    unit kerneltest-server.service <<UNIT
+[Unit]
+DefaultDependencies=no
+[Service]
+WorkingDirectory=/tmp
+ExecStart=/usr/bin/python3 -m http.server 8080 --bind 127.0.0.1
+StandardOutput=null
+StandardError=null
+UNIT
+    unit kerneltest-client.service <<UNIT
+[Unit]
+DefaultDependencies=no
+[Service]
+ExecStart=/bin/sh -c 'while :; do curl -s -m 5 -o /dev/null http://127.0.0.1:8080/; sleep 0.5; done'
+StandardOutput=null
+StandardError=null
+UNIT
+    unit coroot-node-agent.service <<UNIT
+[Unit]
+DefaultDependencies=no
+[Service]
+ExecStart=/usr/bin/coroot-node-agent --listen=127.0.0.1:10300 --cgroupfs-root=/sys/fs/cgroup
+StandardOutput=file:/kerneltest/agent.log
+StandardError=file:/kerneltest/agent.log
+UNIT
+    unit kerneltest.service <<UNIT
+[Unit]
+DefaultDependencies=no
+[Service]
+Type=oneshot
+ExecStart=/init
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+UNIT
+    exec /usr/lib/systemd/systemd --unit=kerneltest.target --show-status=no --log-level=warning --log-target=console
+fi
+
+finish() {
+    echo "KERNELTEST $1"
+    sleep 1 # let the serial console drain, the verdict must not be lost
+    echo o > /proc/sysrq-trigger
+    sleep 60
+}
+
+fail() {
+    echo "--- agent log (verifier output omitted) ---"
+    grep -v -e '^    ' -e 'calculated container id' -e '"ignoring"' /kerneltest/agent.log | tail -n 40
+    echo "KERNELTEST REASON: $1"
+    finish FAIL
+}
+
+agent_running() {
+    systemctl -q is-active coroot-node-agent.service
+}
+
+metrics=http://127.0.0.1:10300/metrics
+started=0
+for i in $(seq 1 60); do
+    if curl -s -m 5 -o /tmp/metrics.txt $metrics && grep -q '^node_agent_info' /tmp/metrics.txt; then
+        started=1
+        break
+    fi
+    [ $i -lt 5 ] || agent_running || fail "the agent exited"
+    sleep 1
+done
+[ $started = 1 ] || fail "the agent did not start serving metrics within 60 seconds"
+echo "KERNELTEST agent started"
+
+# The agent has no L7 tracing on 3.x kernels (el7), only TCP connections are expected there.
+l7=1
+case "$(uname -r)" in
+    3.*) l7=0 ;;
+esac
+
+client='container_id="/system.slice/kerneltest-client.service"'
+server='container_id="/system.slice/kerneltest-server.service"'
+
+tcp_captured() {
+    grep -q "^container_net_tcp_successful_connects_total{.*$client.*destination=\"127.0.0.1:8080\"" /tmp/metrics.txt &&
+        grep -q "^container_net_tcp_listen_info{.*$server" /tmp/metrics.txt
+}
+
+http_captured() {
+    grep -q "^container_http_requests_total{.*$client.*status=\"2xx\"" /tmp/metrics.txt &&
+        grep -q "^container_http_inbound_requests_total{.*$server.*status=\"2xx\"" /tmp/metrics.txt
+}
+
+for i in $(seq 1 60); do
+    agent_running || fail "the agent exited"
+    curl -s -m 5 -o /tmp/metrics.txt $metrics
+    if tcp_captured; then
+        if [ $l7 = 0 ]; then
+            echo "KERNELTEST TCP connections captured (no L7 tracing on this kernel)"
+            finish PASS
+        fi
+        if http_captured; then
+            echo "KERNELTEST TCP connections and HTTP requests captured on the client and the server side"
+            finish PASS
+        fi
+    fi
+    sleep 1
+done
+echo "--- metrics reported for the test services ---"
+grep -o '^container_[a-z0-9_]*{.*container_id="/system.slice/kerneltest-[a-z]*.service"' /tmp/metrics.txt | sed 's/{.*container_id=/ /' | sort | uniq -c
+fail "the connections and HTTP requests between the test services were not reported within 60 seconds"

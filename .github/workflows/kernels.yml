@@ -1,0 +1,72 @@
+name: Kernels
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: coroot-node-agent:kerneltest
+          build-args: |
+            VERSION=kerneltest
+          outputs: type=docker,dest=/tmp/agent-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-image
+          path: /tmp/agent-image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  test:
+    needs: build
+    runs-on: ubuntu-22.04
+    name: ${{ matrix.kernel }}
+    # A release candidate of the kernel may be broken itself, so it does not block anything.
+    continue-on-error: ${{ matrix.kernel == 'mainline' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Upstream kernels are tags of ghcr.io/cilium/ci-kernels, "stable" and "mainline" follow kernel.org.
+        # Distribution kernels come from ghcr.io/coroot/ci-kernels.
+        # eBPF builds in use: "3.10" on el7, "4.16" on el8, "4.20" on 5.4, "5.6" on 5.10, "5.12" on the rest.
+        kernel:
+          - ghcr.io/coroot/ci-kernels:3.10-el7
+          - ghcr.io/coroot/ci-kernels:4.18-el8
+          - ghcr.io/coroot/ci-kernels:5.14-el9
+          - ghcr.io/coroot/ci-kernels:5.4-ubuntu20.04
+          - ghcr.io/coroot/ci-kernels:5.15-ubuntu22.04
+          - ghcr.io/coroot/ci-kernels:6.8-ubuntu24.04
+          - '5.4'
+          - '5.10'
+          - '5.15'
+          - '6.1'
+          - '6.6'
+          - '6.12'
+          - '6.18'
+          - '7.0'
+          - stable
+          - mainline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-image
+          path: /tmp
+      - run: docker load -i /tmp/agent-image.tar
+      # QEMU is not installed on the runner, so run.sh starts it in a container. The container
+      # runs as root and can use /dev/kvm without any changes to the runner.
+      - run: kerneltest/run.sh coroot-node-agent:kerneltest ${{ matrix.kernel }}
