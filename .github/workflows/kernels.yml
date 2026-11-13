@@ -12,10 +12,6 @@ on:
   workflow_dispatch:
   workflow_call:
 
-permissions:
-  contents: read
-  actions: read
-
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -42,22 +38,22 @@ jobs:
   test:
     needs: build
     runs-on: ubuntu-22.04
-    name: ${{ matrix.kernel }}
+    name: kernel ${{ matrix.kernel }}
     # A release candidate of the kernel may be broken itself, so it does not block anything.
     continue-on-error: ${{ matrix.kernel == 'mainline' }}
     strategy:
       fail-fast: false
       matrix:
+        # Distribution kernels (a version with a distribution suffix) are tags of ghcr.io/coroot/ci-kernels.
         # Upstream kernels are tags of ghcr.io/cilium/ci-kernels, "stable" and "mainline" follow kernel.org.
-        # Distribution kernels come from ghcr.io/coroot/ci-kernels.
         # eBPF builds in use: "3.10" on el7, "4.16" on el8, "4.20" on 5.4, "5.6" on 5.10, "5.12" on the rest.
         kernel:
-          - ghcr.io/coroot/ci-kernels:3.10-el7
-          - ghcr.io/coroot/ci-kernels:4.18-el8
-          - ghcr.io/coroot/ci-kernels:5.14-el9
-          - ghcr.io/coroot/ci-kernels:5.4-ubuntu20.04
-          - ghcr.io/coroot/ci-kernels:5.15-ubuntu22.04
-          - ghcr.io/coroot/ci-kernels:6.8-ubuntu24.04
+          - 3.10-el7
+          - 4.18-el8
+          - 5.14-el9
+          - 5.4-ubuntu20.04
+          - 5.15-ubuntu22.04
+          - 6.8-ubuntu24.04
           - '5.4'
           - '5.10'
           - '5.15'
@@ -78,3 +74,5 @@ jobs:
       # QEMU is not installed on the runner, so run.sh starts it in a container. The container
       # runs as root and can use /dev/kvm without any changes to the runner.
       - run: kerneltest/run.sh coroot-node-agent:kerneltest ${{ matrix.kernel }}
+        env:
+          KERNELS_REPO: ${{ contains(matrix.kernel, '-') && 'ghcr.io/coroot/ci-kernels' || 'ghcr.io/cilium/ci-kernels' }}
