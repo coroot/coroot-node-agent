@@ -112,5 +112,5 @@ func llmModel(body []byte) string {
 	if !ok { // truncated
 		return ""
 	}
-	return string(model)
+	return payloadString(model, false)
 }

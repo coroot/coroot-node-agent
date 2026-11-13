@@ -179,10 +179,10 @@ func TestParseClickHouse(t *testing.T) {
 		0x36, 0x39, 0x27, 0x2c, 0x20, 0x27, 0x38, 0x31, 0x32, 0x33, 0x27, 0x29, 0x2c, 0x20, 0x28, 0x27, 0x31, 0x30, 0x2e,
 		0x34, 0x32, 0x2e, 0x35, 0x2e, 0x36, 0x39, 0x27, 0x2c, 0x20, 0x27, 0x39, 0x30, 0x30, 0x39, 0x27, 0x29, 0x2c, 0x20,
 		0x28, 0x27, 0x31, 0x30, 0x2e, 0x34, 0x32, 0x2e, 0x35, 0x2e, 0x36, 0x39, 0x27, 0x2c, 0x20, 0x27, 0x30, 0x27, 0x29,
-		0x29, 0x29, 0x20, 0x41, 0x4e, 0x44, 0x20, 0x54, 0x69, 0x6d, 0x0,
+		0x29, 0x29, 0x20, 0x41, 0x4e, 0x44, 0x20, 0x54, 0x69, 0x6d,
 	}
 	assert.Equal(t,
-		`SELECT Timestamp, TraceId, SpanId, ParentSpanId, SpanName, ServiceName, Duration, StatusCode, StatusMessage, ResourceAttributes, SpanAttributes, Events.Timestamp, Events.Name, Events.Attributes FROM otel_traces_distributed WHERE ServiceName IN (['/k8s/coroot/coroot-coroot', '/system.slice/k3s-agent.service', '/system.slice/k3s.service']) AND (SpanAttributes['net.peer.name'] IN (['10.42.3.84', '10.42.1.73', '10.42.0.173', '10.42.5.69']) OR (SpanAttributes['net.peer.name'], SpanAttributes['net.peer.port']) IN (('10.42.3.84', '9009'), ('10.42.3.84', '0'), ('10.42.3.84', '9000'), ('10.42.3.84', '8123'), ('10.42.1.73', '0'), ('10.42.1.73', '8123'), ('10.42.1.73', '9009'), ('10.42.1.73', '9000'), ('10.42.0.173', '0'), ('10.42.0.173', '9009'), ('10.42.0.173', '9000'), ('10.42.0.173', '8123'), ('10.42.5.69', '9000'), ('10.42.5.69', '8123'), ('10.42.5.69', '9009'), ('10.42.5.69', '0'))) AND Tim...<TRUNCATED>`,
+		`SELECT Timestamp, TraceId, SpanId, ParentSpanId, SpanName, ServiceName, Duration, StatusCode, StatusMessage, ResourceAttributes, SpanAttributes, Events.Timestamp, Events.Name, Events.Attributes FROM otel_traces_distributed WHERE ServiceName IN (['/k8s/coroot/coroot-coroot', '/system.slice/k3s-agent.service', '/system.slice/k3s.service']) AND (SpanAttributes['net.peer.name'] IN (['10.42.3.84', '10.42.1.73', '10.42.0.173', '10.42.5.69']) OR (SpanAttributes['net.peer.name'], SpanAttributes['net.peer.port']) IN (('10.42.3.84', '9009'), ('10.42.3.84', '0'), ('10.42.3.84', '9000'), ('10.42.3.84', '8123'), ('10.42.1.73', '0'), ('10.42.1.73', '8123'), ('10.42.1.73', '9009'), ('10.42.1.73', '9000'), ('10.42.0.173', '0'), ('10.42.0.173', '9009'), ('10.42.0.173', '9000'), ('10.42.0.173', '8123'), ('10.42.5.69', '9000'), ('10.42.5.69', '8123'), ('10.42.5.69', '9009'), ('10.42.5.69', '0'))) AND Tim...`,
 		ParseClickhouse(payload),
 	)
 
@@ -261,7 +261,7 @@ func TestParseClickHouse(t *testing.T) {
 	)
 
 	assert.Equal(t,
-		`SELECT toStartOfMinut...<TRUNCATED>`,
+		`SELECT toStartOfMinute...`,
 		ParseClickhouse(payload[:200]),
 	)
 
@@ -318,7 +318,7 @@ func TestParseZookeeper(t *testing.T) {
 	op, arg = ParseZookeeper(payload)
 
 	assert.Equal(t, "getData", op)
-	assert.Equal(t, "/clickhouse/tables/shard-1/coroot_3kuq8b3z/otel_t...<TRUNCATED>", arg)
+	assert.Equal(t, "/clickhouse/tables/shard-1/coroot_3kuq8b3z/otel_t...", arg)
 }
 
 func TestParseMysql(t *testing.T) {
@@ -363,9 +363,9 @@ func TestParseMysql(t *testing.T) {
 	attrs = append(attrs, 4, 0xe9, 0x07, 10, 13)
 	assert.Equal(t, "select 1", p.Parse(packet(MysqlComQuery, attrs, q), 0))
 
-	// a block that doesn't parse (bind flag is not 1) is left untouched
+	// a block that doesn't parse (bind flag is not 1) is not skipped, only its invalid UTF-8 is replaced
 	raw := []byte{1, 1, 0, 0, 0xfd, 0, 1, 'x'}
-	assert.Equal(t, string(append(raw, q...)), p.Parse(packet(MysqlComQuery, raw, q), 0))
+	assert.Equal(t, "\x01\x01\x00\x00\uFFFD\x00\x01xselect 1", p.Parse(packet(MysqlComQuery, raw, q), 0))
 
 	// a zero length header must not panic
 	assert.Equal(t, "", p.Parse(append([]byte{0, 0, 0, 0, MysqlComQuery}, q...), 0))

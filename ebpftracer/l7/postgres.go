@@ -28,13 +28,8 @@ func (p *PostgresParser) Parse(payload []byte) string {
 	cmd := payload[0]
 	switch cmd {
 	case PostgresFrameQuery:
-		var query string
-		if q, _, ok := bytes.Cut(payload[5:], []byte{0}); ok {
-			query = string(q)
-		} else {
-			query = string(q) + "..."
-		}
-		return query
+		q, _, ok := bytes.Cut(payload[5:], []byte{0})
+		return payloadString(q, !ok)
 	case PostgresFrameBind:
 		_, rest, ok := bytes.Cut(payload[5:], []byte{0})
 		if !ok {
@@ -55,13 +50,8 @@ func (p *PostgresParser) Parse(payload []byte) string {
 		if !ok {
 			return ""
 		}
-		var query string
 		q, _, ok := bytes.Cut(rest, []byte{0})
-		if ok {
-			query = string(q)
-		} else {
-			query = string(q) + "..."
-		}
+		query := payloadString(q, !ok)
 		preparedStatementNameStr := string(preparedStatementName)
 		p.preparedStatements[preparedStatementNameStr] = query
 		return fmt.Sprintf("PREPARE %s AS %s", preparedStatementNameStr, query)

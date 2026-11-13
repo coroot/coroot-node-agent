@@ -46,11 +46,7 @@ func (p *MysqlParser) Parse(payload []byte, statementId uint32) string {
 				body = body[n:]
 			}
 		}
-		query = string(body)
-		if partial {
-			query += "..."
-		}
-		return query
+		return payloadString(body, partial)
 	}
 	readStatementId := func() string {
 		return strconv.FormatUint(uint64(binary.LittleEndian.Uint32(payload[mysqlMsgHeaderSize+1:])), 10)

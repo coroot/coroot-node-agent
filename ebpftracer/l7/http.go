@@ -13,8 +13,5 @@ func ParseHttp(payload []byte) (string, string) {
 		return "", ""
 	}
 	uri, _, ok := bytes.Cut(rest, space)
-	if !ok {
-		uri = append(uri, []byte("...")...)
-	}
-	return string(method), string(uri)
+	return string(method), payloadString(uri, !ok)
 }

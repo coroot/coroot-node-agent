@@ -3,13 +3,13 @@ package l7
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 	"unicode/utf8"
 )
 
 const (
 	chLatestSupportedProtocolVersion = 54460 // DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS
 	chInterfaceTCP                   = 1
-	chMaxQuerySize                   = 1024
 )
 
 type byteReader struct {
@@ -157,32 +157,13 @@ func ParseClickhouse(payload []byte) string {
 		return ""
 	}
 	query := r.data[r.off:]
-	if uint64(len(query)) > l {
+	truncated := uint64(len(query)) < l
+	if !truncated {
 		query = query[:l]
 	}
-	if len(query) > chMaxQuerySize {
-		query = query[:chMaxQuerySize]
-	}
-	truncated := uint64(len(query)) < l
-	query = bytes.TrimSpace(query)
-	if len(query) == 0 {
+	res := payloadString(bytes.TrimSpace(query), truncated)
+	if strings.ContainsRune(res, utf8.RuneError) { // not a real query: misclassified or corrupted payload
 		return ""
 	}
-	if !utf8.Valid(query) { // not a real query: misclassified or corrupted payload
-		return ""
-	}
-	if truncated {
-		query = query[:len(query)-1]
-		for len(query) > 0 { // don't leave a partial multi-byte character at the end
-			if r, size := utf8.DecodeLastRune(query); r != utf8.RuneError || size > 1 {
-				break
-			}
-			query = query[:len(query)-1]
-		}
-		if len(query) == 0 {
-			return ""
-		}
-		return string(query) + "...<TRUNCATED>"
-	}
-	return string(query)
+	return res
 }

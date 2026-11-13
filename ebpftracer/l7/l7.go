@@ -2,7 +2,11 @@ package l7
 
 import (
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
+
+	"github.com/coroot/coroot-node-agent/common"
 )
 
 type Protocol uint8
@@ -215,4 +219,18 @@ type RequestData struct {
 	StatementId uint32
 	Payload     []byte
 	IsInbound   bool
+}
+
+func payloadString(b []byte, truncated bool) string {
+	s := string(b)
+	if !utf8.ValidString(s) {
+		if truncated {
+			s = common.TruncateUtf8(s, len(s)-1)
+		}
+		s = strings.ToValidUTF8(s, string(utf8.RuneError))
+	}
+	if truncated && s != "" {
+		s += "..."
+	}
+	return s
 }
