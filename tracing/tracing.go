@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coroot/coroot-node-agent/api"
 	"github.com/coroot/coroot-node-agent/common"
@@ -133,13 +135,78 @@ func (t *Trace) createSpan(name string, duration time.Duration, error bool, attr
 	}
 
 	start := end.Add(-duration)
+	// Protobuf rejects the whole ExportTraceServiceRequest when any string is
+	// not valid UTF-8, so one payload cut mid-rune would drop the batch.
+	name = otlpString(name)
 	_, span := t.tracer.otel.Start(nil, name, trace.WithTimestamp(start), trace.WithSpanKind(trace.SpanKindClient))
-	span.SetAttributes(attrs...)
-	span.SetAttributes(t.commonAttrs...)
+	span.SetAttributes(sanitizeAttrs(attrs)...)
+	span.SetAttributes(sanitizeAttrs(t.commonAttrs)...)
 	if error {
 		span.SetStatus(codes.Error, "")
 	}
 	span.End(trace.WithTimestamp(end))
+}
+
+// otlpString replaces each invalid UTF-8 run with U+FFFD. Valid strings,
+// including the common case, are returned unchanged.
+func otlpString(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return strings.ToValidUTF8(s, "\uFFFD")
+}
+
+func sanitizeAttrs(attrs []attribute.KeyValue) []attribute.KeyValue {
+	var out []attribute.KeyValue
+	for i, kv := range attrs {
+		cleaned, changed := sanitizeAttr(kv)
+		if !changed {
+			continue
+		}
+		if out == nil {
+			out = make([]attribute.KeyValue, len(attrs))
+			copy(out, attrs)
+		}
+		out[i] = cleaned
+	}
+	if out == nil {
+		return attrs
+	}
+	return out
+}
+
+func sanitizeAttr(kv attribute.KeyValue) (attribute.KeyValue, bool) {
+	switch kv.Value.Type() {
+	case attribute.STRING:
+		s := kv.Value.AsString()
+		clean := otlpString(s)
+		if clean == s {
+			return kv, false
+		}
+		kv.Value = attribute.StringValue(clean)
+		return kv, true
+	case attribute.STRINGSLICE:
+		src := kv.Value.AsStringSlice()
+		var dst []string
+		for i, s := range src {
+			clean := otlpString(s)
+			if clean == s {
+				continue
+			}
+			if dst == nil {
+				dst = make([]string, len(src))
+				copy(dst, src)
+			}
+			dst[i] = clean
+		}
+		if dst == nil {
+			return kv, false
+		}
+		kv.Value = attribute.StringSliceValue(dst)
+		return kv, true
+	default:
+		return kv, false
+	}
 }
 
 func (t *Trace) HttpRequest(method, path string, status l7.Status, duration time.Duration, extraAttrs ...attribute.KeyValue) {
