@@ -36,7 +36,7 @@ With `/dev/kvm` a run takes about a minute. Without it QEMU falls back to emulat
 ## CI
 
 The `Kernels` workflow runs the test for every kernel in its matrix on pull requests, on pushes to `main`, and before a release is published.
-To add a kernel, add its tag or image reference to the matrix in `.github/workflows/kernels.yml`.
+To add a kernel, add its tag to the matrix in `.github/workflows/kernels.yml`. A tag with a distribution suffix, such as `4.18-el8`, is taken from `ghcr.io/coroot/ci-kernels`, any other tag from `ghcr.io/cilium/ci-kernels`.
 
 ## Limitations
 
