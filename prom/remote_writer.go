@@ -26,6 +26,7 @@ import (
 )
 
 const RemoteWriteTimeout = 30 * time.Second
+const maxWriteRequestSize = 16 << 20
 
 type Config struct {
 	Endpoint       *url.URL
@@ -196,23 +197,47 @@ func (a *Agent) scrape() error {
 		return err
 	}
 	wr := buildWriteRequest(mfs, timestamp, a.labels)
-	decompressed, err := wr.Marshal()
-	if err != nil {
-		return err
+	for i, part := range splitWriteRequest(wr, maxWriteRequestSize) {
+		decompressed, err := part.Marshal()
+		if err != nil {
+			return err
+		}
+		compressed := snappy.Encode(nil, decompressed)
+		if err = a.writeToSpool(timestamp, i, compressed); err != nil {
+			return err
+		}
 	}
-
-	compressed := snappy.Encode(nil, decompressed)
-	return a.writeToSpool(timestamp, compressed)
+	return nil
 }
 
-func (a *Agent) writeToSpool(timestamp int64, payload []byte) error {
+func splitWriteRequest(wr *prompb.WriteRequest, maxSize int) []*prompb.WriteRequest {
+	if wr.Size() <= maxSize {
+		return []*prompb.WriteRequest{wr}
+	}
+	var parts []*prompb.WriteRequest
+	part := &prompb.WriteRequest{Metadata: wr.Metadata}
+	size := 0
+	for _, ts := range wr.Timeseries {
+		s := ts.Size()
+		if size+s > maxSize && len(part.Timeseries) > 0 {
+			parts = append(parts, part)
+			part = &prompb.WriteRequest{}
+			size = 0
+		}
+		part.Timeseries = append(part.Timeseries, ts)
+		size += s
+	}
+	return append(parts, part)
+}
+
+func (a *Agent) writeToSpool(timestamp int64, part int, payload []byte) error {
 	if len(payload) == 0 {
 		return nil
 	}
 	if err := a.truncateSpoolIfNeeded(); err != nil {
 		return err
 	}
-	fileName := fmt.Sprintf("spool-%d.done", timestamp)
+	fileName := fmt.Sprintf("spool-%d-%04d.done", timestamp, part)
 	f, err := os.CreateTemp(a.spoolDir, fileName)
 	if err != nil {
 		return err
