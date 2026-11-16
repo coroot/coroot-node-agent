@@ -100,6 +100,7 @@ type SystemdProperties struct {
 	Unit        string
 	TriggeredBy string
 	Type        string
+	Env         map[string]string
 }
 
 func (sp SystemdProperties) IsEmpty() bool {
@@ -147,6 +148,15 @@ func getSystemdProperties(id string) (SystemdProperties, error) {
 	}
 	if v, ok := properties["Type"]; ok {
 		props.Type, _ = v.(string)
+	}
+	if v, ok := properties["Environment"]; ok {
+		values, _ := v.([]string)
+		props.Env = map[string]string{}
+		for _, kv := range values {
+			if k, v, ok := strings.Cut(kv, "="); ok && strings.HasPrefix(k, "COROOT_") {
+				props.Env[k] = v
+			}
+		}
 	}
 	return props, nil
 }

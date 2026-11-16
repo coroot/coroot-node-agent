@@ -635,6 +635,7 @@ func getContainerMetadata(cg *cgroup.Cgroup) (*ContainerMetadata, error) {
 		var err error
 		md := &ContainerMetadata{}
 		md.systemd, err = getSystemdProperties(cg.Id)
+		md.env = md.systemd.Env
 		return md, err
 	case cgroup.ContainerTypeDocker, cgroup.ContainerTypeContainerd, cgroup.ContainerTypeSandbox, cgroup.ContainerTypeCrio:
 	default:
