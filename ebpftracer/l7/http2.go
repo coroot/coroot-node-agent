@@ -14,6 +14,7 @@ import (
 const (
 	http2FrameHeaderLength = 9
 	http2DecoderGcInterval = uint64(10 * time.Minute)
+	http2MaxActiveRequests = 2000
 )
 
 type Http2FrameHeader struct {
@@ -88,6 +89,9 @@ func (p *Http2Parser) Parse(method Method, payload []byte, kernelTime uint64) []
 		}
 		offset += http2FrameHeaderLength
 		if h.Type != http2.FrameHeaders {
+			if h.Type == http2.FrameRSTStream {
+				delete(p.activeRequests, h.StreamId)
+			}
 			if len(payload)-offset < h.Length {
 				break
 			}
@@ -100,6 +104,9 @@ func (p *Http2Parser) Parse(method Method, payload []byte, kernelTime uint64) []
 			if req == nil {
 				req = &Http2Request{kernelTime: kernelTime}
 				p.activeRequests[h.StreamId] = req
+				if len(p.activeRequests) > http2MaxActiveRequests {
+					p.dropOldRequests(h.StreamId)
+				}
 			}
 			decoder.SetEmitFunc(func(hf hpack.HeaderField) {
 				switch hf.Name {
@@ -172,6 +179,14 @@ func (p *Http2Parser) Parse(method Method, payload []byte, kernelTime uint64) []
 	}
 
 	return res
+}
+
+func (p *Http2Parser) dropOldRequests(lastStreamId uint32) {
+	for streamId := range p.activeRequests {
+		if streamId > lastStreamId || lastStreamId-streamId >= http2MaxActiveRequests {
+			delete(p.activeRequests, streamId)
+		}
+	}
 }
 
 func isHttpMethod(s string) bool {
