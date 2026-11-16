@@ -30,6 +30,21 @@ struct {
     __uint(max_entries, 10240);
 } open_file_info SEC(".maps");
 
+#define FILE_EVENT_MIN_INTERVAL_NS 1000000000
+
+struct file_event_key {
+    __u64 mnt;
+    __u32 pid;
+    __u32 padding;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(struct file_event_key));
+    __uint(value_size, sizeof(__u64));
+    __uint(max_entries, 10240);
+} file_event_timestamps SEC(".maps");
+
 struct trace_event_raw_sys_enter_open__stub {
 	__u64 unused;
 	__u64 unused2;
@@ -100,6 +115,16 @@ int trace_exit_open(struct trace_event_raw_sys_exit__stub* ctx)
 	if (ctx->ret < 0 || i->mnt == 0) {
 	    bpf_map_delete_elem(&open_file_info, &id);
 		return 0;
+	}
+	if (!i->log) {
+		struct file_event_key k = {.mnt = i->mnt, .pid = id >> 32};
+		__u64 now = bpf_ktime_get_ns();
+		__u64 *last = bpf_map_lookup_elem(&file_event_timestamps, &k);
+		if (last && now - *last < FILE_EVENT_MIN_INTERVAL_NS) {
+			bpf_map_delete_elem(&open_file_info, &id);
+			return 0;
+		}
+		bpf_map_update_elem(&file_event_timestamps, &k, &now, BPF_ANY);
 	}
 	struct file_event e = {
 		.type = EVENT_TYPE_FILE_OPEN,
