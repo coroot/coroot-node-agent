@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -116,8 +117,33 @@ type globalUprobe struct {
 	refcount int
 }
 
+type PerfOptions struct {
+	L7EventsBufferPages int // per-CPU perf buffer of l7_events, in pages
+	WakeupEvents        int // the reader is woken up after this many events
+}
+
+func DefaultPerfOptions() PerfOptions {
+	return PerfOptions{L7EventsBufferPages: 32, WakeupEvents: 100}
+}
+
+type perfMapStats struct {
+	name        string
+	bufferBytes int
+	events      atomic.Uint64
+	lost        atomic.Uint64
+}
+
+type PerfMapStats struct {
+	Name        string
+	BufferBytes int
+	Events      uint64
+	LostSamples uint64
+}
+
 type Tracer struct {
 	disableL7Tracing bool
+	perfOptions      PerfOptions
+	perfStats        []*perfMapStats
 	hostNetNs        netns.NsHandle
 	selfNetNs        netns.NsHandle
 
@@ -138,6 +164,7 @@ func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Trac
 	}
 	return &Tracer{
 		disableL7Tracing: disableL7Tracing,
+		perfOptions:      DefaultPerfOptions(),
 		hostNetNs:        hostNetNs,
 		selfNetNs:        selfNetNs,
 
@@ -147,6 +174,26 @@ func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Trac
 
 		uprobeFailures: map[UprobeKey]struct{}{},
 	}
+}
+
+func (t *Tracer) SetPerfOptions(o PerfOptions) {
+	d := DefaultPerfOptions()
+	if o.L7EventsBufferPages <= 0 {
+		o.L7EventsBufferPages = d.L7EventsBufferPages
+	}
+	if o.WakeupEvents <= 0 {
+		o.WakeupEvents = d.WakeupEvents
+	}
+	t.perfOptions = o
+}
+
+// PerfStats returns the number of events read and samples lost per perf buffer.
+func (t *Tracer) PerfStats() []PerfMapStats {
+	res := make([]PerfMapStats, 0, len(t.perfStats))
+	for _, s := range t.perfStats {
+		res = append(res, PerfMapStats{Name: s.name, BufferBytes: s.bufferBytes, Events: s.events.Load(), LostSamples: s.lost.Load()})
+	}
+	return res
 }
 
 func (t *Tracer) Run(events chan<- Event) error {
@@ -366,18 +413,20 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	}
 
 	if !t.disableL7Tracing {
-		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: 32})
+		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: t.perfOptions.L7EventsBufferPages})
 	}
 
 	pageSize := os.Getpagesize()
 	for _, pm := range perfMaps {
-		r, err := perf.NewReaderWithOptions(t.collection.Maps[pm.name], pm.perCPUBufferSizePages*pageSize, perf.ReaderOptions{WakeupEvents: 100})
+		r, err := perf.NewReaderWithOptions(t.collection.Maps[pm.name], pm.perCPUBufferSizePages*pageSize, perf.ReaderOptions{WakeupEvents: t.perfOptions.WakeupEvents})
 		if err != nil {
 			t.Close()
 			return fmt.Errorf("failed to create ebpf reader: %w", err)
 		}
 		t.readers[pm.name] = r
-		go runEventsReader(pm.name, r, ch, pm.typ, pm.readTimeout)
+		stats := &perfMapStats{name: pm.name, bufferBytes: pm.perCPUBufferSizePages * pageSize}
+		t.perfStats = append(t.perfStats, stats)
+		go runEventsReader(pm.name, r, ch, pm.typ, pm.readTimeout, stats)
 	}
 
 	t.collectionSpec = collectionSpec
@@ -509,7 +558,7 @@ type l7Event struct {
 	PayloadSize         uint64
 }
 
-func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapType, readTimeout time.Duration) {
+func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapType, readTimeout time.Duration, stats *perfMapStats) {
 	if readTimeout == 0 {
 		readTimeout = 100 * time.Millisecond
 	}
@@ -523,9 +572,11 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 			continue
 		}
 		if rec.LostSamples > 0 {
+			stats.lost.Add(rec.LostSamples)
 			klog.Errorln(name, "lost samples:", rec.LostSamples)
 			continue
 		}
+		stats.events.Add(1)
 		var event Event
 
 		switch typ {

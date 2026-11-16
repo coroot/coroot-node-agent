@@ -21,6 +21,14 @@ var (
 	PsiMemory = metric("container_resources_memory_pressure_waiting_seconds_total", "Total time in seconds that the container were delayed due to memory pressure", "kind")
 	PsiIO     = metric("container_resources_io_pressure_waiting_seconds_total", "Total time in seconds that the container were delayed due to I/O pressure", "kind")
 
+	MemoryVirtual       = metric("container_resources_memory_virtual_bytes", "Address space (VmSize) of the processes of the container; growth without RSS growth means mappings that are never released")
+	MemoryData          = metric("container_resources_memory_data_bytes", "Private data, heap and stack address space (VmData) of the processes of the container")
+	MemoryShmem         = metric("container_resources_memory_shmem_bytes", "Resident shared memory (RssShmem: SysV, POSIX and tmpfs shared mappings) of the processes of the container")
+	ContextSwitches     = metric("container_resources_context_switches_total", "Context switches of the processes of the container (voluntary: blocked or yielded, involuntary: preempted)", "type")
+	PageFaults          = metric("container_resources_page_faults_total", "Page faults of the processes of the container", "type")
+	OpenFiles           = metric("container_resources_open_files", "Open file descriptors of the processes of the container by kind (socket, pipe, file, epoll, eventfd, uverbs, rdma_cm, nvidia, shm, ...)", "kind")
+	OpenFilesLimitRatio = metric("container_resources_open_files_limit_ratio", "Highest ratio of open descriptors to the soft limit (nofile) among the processes of the container")
+
 	DiskSize       = metric("container_resources_disk_size_bytes", "Total capacity of the volume", "mount_point", "device", "volume")
 	DiskUsed       = metric("container_resources_disk_used_bytes", "Used capacity of the volume", "mount_point", "device", "volume")
 	DiskReserved   = metric("container_resources_disk_reserved_bytes", "Reserved capacity of the volume", "mount_point", "device", "volume")
@@ -101,6 +109,15 @@ var (
 	NodeNetTxPackets   = metric("node_net_transmitted_packets_total", "The total number of packets transmitted", "interface")
 	NodeNetInterfaceUp = metric("node_net_interface_up", "Status of the interface (0:down, 1:up)", "interface")
 	NodeNetInterfaceIP = metric("node_net_interface_ip", "IP address assigned to the interface", "interface", "ip")
+
+	NodeRdmaDeviceInfo = metric("node_rdma_device_info", "Meta information about an RDMA device: PCI address and net device for joins with node_infiniband_* and node_pcidevice_*", "device", "pci_address", "netdev", "fw_version")
+	NodeRdmaHwCounter  = metric("node_rdma_hw_counter_total", "Vendor hardware counter of an RDMA port, all names of hw_counters (node_exporter exports a fixed subset only from v1.11.0)", "device", "port", "counter")
+
+	NodePcieAerErrors = metric("node_pcie_aer_errors_total", "PCIe Advanced Error Reporting counters by severity and error type (not exposed by node_exporter)", "pci_address", "severity", "error")
+
+	AgentEbpfEvents      = metric("node_agent_ebpf_events_total", "Number of events the agent read from an eBPF perf buffer", "map")
+	AgentEbpfLostSamples = metric("node_agent_ebpf_lost_samples_total", "Number of events the kernel dropped because an eBPF perf buffer was full", "map")
+	AgentEbpfBufferBytes = metric("node_agent_ebpf_buffer_bytes", "Size of the per-CPU perf buffer of an eBPF map", "map")
 )
 
 func metric(name, help string, labels ...string) *prometheus.Desc {

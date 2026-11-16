@@ -111,6 +111,9 @@ type Container struct {
 
 	processes map[uint32]*Process
 
+	procLast  map[uint32]procCounters
+	procTotal procCounters
+
 	createdAt time.Time
 	startedAt time.Time
 	zombieAt  time.Time
@@ -292,6 +295,8 @@ func (c *Container) Collect(ch chan<- prometheus.Metric) {
 			ch <- metrics.Gauge(metrics.MemoryLimit, float64(s.Limit))
 		}
 	}
+
+	c.collectProcessResources(ch)
 
 	if psi := c.cgroup.PSI(); psi != nil {
 		ch <- metrics.Counter(metrics.PsiCPU, psi.CPUSecondsSome, "some")
@@ -522,6 +527,7 @@ func (c *Container) onProcessExitLocked(pid uint32, oomKill bool) {
 		c.zombieAt = time.Now()
 	}
 	delete(c.delaysByPid, pid)
+	delete(c.procLast, pid)
 	if oomKill {
 		c.oomKills++
 	}

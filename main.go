@@ -156,6 +156,10 @@ func main() {
 		InstanceLifeCycle: flags.GetString(flags.InstanceLifeCycle),
 	})
 
+	nodeCollector.RdmaHwCounters = *flags.EnableRdmaHwCounters
+	nodeCollector.PcieAer = !*flags.DisablePcieAerMetrics
+	nodeCollector.SysfsRoot = *flags.SysfsRoot
+
 	registry := prometheus.NewRegistry()
 
 	registerer := prometheus.WrapRegistererWith(

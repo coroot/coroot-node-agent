@@ -103,6 +103,12 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 			}
 		}
 	}
+	if c.RdmaHwCounters {
+		c.collectRdma(ch)
+	}
+	if c.PcieAer {
+		c.collectPcie(ch)
+	}
 	ch <- metrics.Gauge(metrics.NodeCloudInfo, 1,
 		string(c.instanceMetadata.Provider), c.instanceMetadata.AccountId, c.instanceMetadata.InstanceId,
 		c.instanceMetadata.InstanceType, c.instanceMetadata.LifeCycle,

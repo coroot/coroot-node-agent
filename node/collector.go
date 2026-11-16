@@ -11,6 +11,10 @@ type Collector struct {
 	hostname         string
 	kernelVersion    string
 	instanceMetadata *metadata.CloudMetadata
+
+	RdmaHwCounters bool
+	PcieAer        bool
+	SysfsRoot      string
 }
 
 func NewCollector(hostname, kernelVersion string, overrides metadata.Overrides) *Collector {
@@ -54,4 +58,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- metrics.NodeNetTxPackets
 	ch <- metrics.NodeNetInterfaceUp
 	ch <- metrics.NodeNetInterfaceIP
+	ch <- metrics.NodeRdmaDeviceInfo
+	ch <- metrics.NodeRdmaHwCounter
+	ch <- metrics.NodePcieAerErrors
 }

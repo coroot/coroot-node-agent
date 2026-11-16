@@ -58,6 +58,39 @@ Related blog posts:
 * [Delay accounting: an underrated feature of the Linux kernel](https://coroot.com/blog/linux-delay-accounting)
 
 
+### RDMA hardware counters
+
+TCP tracing does not see RDMA traffic. Port state, rate and the standard counters are exported by node_exporter
+(`node_infiniband_*`), and node_exporter v1.11.0 and later also exports most vendor hardware counters. For older
+node_exporter versions, `--enable-rdma-hw-counters` exports every file of
+`/sys/class/infiniband/<device>/ports/<port>/hw_counters` as `node_rdma_hw_counter_total{device,port,counter}` plus
+`node_rdma_device_info` (PCI address, net device, firmware) for joins.
+
+The counters are hidden from a pod network namespace. When the agent runs in a pod, mount the host `/sys` (for example to
+`/host/sys`) and set `--sysfs-root=/host/sys`.
+
+### PCIe error reporting
+
+`node_pcie_aer_errors_total{pci_address,severity,error}` exposes the Advanced Error Reporting counters of network, GPU
+and NVMe physical functions, which node_exporter's `pcidevice` collector (link speed, width, power state) does not.
+Use `--disable-pcie-aer-metrics` to turn it off.
+
+### eBPF buffer health
+
+The kernel drops events when a per-CPU perf buffer is full. The agent exports `node_agent_ebpf_events_total`,
+`node_agent_ebpf_lost_samples_total` and `node_agent_ebpf_buffer_bytes` per buffer (`map` label). When
+`node_agent_ebpf_lost_samples_total{map="l7_events"}` grows, raise `--l7-events-buffer-pages` (default 32 pages per CPU)
+or lower `--ebpf-wakeup-events` (default 100).
+
+### Process resources per container
+
+Per container the agent aggregates `/proc/<pid>` data that cAdvisor does not provide:
+`container_resources_memory_virtual_bytes`, `_data_bytes` and `_shmem_bytes`,
+`container_resources_context_switches_total{type}`, `container_resources_page_faults_total{type}`,
+`container_resources_open_files{kind}` (socket, pipe, file, epoll, eventfd, uverbs, rdma_cm, nvidia, shm, ...) and
+`container_resources_open_files_limit_ratio`. A growing address space without growing RSS, or growing `rdma_cm`
+descriptors, point to allocations or handles that are never released. Use `--disable-process-resource-metrics` to turn it off.
+
 ### Out-of-memory events tracing
 
 The [container_oom_kills_total](https://docs.coroot.com/metrics/node-agent#container_oom_kills_total) metric shows that a container has been terminated by the OOM killer.

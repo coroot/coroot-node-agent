@@ -158,6 +158,7 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, pr
 		return nil, err
 	}
 	go r.handleEvents(r.events)
+	r.tracer.SetPerfOptions(ebpftracer.PerfOptions{L7EventsBufferPages: *flags.L7EventsBufferPages, WakeupEvents: *flags.EbpfWakeupEvents})
 	if err = r.tracer.Run(r.events); err != nil {
 		close(r.events)
 		return nil, err
@@ -168,9 +169,17 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, pr
 
 func (r *Registry) Describe(ch chan<- *prometheus.Desc) {
 	ch <- metrics.Ip2Fqdn
+	ch <- metrics.AgentEbpfEvents
+	ch <- metrics.AgentEbpfLostSamples
+	ch <- metrics.AgentEbpfBufferBytes
 }
 
 func (r *Registry) Collect(ch chan<- prometheus.Metric) {
+	for _, s := range r.tracer.PerfStats() {
+		ch <- metrics.Counter(metrics.AgentEbpfEvents, float64(s.Events), s.Name)
+		ch <- metrics.Counter(metrics.AgentEbpfLostSamples, float64(s.LostSamples), s.Name)
+		ch <- metrics.Gauge(metrics.AgentEbpfBufferBytes, float64(s.BufferBytes), s.Name)
+	}
 	r.ip2fqdnLock.RLock()
 	defer r.ip2fqdnLock.RUnlock()
 	for ip, domain := range r.ip2fqdn {
