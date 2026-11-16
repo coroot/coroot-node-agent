@@ -494,6 +494,10 @@ func (c *Container) onProcessStart(pid uint32) *Process {
 	if p == nil {
 		return nil
 	}
+	mdFlags := proc.FlagsFromEnv(c.metadata.env)
+	p.Flags.EbpfProfilingDisabled = p.Flags.EbpfProfilingDisabled || mdFlags.EbpfProfilingDisabled
+	p.Flags.EbpfTracesDisabled = p.Flags.EbpfTracesDisabled || mdFlags.EbpfTracesDisabled
+	p.Flags.LogMonitoringDisabled = p.Flags.LogMonitoringDisabled || mdFlags.LogMonitoringDisabled
 	c.processes[pid] = p
 
 	if c.startedAt.IsZero() {
@@ -1266,6 +1270,10 @@ func (c *Container) runLogParser(logPath string) {
 		return
 	}
 
+	if proc.FlagsFromEnv(c.metadata.env).LogMonitoringDisabled {
+		klog.InfoS("skipping log monitoring due to COROOT_LOG_MONITORING=disabled", "cg", c.cgroup.Id)
+		return
+	}
 	for _, p := range c.processes {
 		if p.Flags.LogMonitoringDisabled {
 			klog.InfoS("skipping log monitoring due to COROOT_LOG_MONITORING=disabled", "cg", c.cgroup.Id)

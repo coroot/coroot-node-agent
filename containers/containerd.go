@@ -88,6 +88,14 @@ func ContainerdInspect(containerID string) (*ContainerMetadata, error) {
 		for _, m := range spec.Mounts {
 			res.volumes[m.Destination] = common.ParseKubernetesVolumeSource(m.Source)
 		}
+		if spec.Process != nil {
+			res.env = map[string]string{}
+			for _, kv := range spec.Process.Env {
+				if k, v, ok := strings.Cut(kv, "="); ok && strings.HasPrefix(k, "COROOT_") {
+					res.env[k] = v
+				}
+			}
+		}
 	}
 
 	if data, ok := c.Extensions["io.cri-containerd.container.metadata"]; ok {

@@ -43,3 +43,11 @@ func GetFlags(pid uint32) (Flags, error) {
 	}
 	return flags, nil
 }
+
+func FlagsFromEnv(env map[string]string) Flags {
+	return Flags{
+		EbpfProfilingDisabled: strings.Contains(env["COROOT_EBPF_PROFILING"], "disabled"),
+		EbpfTracesDisabled:    strings.Contains(env["COROOT_EBPF_TRACES"], "disabled"),
+		LogMonitoringDisabled: strings.Contains(env["COROOT_LOG_MONITORING"], "disabled"),
+	}
+}
