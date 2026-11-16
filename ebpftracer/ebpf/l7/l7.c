@@ -187,7 +187,9 @@ void send_event(void *ctx, struct l7_event *e, struct connection_id cid, struct 
     e->connection_timestamp = conn->timestamp;
     e->fd = cid.fd;
     e->pid = cid.pid;
-    bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, sizeof(*e));
+    __u64 size = e->payload_size;
+    TRUNCATE_PAYLOAD_SIZE(size);
+    bpf_perf_event_output(ctx, &l7_events, BPF_F_CURRENT_CPU, e, __builtin_offsetof(struct l7_event, payload) + size);
 }
 
 static inline __attribute__((__always_inline__))

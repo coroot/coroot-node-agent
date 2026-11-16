@@ -117,9 +117,10 @@ type globalUprobe struct {
 }
 
 type Tracer struct {
-	disableL7Tracing bool
-	hostNetNs        netns.NsHandle
-	selfNetNs        netns.NsHandle
+	disableL7Tracing    bool
+	l7EventsBufferPages int
+	hostNetNs           netns.NsHandle
+	selfNetNs           netns.NsHandle
 
 	collectionSpec *ebpf.CollectionSpec
 	collection     *ebpf.Collection
@@ -132,14 +133,15 @@ type Tracer struct {
 	uprobeFailures    map[UprobeKey]struct{}
 }
 
-func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool) *Tracer {
+func NewTracer(hostNetNs, selfNetNs netns.NsHandle, disableL7Tracing bool, l7EventsBufferPages int) *Tracer {
 	if disableL7Tracing {
 		klog.Infoln("L7 tracing is disabled")
 	}
 	return &Tracer{
-		disableL7Tracing: disableL7Tracing,
-		hostNetNs:        hostNetNs,
-		selfNetNs:        selfNetNs,
+		disableL7Tracing:    disableL7Tracing,
+		l7EventsBufferPages: l7EventsBufferPages,
+		hostNetNs:           hostNetNs,
+		selfNetNs:           selfNetNs,
 
 		readers:       map[string]*perf.Reader{},
 		uprobes:       map[string]*ebpf.Program{},
@@ -366,12 +368,13 @@ func (t *Tracer) ebpf(ch chan<- Event) error {
 	}
 
 	if !t.disableL7Tracing {
-		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: 32})
+		perfMaps = append(perfMaps, perfMap{name: "l7_events", typ: perfMapTypeL7Events, perCPUBufferSizePages: t.l7EventsBufferPages})
 	}
 
 	pageSize := os.Getpagesize()
 	for _, pm := range perfMaps {
-		r, err := perf.NewReaderWithOptions(t.collection.Maps[pm.name], pm.perCPUBufferSizePages*pageSize, perf.ReaderOptions{WakeupEvents: 100})
+		bufferSize := pm.perCPUBufferSizePages * pageSize
+		r, err := perf.NewReaderWithOptions(t.collection.Maps[pm.name], bufferSize, perf.ReaderOptions{Watermark: bufferSize / 4})
 		if err != nil {
 			t.Close()
 			return fmt.Errorf("failed to create ebpf reader: %w", err)
@@ -495,27 +498,16 @@ type fileEvent struct {
 	Log  uint64
 }
 
-type l7Event struct {
-	Fd                  uint64
-	ConnectionTimestamp uint64
-	Pid                 uint32
-	Status              int32
-	Duration            uint64
-	Protocol            uint8
-	Method              uint8
-	IsInbound           uint8
-	Padding             uint8
-	StatementId         uint32
-	PayloadSize         uint64
-}
+const l7EventHeaderSize = 48
 
 func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapType, readTimeout time.Duration) {
 	if readTimeout == 0 {
 		readTimeout = 100 * time.Millisecond
 	}
+	var rec perf.Record
 	for {
 		r.SetDeadline(time.Now().Add(readTimeout))
-		rec, err := r.Read()
+		err := r.ReadInto(&rec)
 		if err != nil {
 			if errors.Is(err, perf.ErrClosed) {
 				break
@@ -530,29 +522,25 @@ func runEventsReader(name string, r *perf.Reader, ch chan<- Event, typ perfMapTy
 
 		switch typ {
 		case perfMapTypeL7Events:
-			v := &l7Event{}
-			reader := bytes.NewBuffer(rec.RawSample)
-			if err := binary.Read(reader, binary.LittleEndian, v); err != nil {
-				klog.Warningln("failed to read msg:", err)
+			raw := rec.RawSample
+			if len(raw) < l7EventHeaderSize {
+				klog.Warningln("failed to read msg: short l7 event:", len(raw))
 				continue
 			}
-			payload := reader.Bytes()
+			le := binary.LittleEndian
 			req := &l7.RequestData{
-				Protocol:    l7.Protocol(v.Protocol),
-				Status:      l7.Status(v.Status),
-				Duration:    time.Duration(v.Duration),
-				Method:      l7.Method(v.Method),
-				StatementId: v.StatementId,
-				IsInbound:   v.IsInbound != 0,
+				Protocol:    l7.Protocol(raw[32]),
+				Status:      l7.Status(int32(le.Uint32(raw[20:]))),
+				Duration:    time.Duration(le.Uint64(raw[24:])),
+				Method:      l7.Method(raw[33]),
+				StatementId: le.Uint32(raw[36:]),
+				IsInbound:   raw[34] != 0,
 			}
-			switch {
-			case v.PayloadSize == 0:
-			case v.PayloadSize >= MaxPayloadSize:
-				req.Payload = payload[:MaxPayloadSize-1]
-			default:
-				req.Payload = payload[:v.PayloadSize]
+			payload := raw[l7EventHeaderSize:]
+			if size := min(le.Uint64(raw[40:]), MaxPayloadSize-1, uint64(len(payload))); size > 0 {
+				req.Payload = bytes.Clone(payload[:size])
 			}
-			event = Event{Type: EventTypeL7Request, Pid: v.Pid, Fd: v.Fd, Timestamp: v.ConnectionTimestamp, L7Request: req}
+			event = Event{Type: EventTypeL7Request, Pid: le.Uint32(raw[16:]), Fd: le.Uint64(raw[0:]), Timestamp: le.Uint64(raw[8:]), L7Request: req}
 		case perfMapTypeFileEvents:
 			v := &fileEvent{}
 			if err := binary.Read(bytes.NewBuffer(rec.RawSample), binary.LittleEndian, v); err != nil {
