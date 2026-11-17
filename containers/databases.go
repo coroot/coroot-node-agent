@@ -155,7 +155,7 @@ func (r *Registry) reconcileDatabases() {
 			klog.Infof("database target %s: stopping exporter for %s", t, t.containerId) // the address is now owned by another container
 			t.stop(r.reg)
 		}
-		if err := t.start(r.reg, r.dbChanges, c.id); err != nil {
+		if err := t.start(r.reg, r.dbEmitter, c.id); err != nil {
 			klog.Warningf("database target %s: failed to start exporter: %s", t, err)
 			continue
 		}
@@ -167,7 +167,7 @@ func (t *dbTarget) labels() prometheus.Labels {
 	return prometheus.Labels{"container_id": string(t.containerId), "address": t.addr.String()}
 }
 
-func (t *dbTarget) start(reg prometheus.Registerer, changes dbtracker.ChangeEmitter, containerId ContainerID) error {
+func (t *dbTarget) start(reg prometheus.Registerer, emitter dbtracker.Emitter, containerId ContainerID) error {
 	scrapeInterval := *flags.ScrapeInterval
 	collectTimeout := scrapeInterval - time.Second
 	if collectTimeout < dbMinCollectTimeout {
@@ -183,7 +183,7 @@ func (t *dbTarget) start(reg prometheus.Registerer, changes dbtracker.ChangeEmit
 		exporter.Options{
 			ScrapeInterval:   scrapeInterval,
 			CollectTimeout:   collectTimeout,
-			ChangeEmitter:    changes,
+			Emitter:          emitter,
 			MaxTablesPerDB:   dbMaxTablesPerDB,
 			TrackSizes:       true,
 			TrackBloat:       true,

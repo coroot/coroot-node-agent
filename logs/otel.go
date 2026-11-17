@@ -61,6 +61,10 @@ func Exporter() *cacommon.LogsPipeline {
 	return exporter
 }
 
+func ResourceAttrs() []attribute.KeyValue {
+	return resourceAttrs
+}
+
 func Shutdown(ctx context.Context) {
 	_ = exporter.Shutdown(ctx)
 }
