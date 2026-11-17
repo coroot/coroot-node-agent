@@ -76,7 +76,7 @@ type Registry struct {
 	gpuProcessUsageSampleChan chan gpu.ProcessUsageSample
 
 	databases []*dbTarget
-	dbChanges dbtracker.ChangeEmitter // nil disables the schema and settings change tracking
+	dbEmitter dbtracker.Emitter // nil disables the schema and settings tracking
 }
 
 func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, profilingUpdateCh chan *ProfilingUpdate, gpuProcessUsageSampleChan chan gpu.ProcessUsageSample) (*Registry, error) {
@@ -121,20 +121,20 @@ func NewRegistry(reg prometheus.Registerer, processInfoCh chan<- ProcessInfo, pr
 	if err != nil {
 		return nil, err
 	}
-	var dbChanges dbtracker.ChangeEmitter
+	var dbEmitter dbtracker.Emitter
 	if len(databases) > 0 {
 		klog.Infof("loaded %d database targets from %s", len(databases), *flags.ConfigFile)
-		if e, err := emitter.NewChangeEmitter(logs.Exporter()); err != nil {
-			klog.Warningln("database schema and settings changes won't be tracked:", err)
+		if e, err := emitter.NewEmitter(logs.Exporter(), logs.ResourceAttrs()...); err != nil {
+			klog.Warningln("database schema and settings won't be tracked:", err)
 		} else {
-			dbChanges = e
+			dbEmitter = e
 		}
 	}
 
 	r := &Registry{
 		reg:                    reg,
 		databases:              databases,
-		dbChanges:              dbChanges,
+		dbEmitter:              dbEmitter,
 		events:                 make(chan ebpftracer.Event, 10000),
 		containersById:         map[ContainerID]*Container{},
 		containersByCgroupId:   map[string]*Container{},
