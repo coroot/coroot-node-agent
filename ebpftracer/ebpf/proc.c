@@ -36,10 +36,66 @@ struct {
 
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u8));
+    __uint(max_entries, 1024);
+} nodejs_tls_pids SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(key_size, sizeof(__u64));
     __uint(value_size, sizeof(__u64));
     __uint(max_entries, 10240);
 } ssl_last_fd SEC(".maps");
+
+#if __KERNEL_FROM >= 416
+struct nodejs_ssl_args {
+    __u64 ssl;
+    char *buf;
+    __u64 *ret_ptr;
+};
+
+struct nodejs_pending_write {
+    __u64 ssl;
+    __u64 size;
+    char payload[MAX_PAYLOAD_SIZE];
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(__u8));
+    __uint(max_entries, 10240);
+} nodejs_tls_in_stream_io SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(__u64));
+    __uint(max_entries, 10240);
+} nodejs_tls_stream_read_fd SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(struct nodejs_pending_write));
+    __uint(max_entries, 1024);
+} nodejs_tls_write_pending SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(struct nodejs_ssl_args));
+    __uint(max_entries, 10240);
+} nodejs_tls_active_write SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(struct nodejs_ssl_args));
+    __uint(max_entries, 10240);
+} nodejs_tls_active_read SEC(".maps");
+#endif
 
 struct trace_event_raw_task_newtask__stub {
     __u64 unused;
@@ -79,6 +135,13 @@ int sched_process_exit(struct trace_event_raw_sched_process_template__stub *args
 {
     __u64 id = bpf_get_current_pid_tgid();
     bpf_map_delete_elem(&ssl_last_fd, &id);
+#if __KERNEL_FROM >= 416
+    bpf_map_delete_elem(&nodejs_tls_in_stream_io, &id);
+    bpf_map_delete_elem(&nodejs_tls_stream_read_fd, &id);
+    bpf_map_delete_elem(&nodejs_tls_write_pending, &id);
+    bpf_map_delete_elem(&nodejs_tls_active_write, &id);
+    bpf_map_delete_elem(&nodejs_tls_active_read, &id);
+#endif
     __u64 pid = id >> 32;
     if (pid != (__u32)id) { // skipping threads for the rest
         return 0;
@@ -90,6 +153,7 @@ int sched_process_exit(struct trace_event_raw_sched_process_template__stub *args
     bpf_map_delete_elem(&nodejs_current_io_cb, &pid);
     bpf_map_delete_elem(&rustls_pids, &pid);
     bpf_map_delete_elem(&java_tls_pids, &pid);
+    bpf_map_delete_elem(&nodejs_tls_pids, &pid);
 
     struct proc_event e = {
         .type = EVENT_TYPE_PROCESS_EXIT,

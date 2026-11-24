@@ -143,6 +143,19 @@ struct {
     __uint(max_entries, 10240);
 } rustls_write_pending SEC(".maps");
 
+struct nodejs_ssl_key {
+    __u64 ssl;
+    __u32 pid;
+    __u32 pad;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(struct nodejs_ssl_key));
+    __uint(value_size, sizeof(__u64));
+    __uint(max_entries, 65536);
+} nodejs_tls_ssl_fd SEC(".maps");
+
 #if defined(__TARGET_ARCH_x86)
 #define RUSTLS_RET_IS_OK(x) (PT_REGS_RC(x) == 0)
 #define RUSTLS_RET_SIZE(x) ((x)->dx)
@@ -286,6 +299,28 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, __u8 socket_only, char 
 
     if (!is_tls) {
         __sync_fetch_and_add(&conn->bytes_sent, total_size);
+    }
+
+    if (!is_tls && !plain_buf && !socket_only) {
+        struct nodejs_pending_write *pw = bpf_map_lookup_elem(&nodejs_tls_write_pending, &id);
+        if (pw) {
+            struct nodejs_ssl_key sk = {};
+            sk.ssl = pw->ssl;
+            sk.pid = cid.pid;
+            bpf_map_update_elem(&nodejs_tls_ssl_fd, &sk, &fd, BPF_NOEXIST);
+            char *scratch = bpf_map_lookup_elem(&iovec_buf_heap, &zero);
+            if (scratch) {
+                __u64 pw_size = pw->size;
+                __u64 copy_size = pw_size;
+                TRUNCATE_PAYLOAD_SIZE(copy_size);
+                if (copy_size > 0 && bpf_probe_read(scratch, copy_size, pw->payload) == 0) {
+                    plain_buf = scratch;
+                    plain_size = pw_size;
+                    total_size = pw_size;
+                }
+            }
+            bpf_map_delete_elem(&nodejs_tls_write_pending, &id);
+        }
     }
 
     if (plain_buf) {
@@ -579,6 +614,10 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
 
     if (!is_tls) {
         __sync_fetch_and_add(&conn->bytes_received, total_size);
+        if (bpf_map_lookup_elem(&nodejs_tls_in_stream_io, &id)) {
+            __u64 rfd = cid.fd;
+            bpf_map_update_elem(&nodejs_tls_stream_read_fd, &id, &rfd, BPF_ANY);
+        }
     }
 
     if (conn->is_inbound) {

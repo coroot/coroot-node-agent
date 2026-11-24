@@ -18,6 +18,8 @@
 
 #define EVENT_REASON_OOM_KILL		1
 
+#define MAX_PAYLOAD_SIZE 1024 // must be power of 2
+
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
 #define bpf_read(src, dst)                            \
@@ -50,6 +52,7 @@ struct trace_event_raw_sys_exit__stub {
 #include "l7/l7.c"
 #include "l7/gotls.c"
 #include "l7/openssl.c"
+#include "l7/nodejs_tls.c"
 #include "l7/rustls.c"
 #include "l7/java_tls.c"
 #else

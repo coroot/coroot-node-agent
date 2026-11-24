@@ -1,6 +1,11 @@
 SEC("uprobe/openssl_SSL_write_enter")
 int openssl_SSL_write_enter(struct pt_regs *ctx) {
     __u64 tid = bpf_get_current_pid_tgid();
+    __u32 pid = tid >> 32;
+    if (bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
+        bpf_map_delete_elem(&ssl_pending, &tid);
+        return 0;
+    }
     struct ssl_args args = {};
     args.buf = (char *)PT_REGS_PARM2(ctx);
     args.size = PT_REGS_PARM3(ctx);
@@ -12,6 +17,11 @@ int openssl_SSL_write_enter(struct pt_regs *ctx) {
 SEC("uprobe/openssl_SSL_read_enter")
 int openssl_SSL_read_enter(struct pt_regs *ctx) {
     __u64 tid = bpf_get_current_pid_tgid();
+    __u32 pid = tid >> 32;
+    if (bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
+        bpf_map_delete_elem(&ssl_pending, &tid);
+        return 0;
+    }
     struct ssl_args args = {};
     args.buf = (char *)PT_REGS_PARM2(ctx);
     args.is_read = 1;
@@ -22,6 +32,11 @@ int openssl_SSL_read_enter(struct pt_regs *ctx) {
 SEC("uprobe/openssl_SSL_read_ex_enter")
 int openssl_SSL_read_ex_enter(struct pt_regs *ctx) {
     __u64 tid = bpf_get_current_pid_tgid();
+    __u32 pid = tid >> 32;
+    if (bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
+        bpf_map_delete_elem(&ssl_pending, &tid);
+        return 0;
+    }
     struct ssl_args args = {};
     args.buf = (char *)PT_REGS_PARM2(ctx);
     args.ret_ptr = (__u64 *)PT_REGS_PARM4(ctx);
@@ -33,6 +48,11 @@ int openssl_SSL_read_ex_enter(struct pt_regs *ctx) {
 SEC("uprobe/openssl_SSL_read_exit")
 int openssl_SSL_read_exit(struct pt_regs *ctx) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 pid = pid_tgid >> 32;
+    if (bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
+        bpf_map_delete_elem(&ssl_pending, &pid_tgid);
+        return 0;
+    }
     struct ssl_args *args = bpf_map_lookup_elem(&ssl_pending, &pid_tgid);
     if (!args || !args->is_read) {
         bpf_map_delete_elem(&ssl_pending, &pid_tgid);
@@ -55,7 +75,6 @@ int openssl_SSL_read_exit(struct pt_regs *ctx) {
     __u64 *ret_ptr = args->ret_ptr;
     bpf_map_delete_elem(&ssl_pending, &pid_tgid);
 
-    __u32 pid = pid_tgid >> 32;
     __u64 id = pid_tgid | IS_TLS_READ_ID;
     trace_enter_read(id, pid, fd, 1, buf, ret_ptr, 0);
 
