@@ -15,6 +15,9 @@ import (
 const (
 	goTlsWriteSymbol = "crypto/tls.(*Conn).Write"
 	goTlsReadSymbol  = "crypto/tls.(*Conn).Read"
+
+	nodejsOnUvReadSymbol  = "_ZN4node15LibuvStreamWrap8OnUvReadElPK8uv_buf_t"
+	nodejsTlsEncOutSymbol = "_ZN4node6crypto7TLSWrap6EncOutEv"
 )
 
 var silentErrors = []string{
@@ -317,10 +320,10 @@ func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) []UprobeKey {
 	log := uprobeLog(pid, "")
 	rootExe := proc.Path(pid, "root", exe)
 
-	var uvKey UprobeKey
-	uvAttached := false
-	for _, libPath := range append([]string{rootExe}, getLibuv(pid)...) {
-		key, ok := t.AcquireGlobalUprobe(UprobeKindNodejsTlsUv, libPath, func() []link.Link {
+	var nodeKey UprobeKey
+	nodeAttached := false
+	for _, libPath := range append([]string{rootExe}, getMappedLibs(pid, "libnode")...) {
+		key, ok := t.AcquireGlobalUprobe(UprobeKindNodejsTlsNode, libPath, func() []link.Link {
 			ef, err := OpenELFFile(libPath)
 			if err != nil {
 				log("open elf", err)
@@ -328,16 +331,23 @@ func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) []UprobeKey {
 			}
 			defer ef.Close()
 			return t.attachUprobes(libPath, ef, []uprobeSpec{
-				{symbol: "uv__stream_io", uprobe: "nodejs_tls_stream_io_enter", uretprobe: "nodejs_tls_stream_io_exit"},
+				{symbol: nodejsOnUvReadSymbol, uprobe: "nodejs_tls_on_uv_read_enter", uretprobe: "nodejs_tls_on_uv_read_exit"},
+				{symbol: nodejsTlsEncOutSymbol, uprobe: "nodejs_tls_enc_out_enter", uretprobe: "nodejs_tls_enc_out_exit"},
 			}, log)
 		})
 		if ok {
-			uvKey = key
-			uvAttached = true
+			nodeKey = key
+			nodeAttached = true
 			break
 		}
 	}
-	if !uvAttached {
+	if !nodeAttached {
+		t.globalUprobesLock.Lock()
+		first := t.firstUprobeFailure(UprobeKindNodejsTlsNode, rootExe)
+		t.globalUprobesLock.Unlock()
+		if first {
+			klog.Warningf("pid=%d exe=%s: failed to attach the Node.js TLS uprobes (%s, %s) to the executable or libnode. Node.js TLS requests won't be traced for processes using this file.", pid, rootExe, nodejsOnUvReadSymbol, nodejsTlsEncOutSymbol)
+		}
 		return nil
 	}
 
@@ -361,6 +371,7 @@ func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) []UprobeKey {
 				{symbol: "SSL_read", uprobe: "nodejs_tls_SSL_read_enter", uretprobe: "nodejs_tls_SSL_read_exit"},
 				{symbol: "SSL_read_ex", uprobe: "nodejs_tls_SSL_read_ex_enter", uretprobe: "nodejs_tls_SSL_read_exit", optional: true},
 				{symbol: "SSL_free", uprobe: "nodejs_tls_SSL_free"},
+				{symbol: "SSL_set_ex_data", uprobe: "nodejs_tls_SSL_set_ex_data"},
 			}, log)
 			if len(links) > 0 {
 				log("nodejs TLS uprobes attached (global)", nil)
@@ -369,11 +380,11 @@ func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) []UprobeKey {
 		})
 		if ok {
 			t.setNodejsTlsPid(pid)
-			return []UprobeKey{uvKey, sslKey}
+			return []UprobeKey{nodeKey, sslKey}
 		}
 	}
 
-	t.ReleaseGlobalUprobes(uvKey)
+	t.ReleaseGlobalUprobes(nodeKey)
 	return nil
 }
 

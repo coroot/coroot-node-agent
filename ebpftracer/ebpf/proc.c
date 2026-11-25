@@ -64,9 +64,16 @@ struct nodejs_pending_write {
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(key_size, sizeof(__u64));
-    __uint(value_size, sizeof(__u8));
+    __uint(value_size, sizeof(__u64));
     __uint(max_entries, 10240);
-} nodejs_tls_in_stream_io SEC(".maps");
+} nodejs_tls_last_read_fd SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(__u64));
+    __uint(value_size, sizeof(__u64));
+    __uint(max_entries, 10240);
+} nodejs_tls_enc_out_ssl SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
@@ -136,7 +143,8 @@ int sched_process_exit(struct trace_event_raw_sched_process_template__stub *args
     __u64 id = bpf_get_current_pid_tgid();
     bpf_map_delete_elem(&ssl_last_fd, &id);
 #if __KERNEL_FROM >= 416
-    bpf_map_delete_elem(&nodejs_tls_in_stream_io, &id);
+    bpf_map_delete_elem(&nodejs_tls_last_read_fd, &id);
+    bpf_map_delete_elem(&nodejs_tls_enc_out_ssl, &id);
     bpf_map_delete_elem(&nodejs_tls_stream_read_fd, &id);
     bpf_map_delete_elem(&nodejs_tls_write_pending, &id);
     bpf_map_delete_elem(&nodejs_tls_active_write, &id);

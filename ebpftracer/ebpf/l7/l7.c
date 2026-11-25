@@ -251,6 +251,15 @@ int handle_response(void *ctx, struct connection_id cid, struct connection *conn
                     __u16 is_tls, char *payload, __u64 ret, __u64 total_size);
 
 static inline __attribute__((__always_inline__))
+int is_tls_record(char *payload) {
+    __u8 hdr[2] = {};
+    if (bpf_probe_read(hdr, sizeof(hdr), payload)) {
+        return 0;
+    }
+    return hdr[0] >= 0x14 && hdr[0] <= 0x17 && hdr[1] == 0x03; // content type, then the major version of every TLS release
+}
+
+static inline __attribute__((__always_inline__))
 int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, __u8 socket_only, char *buf, __u64 size, __u64 iovlen) {
     __u64 id = bpf_get_current_pid_tgid();
     char *plain_buf = 0;
@@ -301,13 +310,17 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, __u8 socket_only, char 
         __sync_fetch_and_add(&conn->bytes_sent, total_size);
     }
 
+    __u64 *enc_out_ssl = 0;
     if (!is_tls && !plain_buf && !socket_only) {
+        enc_out_ssl = bpf_map_lookup_elem(&nodejs_tls_enc_out_ssl, &id);
+    }
+    if (enc_out_ssl && is_tls_record(payload)) {
+        struct nodejs_ssl_key sk = {};
+        sk.ssl = *enc_out_ssl;
+        sk.pid = cid.pid;
+        bpf_map_update_elem(&nodejs_tls_ssl_fd, &sk, &fd, BPF_ANY);
         struct nodejs_pending_write *pw = bpf_map_lookup_elem(&nodejs_tls_write_pending, &id);
-        if (pw) {
-            struct nodejs_ssl_key sk = {};
-            sk.ssl = pw->ssl;
-            sk.pid = cid.pid;
-            bpf_map_update_elem(&nodejs_tls_ssl_fd, &sk, &fd, BPF_NOEXIST);
+        if (pw && pw->ssl == sk.ssl) {
             char *scratch = bpf_map_lookup_elem(&iovec_buf_heap, &zero);
             if (scratch) {
                 __u64 pw_size = pw->size;
@@ -315,7 +328,7 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, __u8 socket_only, char 
                 TRUNCATE_PAYLOAD_SIZE(copy_size);
                 if (copy_size > 0 && bpf_probe_read(scratch, copy_size, pw->payload) == 0) {
                     plain_buf = scratch;
-                    plain_size = pw_size;
+                    plain_size = copy_size;
                     total_size = pw_size;
                 }
             }
@@ -541,6 +554,13 @@ int trace_enter_read(__u64 id, __u32 pid, __u64 fd, __u8 socket_only, char *buf,
         struct java_tls_read r = {.fd = fd, .buf = buf, .iovlen = iovlen};
         bpf_map_update_elem(&java_tls_last_read, &id, &r, BPF_ANY);
     }
+    if (!(id >> 63) && bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) { // TLS reads set the top bit of the id
+        if (bpf_map_lookup_elem(&nodejs_tls_active_read, &id)) { // the SSL does its own socket I/O, so this is its fd
+            bpf_map_update_elem(&nodejs_tls_stream_read_fd, &id, &fd, BPF_ANY);
+        } else {
+            bpf_map_update_elem(&nodejs_tls_last_read_fd, &id, &fd, BPF_ANY);
+        }
+    }
 
     if (!socket_only) {
         struct connection_id cid = {};
@@ -614,10 +634,6 @@ int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) 
 
     if (!is_tls) {
         __sync_fetch_and_add(&conn->bytes_received, total_size);
-        if (bpf_map_lookup_elem(&nodejs_tls_in_stream_io, &id)) {
-            __u64 rfd = cid.fd;
-            bpf_map_update_elem(&nodejs_tls_stream_read_fd, &id, &rfd, BPF_ANY);
-        }
     }
 
     if (conn->is_inbound) {

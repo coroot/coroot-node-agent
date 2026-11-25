@@ -109,14 +109,14 @@ const (
 type UprobeKind uint8
 
 const (
-	UprobeKindOpenSsl      UprobeKind = 1
-	UprobeKindGoTls        UprobeKind = 2
-	UprobeKindRustls       UprobeKind = 3
-	UprobeKindJavaTls      UprobeKind = 4
-	UprobeKindNodejs       UprobeKind = 5
-	UprobeKindPython       UprobeKind = 6
-	UprobeKindNodejsTlsUv  UprobeKind = 7
-	UprobeKindNodejsTlsSsl UprobeKind = 8
+	UprobeKindOpenSsl       UprobeKind = 1
+	UprobeKindGoTls         UprobeKind = 2
+	UprobeKindRustls        UprobeKind = 3
+	UprobeKindJavaTls       UprobeKind = 4
+	UprobeKindNodejs        UprobeKind = 5
+	UprobeKindPython        UprobeKind = 6
+	UprobeKindNodejsTlsNode UprobeKind = 7
+	UprobeKindNodejsTlsSsl  UprobeKind = 8
 )
 
 type UprobeKey struct {
