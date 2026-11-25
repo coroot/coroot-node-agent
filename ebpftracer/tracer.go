@@ -106,10 +106,23 @@ const (
 	perfMapTypeL7Events   perfMapType = 4
 )
 
+type UprobeKind uint8
+
+const (
+	UprobeKindOpenSsl      UprobeKind = 1
+	UprobeKindGoTls        UprobeKind = 2
+	UprobeKindRustls       UprobeKind = 3
+	UprobeKindJavaTls      UprobeKind = 4
+	UprobeKindNodejs       UprobeKind = 5
+	UprobeKindPython       UprobeKind = 6
+	UprobeKindNodejsTlsUv  UprobeKind = 7
+	UprobeKindNodejsTlsSsl UprobeKind = 8
+)
+
 type UprobeKey struct {
 	Dev  uint64
 	Ino  uint64
-	Kind string
+	Kind UprobeKind
 }
 
 type globalUprobe struct {
@@ -189,7 +202,7 @@ func (t *Tracer) Close() {
 	t.collection.Close()
 }
 
-func (t *Tracer) firstUprobeFailure(kind, path string) bool {
+func (t *Tracer) firstUprobeFailure(kind UprobeKind, path string) bool {
 	var stat syscall.Stat_t
 	if err := syscall.Stat(path, &stat); err != nil {
 		return true
@@ -202,7 +215,7 @@ func (t *Tracer) firstUprobeFailure(kind, path string) bool {
 	return true
 }
 
-func (t *Tracer) AcquireGlobalUprobe(kind, path string, attach func() []link.Link) (UprobeKey, bool) {
+func (t *Tracer) AcquireGlobalUprobe(kind UprobeKind, path string, attach func() []link.Link) (UprobeKey, bool) {
 	var stat syscall.Stat_t
 	if err := syscall.Stat(path, &stat); err != nil {
 		return UprobeKey{}, false

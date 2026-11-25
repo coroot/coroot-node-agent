@@ -87,7 +87,7 @@ func (t *Tracer) attachUprobes(exePath string, ef *ELFFile, specs []uprobeSpec, 
 			specLinks = append(specLinks, ls...)
 			if err != nil {
 				for _, l := range specLinks {
-					l.Close()
+					_ = l.Close()
 				}
 				if s.optional {
 					continue
@@ -111,7 +111,7 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 		return nil
 	}
 	log := uprobeLog(pid, "")
-	key, ok := t.AcquireGlobalUprobe("openssl", libPath, func() []link.Link {
+	key, ok := t.AcquireGlobalUprobe(UprobeKindOpenSsl, libPath, func() []link.Link {
 		ef, err := OpenELFFile(libPath)
 		if err != nil {
 			log("open elf", err)
@@ -174,7 +174,7 @@ func (t *Tracer) AttachGoTlsUprobes(pid uint32) (*UprobeKey, bool) {
 		return nil, isGolangApp
 	}
 
-	key, ok := t.AcquireGlobalUprobe("gotls", proc.Path(pid, "root", name), func() []link.Link {
+	key, ok := t.AcquireGlobalUprobe(UprobeKindGoTls, proc.Path(pid, "root", name), func() []link.Link {
 		ef, err := OpenELFFile(exePath)
 		if err != nil {
 			log("failed to open as elf binary", err)
@@ -234,7 +234,7 @@ func (t *Tracer) AttachRustlsUprobes(pid uint32) (*UprobeKey, bool) {
 		return nil, isRustApp
 	}
 
-	key, ok := t.AcquireGlobalUprobe("rustls", proc.Path(pid, "root", name), func() []link.Link {
+	key, ok := t.AcquireGlobalUprobe(UprobeKindRustls, proc.Path(pid, "root", name), func() []link.Link {
 		exe, err := link.OpenExecutable(exePath)
 		if err != nil {
 			log("failed to open executable", err)
@@ -285,7 +285,7 @@ func (t *Tracer) AttachJavaTlsUprobes(pid uint32, nativeLibPath string) *UprobeK
 		return nil
 	}
 	log := uprobeLog(pid, "")
-	key, ok := t.AcquireGlobalUprobe("javatls", nativeLibPath, func() []link.Link {
+	key, ok := t.AcquireGlobalUprobe(UprobeKindJavaTls, nativeLibPath, func() []link.Link {
 		ef, err := OpenELFFile(nativeLibPath)
 		if err != nil {
 			log("open elf", err)
@@ -320,7 +320,7 @@ func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) []UprobeKey {
 	var uvKey UprobeKey
 	uvAttached := false
 	for _, libPath := range append([]string{rootExe}, getLibuv(pid)...) {
-		key, ok := t.AcquireGlobalUprobe("nodejs-tls-uv", libPath, func() []link.Link {
+		key, ok := t.AcquireGlobalUprobe(UprobeKindNodejsTlsUv, libPath, func() []link.Link {
 			ef, err := OpenELFFile(libPath)
 			if err != nil {
 				log("open elf", err)
@@ -347,7 +347,7 @@ func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) []UprobeKey {
 	}
 
 	for _, sslPath := range sslPaths {
-		sslKey, ok := t.AcquireGlobalUprobe("nodejs-tls-ssl", sslPath, func() []link.Link {
+		sslKey, ok := t.AcquireGlobalUprobe(UprobeKindNodejsTlsSsl, sslPath, func() []link.Link {
 			ef, err := OpenELFFile(sslPath)
 			if err != nil {
 				log("open elf", err)

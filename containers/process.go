@@ -207,7 +207,7 @@ func (p *Process) addUprobeKey(key ebpftracer.UprobeKey) {
 	if p.closed {
 		p.uprobeKeysLock.Unlock()
 		p.tracer.ReleaseGlobalUprobes(key)
-		if key.Kind == "nodejs-tls-ssl" {
+		if key.Kind == ebpftracer.UprobeKindNodejsTlsSsl {
 			p.tracer.DeleteNodejsTlsPid(p.Pid)
 		}
 		return
@@ -227,7 +227,7 @@ func (p *Process) Close() {
 	if len(keys) > 0 {
 		p.tracer.ReleaseGlobalUprobes(keys...)
 		for _, key := range keys {
-			if key.Kind == "nodejs-tls-ssl" {
+			if key.Kind == ebpftracer.UprobeKindNodejsTlsSsl {
 				p.tracer.DeleteNodejsTlsPid(p.Pid)
 				break
 			}
