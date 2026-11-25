@@ -127,8 +127,7 @@ func (t *Tracer) AttachOpenSslUprobes(pid uint32) *UprobeKey {
 			{symbol: "SSL_read", uprobe: "openssl_SSL_read_enter"},
 			{symbol: "SSL_read", uretprobe: "openssl_SSL_read_exit"},
 			{symbol: "SSL_write_ex", uprobe: "openssl_SSL_write_enter", optional: true},
-			{symbol: "SSL_read_ex", uprobe: "openssl_SSL_read_ex_enter", optional: true},
-			{symbol: "SSL_read_ex", uretprobe: "openssl_SSL_read_exit", optional: true},
+			{symbol: "SSL_read_ex", uprobe: "openssl_SSL_read_ex_enter", uretprobe: "openssl_SSL_read_exit", optional: true},
 		}, log)
 		if len(links) > 0 {
 			log("libssl uprobes attached (global)", nil)
