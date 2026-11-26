@@ -36,6 +36,7 @@ int go_crypto_tls_get_fd_from_conn(struct pt_regs *ctx, __u32 *fd) {
 
 SEC("uprobe/go_crypto_tls_write_enter")
 int go_crypto_tls_write_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u32 fd;
     if (go_crypto_tls_get_fd_from_conn(ctx, &fd)) {
         return 0;
@@ -47,6 +48,7 @@ int go_crypto_tls_write_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/go_crypto_tls_read_enter")
 int go_crypto_tls_read_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u32 fd;
     if (go_crypto_tls_get_fd_from_conn(ctx, &fd)) {
         return 0;
@@ -61,6 +63,7 @@ int go_crypto_tls_read_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/go_crypto_tls_read_exit")
 int go_crypto_tls_read_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 pid = pid_tgid >> 32;
     __u64 goroutine_id = GOROUTINE(ctx);

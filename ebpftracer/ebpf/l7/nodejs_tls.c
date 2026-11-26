@@ -21,6 +21,7 @@ struct {
 // containers of one image share the binary's inode, so the probes can fire more than once per call: keep them idempotent
 SEC("uprobe/nodejs_tls_on_uv_read_enter")
 int nodejs_tls_on_uv_read_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     bpf_map_delete_elem(&nodejs_tls_enc_out_ssl, &tid);
     __u64 *last_fd = bpf_map_lookup_elem(&nodejs_tls_last_read_fd, &tid);
@@ -35,6 +36,7 @@ int nodejs_tls_on_uv_read_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/nodejs_tls_on_uv_read_exit")
 int nodejs_tls_on_uv_read_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     bpf_map_delete_elem(&nodejs_tls_stream_read_fd, &tid);
     bpf_map_delete_elem(&nodejs_tls_last_read_fd, &tid);
@@ -44,6 +46,7 @@ int nodejs_tls_on_uv_read_exit(struct pt_regs *ctx) {
 // TLSWrap::InitSSL stores the TLSWrap as the SSL's app data (ex_data index 0)
 SEC("uprobe/nodejs_tls_SSL_set_ex_data")
 int nodejs_tls_SSL_set_ex_data(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
     if (PT_REGS_PARM2(ctx) != 0 || !bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
@@ -60,6 +63,7 @@ int nodejs_tls_SSL_set_ex_data(struct pt_regs *ctx) {
 // EncOut can leave through a tail call, which the exit probe misses: the SSL_* and OnUvRead probes also end the EncOut scope
 SEC("uprobe/nodejs_tls_enc_out_enter")
 int nodejs_tls_enc_out_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
     if (!bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
@@ -80,6 +84,7 @@ int nodejs_tls_enc_out_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/nodejs_tls_enc_out_exit")
 int nodejs_tls_enc_out_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     bpf_map_delete_elem(&nodejs_tls_enc_out_ssl, &tid);
     bpf_map_delete_elem(&nodejs_tls_write_pending, &tid);
@@ -88,6 +93,7 @@ int nodejs_tls_enc_out_exit(struct pt_regs *ctx) {
 
 SEC("uprobe/nodejs_tls_SSL_write_enter")
 int nodejs_tls_SSL_write_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     bpf_map_delete_elem(&nodejs_tls_enc_out_ssl, &tid);
     __u32 pid = tid >> 32;
@@ -103,6 +109,7 @@ int nodejs_tls_SSL_write_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/nodejs_tls_SSL_write_ex_enter")
 int nodejs_tls_SSL_write_ex_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     bpf_map_delete_elem(&nodejs_tls_enc_out_ssl, &tid);
     __u32 pid = tid >> 32;
@@ -123,6 +130,7 @@ int nodejs_tls_SSL_write_ex_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/nodejs_tls_SSL_write_exit")
 int nodejs_tls_SSL_write_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     struct nodejs_ssl_args *args = bpf_map_lookup_elem(&nodejs_tls_active_write, &tid);
     if (!args) {
@@ -178,6 +186,7 @@ int nodejs_tls_SSL_write_exit(struct pt_regs *ctx) {
 
 SEC("uprobe/nodejs_tls_SSL_read_enter")
 int nodejs_tls_SSL_read_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     bpf_map_delete_elem(&nodejs_tls_enc_out_ssl, &tid);
     __u32 pid = tid >> 32;
@@ -193,6 +202,7 @@ int nodejs_tls_SSL_read_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/nodejs_tls_SSL_read_ex_enter")
 int nodejs_tls_SSL_read_ex_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     bpf_map_delete_elem(&nodejs_tls_enc_out_ssl, &tid);
     __u32 pid = tid >> 32;
@@ -213,6 +223,7 @@ int nodejs_tls_SSL_read_ex_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/nodejs_tls_SSL_read_exit")
 int nodejs_tls_SSL_read_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     struct nodejs_ssl_args *args = bpf_map_lookup_elem(&nodejs_tls_active_read, &tid);
     if (!args) {
@@ -253,6 +264,7 @@ int nodejs_tls_SSL_read_exit(struct pt_regs *ctx) {
 
 SEC("uprobe/nodejs_tls_SSL_free")
 int nodejs_tls_SSL_free(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
     if (!bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {

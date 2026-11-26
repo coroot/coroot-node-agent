@@ -25,6 +25,7 @@ struct {
 
 SEC("uprobe/uv_io_poll_exit")
 int uv_io_poll_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 pid = pid_tgid >> 32;
     __u64 timestamp = bpf_ktime_get_ns();
@@ -37,6 +38,7 @@ int uv_io_poll_exit(struct pt_regs *ctx) {
 
 SEC("uprobe/uv_io_poll_enter")
 int uv_io_poll_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 pid = pid_tgid >> 32;
     if ((__u32)pid_tgid != (__u32)pid) {
@@ -63,6 +65,7 @@ int uv_io_poll_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/uv_io_cb_enter")
 int uv_io_cb_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 pid = pid_tgid >> 32;
     if ((__u32)pid_tgid != (__u32)pid) {
@@ -75,6 +78,7 @@ int uv_io_cb_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/uv_io_cb_exit")
 int uv_io_cb_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 pid = pid_tgid >> 32;
     if ((__u32)pid_tgid != (__u32)pid) {

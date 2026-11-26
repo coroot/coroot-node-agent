@@ -1,5 +1,6 @@
 SEC("uprobe/rustls_write_enter")
 int rustls_write_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
 
@@ -15,6 +16,7 @@ int rustls_write_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/rustls_read_enter")
 int rustls_read_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
 
@@ -32,6 +34,7 @@ int rustls_read_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/rustls_read_exit")
 int rustls_read_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 id = pid_tgid | IS_TLS_READ_ID;
 

@@ -1,5 +1,6 @@
 SEC("uprobe/openssl_SSL_write_enter")
 int openssl_SSL_write_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
     if (bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
@@ -16,6 +17,7 @@ int openssl_SSL_write_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/openssl_SSL_read_enter")
 int openssl_SSL_read_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
     if (bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
@@ -31,6 +33,7 @@ int openssl_SSL_read_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/openssl_SSL_read_ex_enter")
 int openssl_SSL_read_ex_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
     if (bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
@@ -47,6 +50,7 @@ int openssl_SSL_read_ex_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/openssl_SSL_read_exit")
 int openssl_SSL_read_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u32 pid = pid_tgid >> 32;
     if (bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {

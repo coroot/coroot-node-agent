@@ -19,6 +19,7 @@ struct {
 
 SEC("uprobe/pthread_cond_timedwait_enter")
 int pthread_cond_timedwait_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 timestamp = bpf_ktime_get_ns();
     bpf_map_update_elem(&python_thread_locks, &pid_tgid, &timestamp, BPF_ANY);
@@ -27,6 +28,7 @@ int pthread_cond_timedwait_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/pthread_cond_timedwait_exit")
 int pthread_cond_timedwait_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 *timestamp = bpf_map_lookup_elem(&python_thread_locks, &pid_tgid);
     if (!timestamp) {

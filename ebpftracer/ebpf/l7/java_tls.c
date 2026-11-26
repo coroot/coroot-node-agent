@@ -1,5 +1,6 @@
 SEC("uprobe/java_tls_write_enter")
 int java_tls_write_enter(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
 
@@ -16,6 +17,7 @@ int java_tls_write_enter(struct pt_regs *ctx) {
 
 SEC("uprobe/java_tls_read_exit")
 int java_tls_read_exit(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
 
     struct java_tls_read *r = bpf_map_lookup_elem(&java_tls_last_read, &pid_tgid);
@@ -65,6 +67,7 @@ void java_tls_track_pid(__u32 pid) {
 
 SEC("uprobe/java_tls_engine_read")
 int java_tls_engine_read(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     struct java_tls_engine_io io;
     if (bpf_probe_read(&io, sizeof(io), (void *)PT_REGS_PARM1(ctx))) {
         return 0;
@@ -100,6 +103,7 @@ int java_tls_engine_read(struct pt_regs *ctx) {
 
 SEC("uprobe/java_tls_engine_write")
 int java_tls_engine_write(struct pt_regs *ctx) {
+    USE_TASK_STACK(ctx);
     struct java_tls_engine_io io;
     if (bpf_probe_read(&io, sizeof(io), (void *)PT_REGS_PARM1(ctx))) {
         return 0;
