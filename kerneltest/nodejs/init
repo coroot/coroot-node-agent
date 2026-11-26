@@ -1,0 +1,332 @@
+#!/bin/sh
+# Runs inside the Node.js test VM. The initramfs holds the root filesystem built from Dockerfile, the kernel modules,
+# BusyBox and this script.
+#
+# As PID 1 the script prepares the system and hands over to systemd. systemd starts the agent and, for every Node.js
+# root under /os, an HTTPS server and a client in that root. Then systemd runs the script again as the kerneltest
+# service: it compares the requests that the clients completed with the ones the agent reports for both sides,
+# prints the verdict and powers the VM off.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+metrics=http://127.0.0.1:10300/metrics
+
+finish() {
+    echo "KERNELTEST $1"
+    sleep 1 # let the serial console drain, the verdict must not be lost
+    echo o > /proc/sysrq-trigger
+    sleep 60
+    trap - EXIT
+    exit
+}
+
+# An oops in a BPF program or a probe kills only the thread that hit it, so without this the test would see no more
+# than a process that stopped answering. The RIP (x86) and pc (arm64) lines name the code that failed. Soft lockups
+# and warnings are not oopses: an emulated VM on a busy host can report them.
+oops='Oops|BUG: kernel|BUG: unable to handle|kernel BUG at|general protection fault|Unable to handle kernel'
+kernel_errors() {
+    /kerneltest/busybox dmesg >/tmp/dmesg
+    grep -qE "$oops" /tmp/dmesg || return 0
+    grep -E "$oops|RIP: 0010:|pc : " /tmp/dmesg | sed 's/^\[[ 0-9.]*\] //' | sort -u | tr '\n' ';'
+}
+
+fail() {
+    echo "--- agent log (verifier output omitted) ---"
+    grep -v -e '^    ' -e 'calculated container id' -e '"ignoring"' -e '"skipping system service"' /kerneltest/agent.log | tail -n 40
+    errors=$(kernel_errors)
+    echo "KERNELTEST REASON: $1${errors:+; the kernel reported: $errors}"
+    finish FAIL
+}
+
+pass() {
+    [ -z "$(kernel_errors)" ] || fail "kernel error"
+    finish PASS
+}
+
+if [ $$ = 1 ]; then
+    mount -t proc proc /proc
+    mount -t sysfs sys /sys
+    mount -t devtmpfs dev /dev 2>/dev/null
+    exec >/dev/console 2>&1
+    mount -t debugfs debugfs /sys/kernel/debug
+    mount -t tracefs tracefs /sys/kernel/tracing 2>/dev/null
+
+    # Distribution kernels ship conntrack as modules. On a real host the firewall or the container runtime
+    # loads them, and the agent needs conntrack netlink to start.
+    if [ -d "/lib/modules/$(uname -r)" ]; then
+        for m in nf_conntrack_netlink nf_conntrack_ipv4 nf_conntrack_ipv6; do
+            /kerneltest/busybox modprobe $m 2>/dev/null
+        done
+    fi
+    # A fresh VM has no entropy, and on old kernels (el7) systemd and the agent would block in getrandom() for minutes.
+    python3 -c '
+import fcntl, struct
+with open("/dev/urandom", "rb") as f:  # os.urandom() would block for the same reason
+    data = f.read(512)
+with open("/dev/random", "wb") as f:
+    fcntl.ioctl(f, 0x40085203, struct.pack("ii", len(data) * 8, len(data)) + data)  # RNDADDENTROPY
+'
+    # Without an RTC driver (the distribution kernels have it as a module, which ci-kernels leaves out) the clock
+    # starts at 1970, and with such a clock the agent does not report the test traffic.
+    t=$(sed -n 's/.*kerneltest\.time=\([0-9]*\).*/\1/p' /proc/cmdline)
+    [ -z "$t" ] || [ "$(date +%s)" -ge "$t" ] || date -s "@$t" >/dev/null
+    ip link set lo up
+    # the eBPF programs of uprobes can be preempted on a preemptive kernel, which is the default from 7.0
+    echo "KERNELTEST kernel $(uname -r) $(uname -m), preemption: $(cat /sys/kernel/debug/sched/preempt 2>/dev/null || echo unknown)"
+
+    unit() {
+        cat > "/etc/systemd/system/$1"
+    }
+    # node_unit <unit> <root> <command>: runs the command in the root, as a container runtime would.
+    node_unit() {
+        unit "$1" <<UNIT
+[Unit]
+DefaultDependencies=no
+[Service]
+RootDirectory=$2
+MountAPIVFS=yes
+ExecStart=$3
+StandardOutput=file:/kerneltest/$1.log
+StandardError=file:/kerneltest/$1.log
+UNIT
+        services="$services $1"
+    }
+    # Each scenario is a line of /kerneltest/scenarios: <name> <root> <tls port>. The server and the client of
+    # a scenario run one executable, as containers of one image do: the uprobes are registered on the file and
+    # fire in both processes. The agent can miss a service started after it, because it ignores a process that it
+    # sees before systemd moves the process into the service's cgroup, so all services start together with the agent.
+    services=""
+    port=8443
+    for root in /os/*; do
+        name=${root##*/}
+        node=/usr/bin/node
+        [ -x "$root/usr/local/bin/node" ] && node=/usr/local/bin/node
+        node_unit "nodetest-$name-server.service" "$root" "$node /nodetest/server.js $port"
+        node_unit "nodetest-$name-client.service" "$root" "$node /nodetest/client.js $port /nodetest/sent"
+        echo "$name $root $port" >>/kerneltest/scenarios
+        port=$((port + 1))
+    done
+    # The addon does its own TLS over a socket BIO, as pg-native does, and runs in the official build, whose
+    # OpenSSL it binds to. It writes a plain HTTP request through Node.js in the same tick.
+    root=/os/official-22
+    node_unit nodetest-addon-server.service $root "/usr/local/bin/node /nodetest/server.js $port 8080"
+    node_unit nodetest-addon-client.service $root "/usr/local/bin/node /nodetest/addon-client.js $port 8080 /nodetest/addon-sent"
+    echo "addon $root $port" >>/kerneltest/scenarios
+
+    unit kerneltest.target <<UNIT
+[Unit]
+DefaultDependencies=no
+Wants=coroot-node-agent.service kerneltest.service$services
+UNIT
+    unit coroot-node-agent.service <<UNIT
+[Unit]
+DefaultDependencies=no
+[Service]
+ExecStart=/usr/bin/coroot-node-agent --listen=127.0.0.1:10300 --cgroupfs-root=/sys/fs/cgroup
+StandardOutput=file:/kerneltest/agent.log
+StandardError=file:/kerneltest/agent.log
+UNIT
+    unit kerneltest.service <<UNIT
+[Unit]
+DefaultDependencies=no
+[Service]
+Type=oneshot
+ExecStart=/init
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+UNIT
+    exec /usr/lib/systemd/systemd --unit=kerneltest.target --show-status=no --log-level=warning --log-target=console
+fi
+
+# Without a verdict the VM would run until run.sh kills it, with no reason in the log.
+trap 'fail "the test script exited without a verdict"' EXIT
+
+agent_running() {
+    systemctl -q is-active coroot-node-agent.service
+}
+
+# fetch <file> saves the metrics to <file>.full, and the series the checks read to <file>, which keeps the checks
+# fast in an emulated VM.
+fetch() {
+    curl -sf -m 60 -o "$1.full" "$metrics" &&
+        grep -E '^(node_agent_info|container_(http_(inbound_)?requests_total|nodejs_event_loop_blocked_time_seconds_total))\{' "$1.full" >"$1"
+}
+
+# The waits are in seconds, not in rounds: in an emulated VM one round can take many seconds.
+now() {
+    date +%s
+}
+
+# TCG verification alone takes over a minute on some kernels.
+started=$(now)
+until fetch /tmp/m.txt && grep -q '^node_agent_info' /tmp/m.txt; do
+    # systemd may not have started the agent in the first seconds
+    agent_running || [ $(($(now) - started)) -lt 10 ] || fail "the agent exited"
+    [ $(($(now) - started)) -lt 300 ] || fail "the agent did not start serving metrics within 300 seconds"
+    sleep 1
+done
+echo "KERNELTEST agent started"
+
+case "$(uname -r)" in
+    3.*)
+        echo "KERNELTEST the agent has no L7 tracing on 3.x kernels, there is nothing to check"
+        pass
+        ;;
+esac
+
+# value <file> <metric> <label>... prints the sum of the metric over the series that have all the labels.
+value() {
+    file=$1 metric=$2
+    shift 2
+    lines=$(grep "^$metric{" "$file")
+    for label in "$@"; do
+        lines=$(printf '%s\n' "$lines" | grep -F "$label")
+    done
+    printf '%s\n' "$lines" | awk 'NF { s += $NF } END { print s + 0 }'
+}
+
+svc() {
+    echo "container_id=\"/system.slice/nodetest-$1.service\""
+}
+
+client_tls() { value "$1" container_http_requests_total "$(svc "$2-client")" "destination=\"127.0.0.1:$3\"" 'status="4xx"'; }
+server_tls() { value "$1" container_http_inbound_requests_total "$(svc "$2-server")" 'status="4xx"'; }
+
+# threads <pid> prints the threads of a process: state, CPU time in ticks and where the kernel is waiting.
+threads() {
+    if [ ! -d "/proc/$1/task" ]; then
+        echo "  the process has exited"
+        return
+    fi
+    for t in /proc/"$1"/task/*; do
+        # the fields after the command name, which can have spaces: state is 1st, utime 12th, stime 13th.
+        # A thread can exit between the listing and the read.
+        # shellcheck disable=SC2046
+        set -- $(sed 's/.*) //' "$t/stat" 2>/dev/null)
+        [ $# -ge 13 ] || continue
+        echo "  thread ${t##*/} $(cat "$t/comm") state=$1 cpu=$((${12} + ${13})) wchan=$(cat "$t/wchan")"
+    done
+}
+
+report() {
+    echo "--- metrics reported for the Node.js services ---"
+    grep -o '^container_[a-z0-9_]*{.*container_id="/system.slice/nodetest-[a-z0-9.-]*.service"' "$1.full" | sed 's/{.*container_id=/ /' | sort | uniq -c
+    grep -E '^container_http_(inbound_)?requests_total\{.*nodetest' "$1" | sed -E 's/(app_id|machine_id|system_uuid)="[^"]*",?//g'
+    echo "--- Node.js services ---"
+    for u in /etc/systemd/system/nodetest-*.service; do
+        u=${u##*/}
+        echo "$u $(systemctl show -p ActiveState -p Result -p ExecMainPID -p ExecMainStatus "$u" | tr '\n' ' ')"
+        tail -n 2 "/kerneltest/$u.log" 2>/dev/null
+        pid=$(systemctl show -p ExecMainPID --value "$u")
+        grep -E "pid=${pid}[^0-9]|id ${pid} -> " /kerneltest/agent.log | head -n 3
+    done
+}
+
+# stalled <names> shows what the processes of the scenarios that completed no request are doing. Two samples
+# a few seconds apart tell a process that spins from one that waits.
+stalled() {
+    for name in "$@"; do
+        port=$(awk -v n="$name" '$1 == n { print $3 }' /kerneltest/scenarios)
+        echo "--- $name completed no request ---"
+        ss -tnpio "( sport = :$port or dport = :$port )"
+        for side in client server; do
+            pid=$(systemctl show -p ExecMainPID --value "nodetest-$name-$side.service")
+            echo "$side pid $pid"
+            threads "$pid"
+            sleep 3
+            echo "  3 seconds later"
+            threads "$pid"
+            echo "  kernel stack of the main thread"
+            cat "/proc/$pid/stack" 2>/dev/null | sed 's/^/  /'
+        done
+    done
+}
+
+all_reported() {
+    while read -r name _ port; do
+        [ "$(client_tls "$1" "$name" "$port")" -gt 0 ] && [ "$(server_tls "$1" "$name")" -gt 0 ] || return 1
+    done </kerneltest/scenarios
+}
+
+# A scenario that is never reported fails its own check below, so the others are still measured.
+deadline=$(($(now) + 180))
+until fetch /tmp/m.txt && all_reported /tmp/m.txt; do
+    agent_running || fail "the agent exited"
+    [ "$(now)" -lt "$deadline" ] || break
+    sleep 1
+done
+
+clients=$(sed 's/^\([^ ]*\) .*/nodetest-\1-client.service/' /kerneltest/scenarios | tr '\n' ' ')
+# The snapshots are taken with the clients paused, so no request is in flight and the files match the metrics.
+# snapshot <file> saves the agent's metrics to <file> and the number of requests each client completed to <file>.sent.
+snapshot() {
+    # shellcheck disable=SC2086
+    systemctl kill -s USR2 $clients
+    sleep 2
+    fetch "$1" || fail "the agent did not serve its metrics"
+    while read -r name root _; do
+        f=$root/nodetest/sent
+        [ "$name" = addon ] && f=$root/nodetest/addon-sent
+        echo "$name $(cat "$f" 2>/dev/null || echo 0)"
+    done </kerneltest/scenarios >"$1.sent"
+}
+window=30
+snapshot /tmp/m1.txt
+# shellcheck disable=SC2086
+systemctl kill -s USR1 $clients
+sleep $window
+snapshot /tmp/m2.txt
+
+delta() {
+    fn=$1
+    shift
+    echo $(($("$fn" /tmp/m2.txt "$@") - $("$fn" /tmp/m1.txt "$@")))
+}
+
+sent() {
+    echo $(($(awk -v n="$1" '$1 == n { print $2 }' /tmp/m2.txt.sent) - $(awk -v n="$1" '$1 == n { print $2 }' /tmp/m1.txt.sent)))
+}
+
+# near <reported> <sent>: the agent misses some first requests of new connections, with or without TLS
+# (1-3% here), so 5% and one more are allowed.
+near() {
+    d=$(($1 - $2))
+    [ "${d#-}" -le $(($2 / 20 + 1)) ]
+}
+
+failed="" idle=""
+while read -r name _ port; do
+    n=$(sent "$name")
+    c=$(delta client_tls "$name" "$port")
+    s=$(delta server_tls "$name")
+    echo "KERNELTEST $name: $n requests sent, $c reported for the client, $s for the server in ${window}s"
+    [ "$n" -gt 0 ] || idle="$idle $name"
+    if [ "$n" -lt 10 ] || ! near "$c" "$n" || ! near "$s" "$n"; then
+        failed="$failed $name"
+    fi
+done </kerneltest/scenarios
+
+wrong=$(delta value container_http_requests_total "$(svc addon-client)" 'destination="127.0.0.1:8080"' 'status="4xx"')
+plain=$(delta value container_http_requests_total "$(svc addon-client)" 'destination="127.0.0.1:8080"' 'status="2xx"')
+echo "KERNELTEST addon: $plain plain requests, $wrong TLS requests reported under the plain connection"
+if [ "$wrong" != 0 ] || [ "$plain" -lt 10 ]; then
+    failed="$failed addon-plain"
+fi
+
+# The event loop probes need libuv linked into the executable, which only the official builds have.
+for root in /os/official-*; do
+    name=${root##*/}
+    blocked=$(value /tmp/m2.txt container_nodejs_event_loop_blocked_time_seconds_total "$(svc "$name-server")")
+    if ! awk -v v="$blocked" 'BEGIN { exit !(v > 0) }'; then
+        echo "KERNELTEST $name: the event loop metric is not reported"
+        failed="$failed $name-event-loop"
+    fi
+done
+
+if [ -n "$failed" ]; then
+    report /tmp/m2.txt
+    # shellcheck disable=SC2086
+    stalled $idle
+    fail "failed checks:$failed"
+fi
+echo "KERNELTEST Node.js TLS requests reported correctly on the client and the server side"
+pass

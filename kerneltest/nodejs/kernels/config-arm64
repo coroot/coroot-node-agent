@@ -1,0 +1,5 @@
+# The arm64 defconfig leaves conntrack netlink out, and the agent does not start without it.
+# The x86_64 defconfig enables it, so the amd64 images of cilium/ci-kernels have it.
+CONFIG_NETFILTER_NETLINK=y
+CONFIG_NF_CT_NETLINK=y
+CONFIG_NF_CONNTRACK_EVENTS=y
