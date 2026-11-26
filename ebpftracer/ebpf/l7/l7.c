@@ -313,6 +313,13 @@ int trace_enter_write(void *ctx, __u64 fd, __u16 is_tls, __u8 socket_only, char 
     __u64 *enc_out_ssl = 0;
     if (!is_tls && !plain_buf && !socket_only) {
         enc_out_ssl = bpf_map_lookup_elem(&nodejs_tls_enc_out_ssl, &id);
+        struct nodejs_ssl_args *active_write = bpf_map_lookup_elem(&nodejs_tls_active_write, &id);
+        if (!enc_out_ssl && active_write && is_tls_record(payload)) { // the SSL does its own socket I/O, so this is its fd
+            struct nodejs_ssl_key sk = {};
+            sk.ssl = active_write->ssl;
+            sk.pid = cid.pid;
+            bpf_map_update_elem(&nodejs_tls_ssl_fd, &sk, &fd, BPF_ANY);
+        }
     }
     if (enc_out_ssl && is_tls_record(payload)) {
         struct nodejs_ssl_key sk = {};

@@ -49,7 +49,7 @@ int nodejs_tls_SSL_set_ex_data(struct pt_regs *ctx) {
     USE_TASK_STACK(ctx);
     __u64 tid = bpf_get_current_pid_tgid();
     __u32 pid = tid >> 32;
-    if (PT_REGS_PARM2(ctx) != 0 || !bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
+    if ((int)PT_REGS_PARM2(ctx) != 0 || !bpf_map_lookup_elem(&nodejs_tls_pids, &pid)) {
         return 0;
     }
     struct nodejs_tls_wrap_key k = {};
@@ -60,7 +60,8 @@ int nodejs_tls_SSL_set_ex_data(struct pt_regs *ctx) {
     return 0;
 }
 
-// EncOut can leave through a tail call, which the exit probe misses: the SSL_* and OnUvRead probes also end the EncOut scope
+// the exit probe is also placed on the direct tail calls of EncOut; an exit through an indirect jump is missed,
+// so the SSL_* and OnUvRead probes also end the EncOut scope
 SEC("uprobe/nodejs_tls_enc_out_enter")
 int nodejs_tls_enc_out_enter(struct pt_regs *ctx) {
     USE_TASK_STACK(ctx);

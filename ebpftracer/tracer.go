@@ -272,18 +272,16 @@ func (t *Tracer) PythonStatsIterator() *ebpf.MapIterator {
 	return t.collection.Maps["python_stats"].Iterate()
 }
 
-func (t *Tracer) setNodejsTlsPid(pid uint32) {
+func (t *Tracer) setNodejsTlsPid(pid uint32) error {
 	if t.collection == nil {
-		return
+		return nil
 	}
 	m := t.collection.Maps["nodejs_tls_pids"]
 	if m == nil {
-		return
+		return nil
 	}
 	var one uint8 = 1
-	if err := m.Put(pid, one); err != nil {
-		klog.Warningf("pid=%d: failed to register Node.js TLS pid: %s", pid, err)
-	}
+	return m.Put(pid, one)
 }
 
 func (t *Tracer) DeleteNodejsTlsPid(pid uint32) {

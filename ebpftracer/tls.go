@@ -44,10 +44,11 @@ func uprobeLog(pid uint32, prefix string) func(string, error) {
 }
 
 type uprobeSpec struct {
-	symbol    string
-	uprobe    string
-	uretprobe string
-	optional  bool
+	symbol             string
+	uprobe             string
+	uretprobe          string
+	uretprobeTailCalls bool
+	optional           bool
 }
 
 func (t *Tracer) attachUprobes(exePath string, ef *ELFFile, specs []uprobeSpec, log func(string, error)) []link.Link {
@@ -86,7 +87,11 @@ func (t *Tracer) attachUprobes(exePath string, ef *ELFFile, specs []uprobeSpec, 
 			specLinks = append(specLinks, l)
 		}
 		if s.uretprobe != "" {
-			ls, err := sym.AttachUretprobes(exe, t.uprobes[s.uretprobe], 0)
+			attach := sym.AttachUretprobes
+			if s.uretprobeTailCalls {
+				attach = sym.AttachUretprobesWithTailCalls
+			}
+			ls, err := attach(exe, t.uprobes[s.uretprobe], 0)
 			specLinks = append(specLinks, ls...)
 			if err != nil {
 				for _, l := range specLinks {
@@ -331,7 +336,7 @@ func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) []UprobeKey {
 			defer ef.Close()
 			return t.attachUprobes(libPath, ef, []uprobeSpec{
 				{symbol: nodejsOnUvReadSymbol, uprobe: "nodejs_tls_on_uv_read_enter", uretprobe: "nodejs_tls_on_uv_read_exit"},
-				{symbol: nodejsTlsEncOutSymbol, uprobe: "nodejs_tls_enc_out_enter", uretprobe: "nodejs_tls_enc_out_exit"},
+				{symbol: nodejsTlsEncOutSymbol, uprobe: "nodejs_tls_enc_out_enter", uretprobe: "nodejs_tls_enc_out_exit", uretprobeTailCalls: true},
 			}, log)
 		})
 		if ok {
@@ -377,10 +382,15 @@ func (t *Tracer) AttachNodejsTlsUprobes(pid uint32, exe string) []UprobeKey {
 			}
 			return links
 		})
-		if ok {
-			t.setNodejsTlsPid(pid)
-			return []UprobeKey{nodeKey, sslKey}
+		if !ok {
+			continue
 		}
+		if err := t.setNodejsTlsPid(pid); err != nil {
+			klog.Warningf("pid=%d: failed to register Node.js TLS pid: %s", pid, err)
+			t.ReleaseGlobalUprobes(sslKey)
+			break
+		}
+		return []UprobeKey{nodeKey, sslKey}
 	}
 
 	t.ReleaseGlobalUprobes(nodeKey)
