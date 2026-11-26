@@ -123,12 +123,18 @@ struct {
     __uint(max_entries, 10240);
 } rustls_last_read_fd SEC(".maps");
 
+struct java_tls_read {
+    __u64 fd;
+    char *buf;
+    __u64 iovlen;
+};
+
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(key_size, sizeof(__u64));
-    __uint(value_size, sizeof(__u64));
+    __uint(value_size, sizeof(struct java_tls_read));
     __uint(max_entries, 10240);
-} java_tls_last_read_fd SEC(".maps");
+} java_tls_last_read SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
@@ -445,13 +451,60 @@ int handle_request(void *ctx, struct connection_id cid, struct connection *conn,
     return 0;
 }
 
+#define JAVA_TLS_RECORD_TAG_SIZE 24
+
+struct java_tls_record {
+    __u64 tag;
+    __u32 pid;
+    __u32 padding;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(key_size, sizeof(struct java_tls_record));
+    __uint(value_size, sizeof(__u64));
+    __uint(max_entries, 32768);
+} java_tls_record_fds SEC(".maps");
+
+static inline __attribute__((__always_inline__))
+void java_tls_index_record(__u64 id, __u32 pid, long int ret) {
+    if (ret < JAVA_TLS_RECORD_TAG_SIZE || !bpf_map_lookup_elem(&java_tls_pids, &pid)) {
+        return;
+    }
+    struct java_tls_read *r = bpf_map_lookup_elem(&java_tls_last_read, &id);
+    if (!r) {
+        return;
+    }
+    char *buf = r->buf;
+    if (r->iovlen) {
+        struct iovec iov = {};
+        if (bpf_probe_read(&iov, sizeof(iov), buf) || iov.size < JAVA_TLS_RECORD_TAG_SIZE) {
+            return;
+        }
+        buf = iov.buf;
+    }
+    __u64 head[3];
+    if (bpf_probe_read(&head, sizeof(head), buf)) {
+        return;
+    }
+    __u8 type = head[0], major = head[0] >> 8, minor = head[0] >> 16;
+    if (type < 20 || type > 23 || major != 3 || minor > 4) {
+        return;
+    }
+    struct java_tls_record record = {.pid = pid};
+    record.tag = head[0] ^ (head[1] << 17 | head[1] >> 47) ^ (head[2] << 31 | head[2] >> 33);
+    __u64 fd = r->fd;
+    bpf_map_update_elem(&java_tls_record_fds, &record, &fd, BPF_ANY);
+}
+
 static inline __attribute__((__always_inline__))
 int trace_enter_read(__u64 id, __u32 pid, __u64 fd, __u8 socket_only, char *buf, __u64 *ret, __u64 iovlen) {
     if (bpf_map_lookup_elem(&rustls_pids, &pid)) {
         bpf_map_update_elem(&rustls_last_read_fd, &id, &fd, BPF_ANY);
     }
     if (bpf_map_lookup_elem(&java_tls_pids, &pid)) {
-        bpf_map_update_elem(&java_tls_last_read_fd, &id, &fd, BPF_ANY);
+        struct java_tls_read r = {.fd = fd, .buf = buf, .iovlen = iovlen};
+        bpf_map_update_elem(&java_tls_last_read, &id, &r, BPF_ANY);
     }
 
     if (!socket_only) {
@@ -474,6 +527,9 @@ int trace_enter_read(__u64 id, __u32 pid, __u64 fd, __u8 socket_only, char *buf,
 
 static inline __attribute__((__always_inline__))
 int trace_exit_read(void *ctx, __u64 id, __u32 pid, __u16 is_tls, long int ret) {
+    if (!is_tls) {
+        java_tls_index_record(id, pid, ret);
+    }
     struct read_args *args = bpf_map_lookup_elem(&active_reads, &id);
     if (!args) {
         return 0;
