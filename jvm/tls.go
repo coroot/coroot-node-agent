@@ -151,8 +151,16 @@ func IsHotSpotJVM(pid uint32) bool {
 
 func writeFileIfChanged(path string, data []byte) error {
 	existing, err := os.ReadFile(path)
-	if err == nil && len(existing) == len(data) {
+	if err == nil && bytes.Equal(existing, data) {
 		return nil
 	}
-	return os.WriteFile(path, data, 0755)
+	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
+	if err = os.WriteFile(tmp, data, 0755); err != nil {
+		return err
+	}
+	if err = os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }

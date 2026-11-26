@@ -285,6 +285,8 @@ func (t *Tracer) AttachJavaTlsUprobes(pid uint32, nativeLibPath string) *UprobeK
 		links := t.attachUprobes(nativeLibPath, ef, []uprobeSpec{
 			{symbol: "coroot_java_tls_write_enter", uprobe: "java_tls_write_enter"},
 			{symbol: "coroot_java_tls_read_exit", uprobe: "java_tls_read_exit"},
+			{symbol: "coroot_java_tls_engine_write", uprobe: "java_tls_engine_write", optional: true},
+			{symbol: "coroot_java_tls_engine_read", uprobe: "java_tls_engine_read", optional: true},
 		}, log)
 		if len(links) > 0 {
 			log("java TLS uprobes attached (global)", nil)

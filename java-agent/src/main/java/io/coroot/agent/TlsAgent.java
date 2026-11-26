@@ -21,6 +21,8 @@ public class TlsAgent {
         if (nativeLibPath == null || nativeLibPath.isEmpty()) return;
         if (!NativeBridge.load(nativeLibPath)) return;
 
+        EngineHooks.mark(null, 0, 0);
+
         inst.addTransformer(new SslTransformer(), true);
         try {
             for (Class<?> cls : inst.getAllLoadedClasses()) {

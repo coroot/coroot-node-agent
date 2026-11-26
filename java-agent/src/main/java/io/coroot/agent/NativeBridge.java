@@ -14,4 +14,8 @@ public class NativeBridge {
 
     public static native void tlsWriteEnter(byte[] data, int offset, int length);
     public static native void tlsReadExit(byte[] data, int offset, int length);
+    public static native void tlsEngineWrite(int engine, byte[] data, int offset, int length);
+    public static native void tlsEngineWriteDirect(int engine, java.nio.ByteBuffer data, int offset, int length);
+    public static native void tlsEngineRead(int engine, long tag, byte[] data, int offset, int length);
+    public static native void tlsEngineReadDirect(int engine, long tag, java.nio.ByteBuffer data, int offset, int length);
 }
