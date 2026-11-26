@@ -38,7 +38,7 @@ struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(key_size, sizeof(__u32));
     __uint(value_size, sizeof(__u8));
-    __uint(max_entries, 1024);
+    __uint(max_entries, 32768);
 } nodejs_tls_pids SEC(".maps");
 
 struct {
