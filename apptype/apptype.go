@@ -9,7 +9,7 @@ var (
 	phpCmd    = regexp.MustCompile(`.*php(-fpm|-cgi)?\d*\.?\d*$`)
 	pythonCmd = regexp.MustCompile(`.*python\d*\.?\d*$`)
 	rubyCmd   = regexp.MustCompile(`.*ruby\d*\.?\d*$`)
-	nodejsCmd = regexp.MustCompile(`.*node(js)?\d*\.?\d*$`)
+	nodejsCmd = regexp.MustCompile(`.*node(js)?-?\d*\.?\d*$`)
 )
 
 func IsPython(cmd []byte) bool {
