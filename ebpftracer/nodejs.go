@@ -19,7 +19,7 @@ func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) *UprobeKey {
 					return
 				}
 			}
-			if !t.firstUprobeFailure(libPath) {
+			if !t.firstUprobeFailure(UprobeKindNodejs, libPath) {
 				return
 			}
 			klog.WarningfDepth(1, "pid=%d lib=%s: %s: %s. The optional Node.js metric (container_nodejs_event_loop_blocked_time_seconds_total) won't be collected for processes using this file. Other metrics are not affected.", pid, libPath, msg, err)
@@ -28,8 +28,8 @@ func (t *Tracer) AttachNodejsProbes(pid uint32, exe string) *UprobeKey {
 		klog.InfofDepth(1, "pid=%d lib=%s: %s", pid, libPath, msg)
 	}
 
-	for _, libPath := range append(getLibuv(pid), proc.Path(pid, "root", exe)) {
-		key, ok := t.AcquireGlobalUprobe(libPath, func() []link.Link {
+	for _, libPath := range append(getMappedLibs(pid, "libuv"), proc.Path(pid, "root", exe)) {
+		key, ok := t.AcquireGlobalUprobe(UprobeKindNodejs, libPath, func() []link.Link {
 			links, err := t.attachNodejsUprobes(libPath)
 			if err != nil {
 				log(libPath, "failed to attach Node.js uprobes", err)
@@ -95,7 +95,7 @@ func (t *Tracer) attachNodejsUprobes(libPath string) ([]link.Link, error) {
 	return links, nil
 }
 
-func getLibuv(pid uint32) []string {
+func getMappedLibs(pid uint32, name string) []string {
 	f, err := os.Open(proc.Path(pid, "maps"))
 	if err != nil {
 		return nil
@@ -110,7 +110,7 @@ func getLibuv(pid uint32) []string {
 			continue
 		}
 		libPath := parts[5]
-		if strings.Contains(libPath, "libuv") {
+		if strings.Contains(libPath, name) {
 			libs[proc.Path(pid, "root", libPath)] = true
 		}
 	}

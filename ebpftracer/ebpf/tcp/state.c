@@ -1,5 +1,4 @@
 #define MAX_CONNECTIONS 1000000
-#define MAX_PAYLOAD_SIZE 1024 // must be power of 2
 
 struct tcp_event {
     __u64 fd;

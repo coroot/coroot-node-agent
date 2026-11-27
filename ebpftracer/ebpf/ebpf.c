@@ -18,6 +18,8 @@
 
 #define EVENT_REASON_OOM_KILL		1
 
+#define MAX_PAYLOAD_SIZE 1024 // must be power of 2
+
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
 #define bpf_read(src, dst)                            \
@@ -39,6 +41,22 @@ struct trace_event_raw_sys_exit__stub {
 	long int ret;
 };
 
+// kernels 6.13+ give a program with 64 bytes of stack or more one stack per CPU, but a uprobe program runs preemptible
+// and without a recursion check: on a preemptive kernel (the default since 7.0) a task that runs it on the CPU
+// overwrites the stack of a task preempted in it. The verifier keeps a program with a tail call on the task's stack,
+// and a tail call into this empty array returns at once
+#if __KERNEL_FROM >= 512
+struct {
+    __uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u32));
+    __uint(max_entries, 1);
+} uprobe_task_stack SEC(".maps");
+#define USE_TASK_STACK(ctx) bpf_tail_call(ctx, &uprobe_task_stack, 0)
+#else
+#define USE_TASK_STACK(ctx)
+#endif
+
 #include "nodejs.c"
 #include "python.c"
 #include "proc.c"
@@ -50,6 +68,7 @@ struct trace_event_raw_sys_exit__stub {
 #include "l7/l7.c"
 #include "l7/gotls.c"
 #include "l7/openssl.c"
+#include "l7/nodejs_tls.c"
 #include "l7/rustls.c"
 #include "l7/java_tls.c"
 #else

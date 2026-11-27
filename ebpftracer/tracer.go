@@ -106,9 +106,23 @@ const (
 	perfMapTypeL7Events   perfMapType = 4
 )
 
+type UprobeKind uint8
+
+const (
+	UprobeKindOpenSsl       UprobeKind = 1
+	UprobeKindGoTls         UprobeKind = 2
+	UprobeKindRustls        UprobeKind = 3
+	UprobeKindJavaTls       UprobeKind = 4
+	UprobeKindNodejs        UprobeKind = 5
+	UprobeKindPython        UprobeKind = 6
+	UprobeKindNodejsTlsNode UprobeKind = 7
+	UprobeKindNodejsTlsSsl  UprobeKind = 8
+)
+
 type UprobeKey struct {
-	Dev uint64
-	Ino uint64
+	Dev  uint64
+	Ino  uint64
+	Kind UprobeKind
 }
 
 type globalUprobe struct {
@@ -188,12 +202,12 @@ func (t *Tracer) Close() {
 	t.collection.Close()
 }
 
-func (t *Tracer) firstUprobeFailure(path string) bool {
+func (t *Tracer) firstUprobeFailure(kind UprobeKind, path string) bool {
 	var stat syscall.Stat_t
 	if err := syscall.Stat(path, &stat); err != nil {
 		return true
 	}
-	key := UprobeKey{Dev: stat.Dev, Ino: stat.Ino}
+	key := UprobeKey{Dev: stat.Dev, Ino: stat.Ino, Kind: kind}
 	if _, ok := t.uprobeFailures[key]; ok {
 		return false
 	}
@@ -201,12 +215,12 @@ func (t *Tracer) firstUprobeFailure(path string) bool {
 	return true
 }
 
-func (t *Tracer) AcquireGlobalUprobe(path string, attach func() []link.Link) (UprobeKey, bool) {
+func (t *Tracer) AcquireGlobalUprobe(kind UprobeKind, path string, attach func() []link.Link) (UprobeKey, bool) {
 	var stat syscall.Stat_t
 	if err := syscall.Stat(path, &stat); err != nil {
 		return UprobeKey{}, false
 	}
-	key := UprobeKey{Dev: stat.Dev, Ino: stat.Ino}
+	key := UprobeKey{Dev: stat.Dev, Ino: stat.Ino, Kind: kind}
 
 	t.globalUprobesLock.Lock()
 	defer t.globalUprobesLock.Unlock()
@@ -256,6 +270,31 @@ func (t *Tracer) NodejsStatsIterator() *ebpf.MapIterator {
 
 func (t *Tracer) PythonStatsIterator() *ebpf.MapIterator {
 	return t.collection.Maps["python_stats"].Iterate()
+}
+
+func (t *Tracer) setNodejsTlsPid(pid uint32) error {
+	if t.collection == nil {
+		return nil
+	}
+	m := t.collection.Maps["nodejs_tls_pids"]
+	if m == nil {
+		return nil
+	}
+	var one uint8 = 1
+	return m.Put(pid, one)
+}
+
+func (t *Tracer) DeleteNodejsTlsPid(pid uint32) {
+	if t.collection == nil {
+		return
+	}
+	m := t.collection.Maps["nodejs_tls_pids"]
+	if m == nil {
+		return
+	}
+	if err := m.Delete(pid); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+		klog.Warningf("pid=%d: failed to delete Node.js TLS pid: %s", pid, err)
+	}
 }
 
 type NodejsStats struct {

@@ -5,6 +5,7 @@ import (
 	"debug/elf"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -38,7 +39,7 @@ func (s *Symbol) Address() uint64 {
 	return s.address
 }
 
-func (s *Symbol) ReturnOffsets() ([]int, error) {
+func (s *Symbol) instructions() ([]byte, error) {
 	text, reader, err := s.f.getTextSectionAndReader()
 	if err != nil {
 		return nil, err
@@ -54,10 +55,31 @@ func (s *Symbol) ReturnOffsets() ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
+	return sBytes, nil
+}
 
+func (s *Symbol) ReturnOffsets() ([]int, error) {
+	sBytes, err := s.instructions()
+	if err != nil {
+		return nil, err
+	}
 	offsets := getReturnOffsets(s.f.elf.Machine, sBytes)
 	if len(offsets) == 0 {
 		return nil, fmt.Errorf("no offsets found")
+	}
+	return offsets, nil
+}
+
+func (s *Symbol) TailCallOffsets() ([]int, error) {
+	sBytes, err := s.instructions()
+	if err != nil {
+		return nil, err
+	}
+	var offsets []int
+	for offset, target := range getJumpTargets(s.f.elf.Machine, sBytes) {
+		if s.f.isFunctionStart(uint64(int64(s.s.Value) + target)) {
+			offsets = append(offsets, offset)
+		}
 	}
 	return offsets, nil
 }
@@ -71,8 +93,26 @@ func (s *Symbol) AttachUretprobes(exe *link.Executable, prog *ebpf.Program, pid 
 	if err != nil {
 		return nil, err
 	}
+	return s.attachUprobesAt(exe, prog, pid, returnOffsets)
+}
+
+// a tail call leaves the function without a ret, and the return value is not set yet at the jump:
+// only for exit probes that do not read the return value
+func (s *Symbol) AttachUretprobesWithTailCalls(exe *link.Executable, prog *ebpf.Program, pid uint32) ([]link.Link, error) {
+	returnOffsets, err := s.ReturnOffsets()
+	if err != nil {
+		return nil, err
+	}
+	tailCallOffsets, err := s.TailCallOffsets()
+	if err != nil {
+		return nil, err
+	}
+	return s.attachUprobesAt(exe, prog, pid, append(returnOffsets, tailCallOffsets...))
+}
+
+func (s *Symbol) attachUprobesAt(exe *link.Executable, prog *ebpf.Program, pid uint32, offsets []int) ([]link.Link, error) {
 	var links []link.Link
-	for _, offset := range returnOffsets {
+	for _, offset := range offsets {
 		l, err := exe.Uprobe(s.Name(), prog, &link.UprobeOptions{Address: s.Address(), Offset: uint64(offset), PID: int(pid)})
 		if err != nil {
 			return links, err
@@ -86,6 +126,7 @@ func (s *Symbol) AttachUretprobes(exe *link.Executable, prog *ebpf.Program, pid 
 type ELFFile struct {
 	elf               *elf.File
 	symbols           []elf.Symbol
+	functionStarts    map[uint64]struct{}
 	textSection       *elf.Section
 	textSectionReader io.ReadSeeker
 }
@@ -129,6 +170,31 @@ func (f *ELFFile) GetSymbol(name string) (*Symbol, error) {
 		return nil, fmt.Errorf("symbol %s not found", name)
 	}
 	return &Symbol{s: es, f: f}, nil
+}
+
+// a shared library calls the functions of other objects, and its own exported ones, through the PLT, which has no symbols.
+// The compiler moves the unlikely blocks of a function to a separate "<name>.cold" symbol: a jump there stays in the function
+func (f *ELFFile) isFunctionStart(addr uint64) bool {
+	for _, s := range f.elf.Sections {
+		if strings.HasPrefix(s.Name, ".plt") && s.Addr <= addr && addr < s.Addr+s.Size {
+			return true
+		}
+	}
+	if f.symbols == nil {
+		if err := f.readSymbols(); err != nil {
+			return false
+		}
+	}
+	if f.functionStarts == nil {
+		f.functionStarts = map[uint64]struct{}{}
+		for _, s := range f.symbols {
+			if elf.ST_TYPE(s.Info) == elf.STT_FUNC && s.Value != 0 && !strings.Contains(s.Name, ".cold") {
+				f.functionStarts[s.Value] = struct{}{}
+			}
+		}
+	}
+	_, ok := f.functionStarts[addr]
+	return ok
 }
 
 func (f *ELFFile) FindSymbolValue(name string) (uint64, error) {
@@ -263,6 +329,28 @@ func getReturnOffsets(machine elf.Machine, instructions []byte) []int {
 				res = append(res, i)
 			}
 			i += 4
+		}
+	}
+	return res
+}
+
+func getJumpTargets(machine elf.Machine, instructions []byte) map[int]int64 {
+	res := map[int]int64{}
+	switch machine {
+	case elf.EM_X86_64:
+		for i := 0; i < len(instructions); {
+			ins, err := x86asm.Decode(instructions[i:], 64)
+			if rel, ok := ins.Args[0].(x86asm.Rel); err == nil && ok && ins.Op == x86asm.JMP {
+				res[i] = int64(i+ins.Len) + int64(rel)
+			}
+			i += max(ins.Len, 1)
+		}
+	case elf.EM_AARCH64:
+		for i := 0; i+4 <= len(instructions); i += 4 {
+			ins, err := arm64asm.Decode(instructions[i:])
+			if rel, ok := ins.Args[0].(arm64asm.PCRel); err == nil && ok && ins.Op == arm64asm.B {
+				res[i] = int64(i) + int64(rel)
+			}
 		}
 	}
 	return res
